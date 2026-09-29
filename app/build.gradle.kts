@@ -1,10 +1,36 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"
 }
 
+val supabaseUrl = providers.gradleProperty("SUPABASE_URL")
+    .orElse("https://yezxyhpczfnkcndfpuht.supabase.co").get()
+val supabasePublishableKey = providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY")
+    .orElse("sb_publishable_vj7akRru3TvuUmkugtyRBg_0oRAQck6").get()
+
+fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 android { namespace = "com.jajanin.app"; compileSdk = 35
-    defaultConfig { applicationId = "com.jajanin.app"; minSdk = 24; targetSdk = 35; versionCode = 1; versionName = "1.0" }
+    defaultConfig {
+        applicationId = "com.jajanin.app"; minSdk = 24; targetSdk = 35; versionCode = 1; versionName = "1.0"
+        buildConfigField("String", "SUPABASE_URL", supabaseUrl.asBuildConfigString())
+        buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", supabasePublishableKey.asBuildConfigString())
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
+    buildFeatures { buildConfig = true }
+}
+
+dependencies {
+    implementation(platform("io.github.jan-tennert.supabase:bom:2.6.0"))
+    implementation("io.github.jan-tennert.supabase:gotrue-kt")
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.ktor:ktor-client-android:2.3.12")
+    implementation("androidx.browser:browser:1.8.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+}
+
+configurations.configureEach {
+    resolutionStrategy.force("androidx.browser:browser:1.8.0")
 }

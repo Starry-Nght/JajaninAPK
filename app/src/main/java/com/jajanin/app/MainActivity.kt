@@ -6,16 +6,109 @@ import android.graphics.*
 import android.view.MotionEvent
 import android.view.View
 import android.content.Context
+import android.view.Gravity
+import android.text.InputType
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import android.graphics.Typeface
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlin.math.abs
 
 class MainActivity : Activity() {
     private lateinit var ui: JajaninView
+    private lateinit var emailInput: EditText
+    private lateinit var passwordInput: EditText
+    private val authScope = CoroutineScope(Dispatchers.Main)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(1024, 1024)
         ui = JajaninView(this)
         setContentView(ui)
+        handleAuthLink(intent)
+        if (SupabaseRepository.isConfigured() && SupabaseRepository.hasSession()) ui.showHome()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthLink(intent)
+    }
+
+    private fun handleAuthLink(authIntent: android.content.Intent?) {
+        if (authIntent?.data?.scheme != "jajanin") return
+        authScope.launch {
+            if (SupabaseRepository.hasSession()) {
+                ui.showHome()
+                Toast.makeText(this@MainActivity, "Berhasil masuk", Toast.LENGTH_SHORT).show()
+            } else Toast.makeText(this@MainActivity, "Tautan diterima. Coba masuk kembali.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun showAuthForm(focusPassword: Boolean, signup: Boolean = false) {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(42, 24, 42, 24)
+            setBackgroundColor(android.graphics.Color.WHITE)
+        }
+        val title = TextView(this).apply {
+            text = if (signup) "Buat akun" else "Masuk dengan email"
+            textSize = 20f; setTypeface(null, Typeface.BOLD); gravity = Gravity.CENTER
+        }
+        emailInput = EditText(this).apply { hint = "Email"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS }
+        passwordInput = EditText(this).apply { hint = "Kata sandi"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        val action = Button(this).apply { text = if (signup) "Daftar" else "Masuk" }
+        panel.addView(title); panel.addView(emailInput); panel.addView(passwordInput); panel.addView(action)
+        val dialog = android.app.Dialog(this)
+        dialog.setContentView(panel)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        if (focusPassword) passwordInput.requestFocus()
+        action.setOnClickListener {
+            val email = emailInput.text.toString().trim()
+            val password = passwordInput.text.toString()
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() || password.length < 6) {
+                Toast.makeText(this, "Masukkan email valid dan kata sandi minimal 6 karakter", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            authScope.launch {
+                runCatching {
+                    if (!SupabaseRepository.isConfigured()) {
+                        error("Supabase belum dikonfigurasi. Tambahkan SUPABASE_URL dan SUPABASE_PUBLISHABLE_KEY di ~/.gradle/gradle.properties, lalu build ulang.")
+                    }
+                    if (signup) SupabaseRepository.signUp(email, password) else SupabaseRepository.signIn(email, password)
+                }
+                    .onSuccess {
+                        dialog.dismiss()
+                        if (SupabaseRepository.hasSession()) ui.showHome()
+                        else Toast.makeText(this@MainActivity, "Cek email untuk konfirmasi akun", Toast.LENGTH_LONG).show()
+                    }
+                    .onFailure {
+                        val message = it.message?.takeIf(String::isNotBlank) ?: "Autentikasi gagal"
+                        Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                    }
+            }
+        }
+    }
+
+    fun googleSignIn() {
+        authScope.launch {
+            runCatching {
+                check(SupabaseRepository.isConfigured()) {
+                    "Supabase belum dikonfigurasi. Tambahkan SUPABASE_URL dan SUPABASE_PUBLISHABLE_KEY di ~/.gradle/gradle.properties, lalu build ulang."
+                }
+                SupabaseRepository.signInWithGoogle()
+            }.onFailure {
+                val message = it.message?.takeIf(String::isNotBlank) ?: "Google sign-in gagal"
+                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     override fun onBackPressed() {
@@ -23,11 +116,19 @@ class MainActivity : Activity() {
     }
 }
 
-private enum class Screen { WELCOME, ROLE, HOME, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE }
+private enum class Screen { WELCOME, ROLE, LOGIN, HOME, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE }
 
-private data class MenuItem(val name: String, val stall: String, val price: String, val rating: String, val image: Int)
+private data class MenuItem(val name: String, val stall: String, val price: String, val rating: String, val image: Int) {
+    val priceInRupiah: Int
+        get() = price.filter(Char::isDigit).toIntOrNull() ?: 0
+}
 
 private class JajaninView(context: Context) : View(context) {
+    private companion object {
+        const val SERVICE_FEE = 1_000
+
+        fun formatRupiah(amount: Int): String = "Rp " + amount.toString().reversed().chunked(3).joinToString(".").reversed()
+    }
     private val ink = Color.rgb(27, 35, 53)
     private val blue = Color.rgb(0, 99, 214)
     private val muted = Color.rgb(112, 120, 137)
@@ -83,6 +184,7 @@ private class JajaninView(context: Context) : View(context) {
         when (screen) {
             Screen.WELCOME -> drawWelcome(canvas, w, h)
             Screen.ROLE -> drawRole(canvas, w, h)
+            Screen.LOGIN -> drawLogin(canvas, w, h)
             Screen.HOME -> drawHome(canvas, w, h)
             Screen.DETAIL -> drawDetail(canvas, w, h)
             Screen.CHECKOUT -> drawCheckout(canvas, w, h)
@@ -117,8 +219,8 @@ private class JajaninView(context: Context) : View(context) {
     private fun drawWelcome(c: Canvas, w: Float, h: Float) {
         c.drawColor(Color.WHITE)
         text(c, "JAJANIN", 30f, 68f, 18f, blue, true)
-        rounded(c, RectF(30f, 116f, 360f, minOf(h * .59f, 485f)), Color.rgb(232, 242, 255), 26f)
-        image(c, R.drawable.welcome, RectF(30f, 116f, 360f, minOf(h * .59f, 485f)))
+        val welcomeImageRect = RectF(30f, 116f, 360f, minOf(h * .59f, 485f))
+        image(c, R.drawable.welcome, welcomeImageRect, 24f)
         text(c, "Jajan enak,", 30f, h * .68f, 32f, ink, true)
         text(c, "nggak pake lama.", 30f, h * .68f + 39f, 32f, ink, true)
         text(c, "Temukan makanan favoritmu di sekitar kampus.", 30f, h * .68f + 71f, 14f, muted)
@@ -135,6 +237,24 @@ private class JajaninView(context: Context) : View(context) {
         text(c, "Kamu bisa mengubah pilihan ini nanti.", 24f, h - 104f, 13f, muted)
         button(c, "role", "Lanjutkan", RectF(24f, h - 78f, w - 24f, h - 22f))
     }
+
+    private fun drawLogin(c: Canvas, w: Float, h: Float) {
+        c.drawColor(Color.WHITE)
+        text(c, "JAJANIN", 24f, 55f, 16f, blue, true)
+        text(c, "Masuk ke akunmu", 24f, 132f, 27f, ink, true)
+        text(c, "Lanjutkan jajan favoritmu di kampus.", 24f, 158f, 13f, muted)
+        bounds["emailField"] = RectF(24f, 190f, 366f, 250f)
+        bounds["passwordField"] = RectF(24f, 266f, 366f, 326f)
+        button(c, "emailLogin", "Masuk dengan email", RectF(24f, 344f, 366f, 398f))
+        rounded(c, RectF(24f, 416f, 366f, 470f), Color.WHITE, 14f, Color.rgb(224, 228, 236))
+        centerText(c, "G  Lanjutkan dengan Google", RectF(24f, 416f, 366f, 470f), 14f, ink, true)
+        bounds["googleLogin"] = RectF(24f, 416f, 366f, 470f)
+        centerText(c, "Belum punya akun?  Daftar", RectF(24f, 494f, 366f, 530f), 13f, blue, true)
+        bounds["toggleAuth"] = RectF(24f, 490f, 366f, 535f)
+        centerText(c, "Dengan masuk, kamu menyetujui ketentuan Jajanin.", RectF(18f, h - 66f, w - 18f, h - 35f), 10f, muted)
+    }
+
+    fun showHome() { screen = Screen.HOME; history.clear(); invalidate() }
     private fun roleCard(c: Canvas, title: String, subtitle: String, y: Float, key: String) {
         val r = RectF(24f, y, 366f, y + 96f); rounded(c, r, Color.WHITE, 18f, Color.rgb(232, 235, 242))
         rounded(c, RectF(40f, y + 22f, 82f, y + 64f), Color.rgb(232, 242, 255), 12f)
@@ -228,8 +348,8 @@ private class JajaninView(context: Context) : View(context) {
         rounded(c, RectF(18f, 276f, 372f, 338f), Color.WHITE, 15f, Color.rgb(211, 228, 251))
         text(c, "▦", 34f, 315f, 22f, blue, true); text(c, "QRIS", 73f, 306f, 14f, ink, true); text(c, "Semua e-wallet dan mobile banking", 73f, 326f, 11f, muted); text(c, "◉", 340f, 315f, 18f, blue)
         text(c, "Ringkasan", 22f, 383f, 18f, ink, true)
-        summaryRow(c, "Subtotal", selected.price, 411f); summaryRow(c, "Biaya layanan", "Rp 1.000", 439f)
-        line(c, 22f, 459f, 368f, 459f); summaryRow(c, "Total", if (selected.price == "Rp 25.000") "Rp 26.000" else if(selected.price == "Rp 18.000") "Rp 19.000" else "Rp 9.000", 488f, true)
+        summaryRow(c, "Subtotal", formatRupiah(selected.priceInRupiah * quantity), 411f); summaryRow(c, "Biaya layanan", formatRupiah(SERVICE_FEE), 439f)
+        line(c, 22f, 459f, 368f, 459f); summaryRow(c, "Total", formatRupiah(selected.priceInRupiah * quantity + SERVICE_FEE), 488f, true)
         button(c, "pay", "Bayar sekarang", RectF(20f, h - 72f, w - 20f, h - 16f))
     }
     private fun summaryRow(c: Canvas, a: String, b: String, y: Float, strong: Boolean = false) { text(c, a, 24f, y, 13f, if (strong) ink else muted, strong); p.textSize = 13f; p.typeface = Typeface.create("sans-serif-medium", 0); text(c, b, 368f - p.measureText(b), y, 13f, ink, true) }
@@ -240,7 +360,7 @@ private class JajaninView(context: Context) : View(context) {
         rounded(c, RectF(38f, 184f, 352f, 498f), Color.WHITE, 20f)
         text(c, "QRIS", 157f, 220f, 18f, blue, true)
         val qr = RectF(85f, 248f, 305f, 468f); rounded(c, qr, Color.WHITE, 4f, Color.rgb(225, 228, 234)); drawQr(c, qr)
-        text(c, "Total pembayaran", 24f, 545f, 12f, muted); text(c, "${selected.price}", 24f, 576f, 25f, ink, true)
+        text(c, "Total pembayaran", 24f, 545f, 12f, muted); text(c, formatRupiah(selected.priceInRupiah * quantity + SERVICE_FEE), 24f, 576f, 25f, ink, true)
         button(c, "paid", "Saya sudah membayar", RectF(20f, h - 72f, w - 20f, h - 16f))
     }
     private fun drawQr(c: Canvas, r: RectF) {
@@ -301,7 +421,12 @@ private class JajaninView(context: Context) : View(context) {
     }
     private fun image(c: Canvas, res: Int, r: RectF, radius: Float = 0f) {
         val bmp = BitmapFactory.decodeResource(resources, res) ?: return
-        val save = c.save(); val path = Path().apply { addRoundRect(r, radius, radius, Path.Direction.CW) }; c.clipPath(path)
+        val clipRect = RectF(r)
+        val canvasScale = width / 390f
+        val radiusInCanvasUnits = radius * resources.displayMetrics.density / canvasScale
+        val save = c.save()
+        val path = Path().apply { addRoundRect(clipRect, radiusInCanvasUnits, radiusInCanvasUnits, Path.Direction.CW) }
+        c.clipPath(path)
         val scale = maxOf(r.width() / bmp.width, r.height() / bmp.height)
         val sw = r.width() / scale; val sh = r.height() / scale
         val src = Rect(((bmp.width - sw) / 2f).toInt(), ((bmp.height - sh) / 2f).toInt(), ((bmp.width + sw) / 2f).toInt(), ((bmp.height + sh) / 2f).toInt())
@@ -324,7 +449,12 @@ private class JajaninView(context: Context) : View(context) {
                 val hit = bounds.entries.firstOrNull { it.value.contains(x, y) }?.key ?: return true
                 when {
                     hit == "welcome" -> go(Screen.ROLE)
-                    hit == "role" || hit == "buyer" || hit == "seller" -> go(Screen.HOME)
+                    hit == "role" || hit == "buyer" || hit == "seller" -> go(Screen.LOGIN)
+                    hit == "emailField" -> (context as? MainActivity)?.showAuthForm(false)
+                    hit == "passwordField" -> (context as? MainActivity)?.showAuthForm(true)
+                    hit == "emailLogin" -> (context as? MainActivity)?.showAuthForm(false)
+                    hit == "googleLogin" -> (context as? MainActivity)?.googleSignIn()
+                    hit == "toggleAuth" -> (context as? MainActivity)?.showAuthForm(false, signup = true)
                     hit == "search" -> searchFocused = true
                     hit.startsWith("cat:") -> { activeCategory = hit.removePrefix("cat:"); invalidate() }
                     hit.startsWith("item") -> { val i = hit.removePrefix("item").toIntOrNull() ?: 0; selected = items[i]; quantity = 1; go(Screen.DETAIL) }
