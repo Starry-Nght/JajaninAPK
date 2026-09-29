@@ -1,0 +1,13 @@
+R_DEF: Internal format may change without notice
+local
+drawable checkout
+drawable detail
+drawable home
+drawable orders
+drawable profile
+drawable qris
+drawable ready
+drawable role
+drawable welcome
+string app_name
+style AppTheme

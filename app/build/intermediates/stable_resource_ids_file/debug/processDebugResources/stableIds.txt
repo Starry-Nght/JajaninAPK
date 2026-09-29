@@ -1,0 +1,11 @@
+com.jajanin.app:drawable/welcome = 0x7f010008
+com.jajanin.app:drawable/role = 0x7f010007
+com.jajanin.app:drawable/ready = 0x7f010006
+com.jajanin.app:drawable/qris = 0x7f010005
+com.jajanin.app:string/app_name = 0x7f020000
+com.jajanin.app:drawable/home = 0x7f010002
+com.jajanin.app:drawable/profile = 0x7f010004
+com.jajanin.app:style/AppTheme = 0x7f030000
+com.jajanin.app:drawable/orders = 0x7f010003
+com.jajanin.app:drawable/detail = 0x7f010001
+com.jajanin.app:drawable/checkout = 0x7f010000
