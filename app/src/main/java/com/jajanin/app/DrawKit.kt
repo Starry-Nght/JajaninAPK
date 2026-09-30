@@ -32,6 +32,16 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
     private val medium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
 
     /*
+     * Hasil ukuran teks hanya bergantung pada argumennya, sehingga aman disimpan.
+     * Sebelum ada cache ini, measure() mengubah state paint lalu mengukur ulang
+     * label yang sama (chips kategori, "Lihat semua", ringkasan) setiap frame.
+     */
+    private val measureCache = HashMap<String, Float>()
+
+    // Dipakai ulang tiap frame; Path baru per gambar per frame menimbulkan churn GC.
+    private val clipPath = Path()
+
+    /*
      * Decoded once per resource and reused. Decoding inside onDraw (the previous
      * behaviour) allocated ~44 MB of bitmap per Home frame and recycled it
      * immediately, which is what made scrolling stutter.
@@ -70,11 +80,12 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
         text(c, value, r.centerX() - w / 2f, r.centerY() + size * .34f, size, color, bold)
     }
 
-    fun measure(value: String, size: Float, bold: Boolean = false): Float {
-        paint.textSize = size
-        paint.typeface = if (bold) medium else regular
-        return paint.measureText(value)
-    }
+    fun measure(value: String, size: Float, bold: Boolean = false): Float =
+        measureCache.getOrPut("$size|$bold|$value") {
+            paint.textSize = size
+            paint.typeface = if (bold) medium else regular
+            paint.measureText(value)
+        }
 
     fun line(c: Canvas, x1: Float, y1: Float, x2: Float, y2: Float, color: Int = divider) {
         paint.style = Paint.Style.STROKE
@@ -93,7 +104,9 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
         val bmp = bitmap(resId) ?: return
         val round = radius * res.displayMetrics.density / canvasScale()
         val save = c.save()
-        c.clipPath(Path().apply { addRoundRect(r, round, round, Path.Direction.CW) })
+        clipPath.reset()
+        clipPath.addRoundRect(r, round, round, Path.Direction.CW)
+        c.clipPath(clipPath)
         val scale = maxOf(r.width() / bmp.width, r.height() / bmp.height)
         val sw = r.width() / scale
         val sh = r.height() / scale

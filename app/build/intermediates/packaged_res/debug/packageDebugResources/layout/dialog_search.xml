@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="26dp"
+    android:paddingBottom="22dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Cari menu"
+        android:textColor="#1B2335"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Temukan makanan atau kantin favoritmu"
+        android:textColor="#707889"
+        android:textSize="13sp" />
+
+    <EditText
+        android:id="@+id/searchInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:background="@drawable/bg_field"
+        android:hint="Nama makanan atau kantin"
+        android:imeOptions="actionSearch"
+        android:inputType="text"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:singleLine="true"
+        android:textColor="#1B2335"
+        android:textColorHint="#707889"
+        android:textSize="15sp" />
+
+    <Button
+        android:id="@+id/searchApply"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:background="@drawable/bg_button"
+        android:paddingTop="15dp"
+        android:paddingBottom="15dp"
+        android:stateListAnimator="@null"
+        android:text="Terapkan"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/searchClear"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="?android:attr/selectableItemBackground"
+        android:gravity="center"
+        android:padding="6dp"
+        android:text="Hapus pencarian"
+        android:textColor="#0063D6"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

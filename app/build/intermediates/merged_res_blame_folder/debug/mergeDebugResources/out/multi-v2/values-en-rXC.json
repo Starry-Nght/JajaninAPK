@@ -1,10 +1,10 @@
 {
     "logs": [
         {
-            "outputFile": "com.jajanin.app-mergeDebugResources-11:/values-en-rXC/values-en-rXC.xml",
+            "outputFile": "com.jajanin.app-mergeDebugResources-19:/values-en-rXC/values-en-rXC.xml",
             "map": [
                 {
-                    "source": "/home/aths/.gradle/caches/9.3.0/transforms/7f508cab606e4daf6aa70161003f27da/transformed/browser-1.8.0/res/values-en-rXC/values-en-rXC.xml",
+                    "source": "/home/aths/.gradle/caches/9.3.0/transforms/1a8f179bbeee3aa1110b905b50e2101c/transformed/browser-1.8.0/res/values-en-rXC/values-en-rXC.xml",
                     "from": {
                         "startLines": "2,3,4,5",
                         "startColumns": "4,4,4,4",
@@ -14,20 +14,20 @@
                     }
                 },
                 {
-                    "source": "/home/aths/.gradle/caches/9.3.0/transforms/fa8ce435b07e962b2600c7963466988d/transformed/core-1.1.0/res/values-en-rXC/values-en-rXC.xml",
+                    "source": "/home/aths/.gradle/caches/9.3.0/transforms/35239d3a3815a85c1ef3b906e6bce6fd/transformed/core-1.2.0/res/values-en-rXC/values-en-rXC.xml",
                     "from": {
                         "startLines": "2",
                         "startColumns": "4",
                         "startOffsets": "55",
-                        "endColumns": "202",
-                        "endOffsets": "253"
+                        "endColumns": "203",
+                        "endOffsets": "254"
                     },
                     "to": {
                         "startLines": "6",
                         "startColumns": "4",
                         "startOffsets": "867",
-                        "endColumns": "202",
-                        "endOffsets": "1065"
+                        "endColumns": "203",
+                        "endOffsets": "1066"
                     }
                 }
             ]

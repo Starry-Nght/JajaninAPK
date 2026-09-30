@@ -13,7 +13,6 @@
         android:id="@+id/authTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center"
         android:textColor="#1B2335"
         android:textSize="20sp"
         android:textStyle="bold" />
@@ -23,7 +22,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:gravity="center"
         android:textColor="#707889"
         android:textSize="13sp" />
 
@@ -31,7 +29,8 @@
         android:id="@+id/authEmail"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="22dp"
+        android:autofillHints="email"
         android:background="@drawable/bg_field"
         android:hint="Email"
         android:imeOptions="actionNext"
@@ -40,6 +39,7 @@
         android:paddingEnd="16dp"
         android:paddingTop="14dp"
         android:paddingBottom="14dp"
+        android:singleLine="true"
         android:textColor="#1B2335"
         android:textColorHint="#707889"
         android:textSize="15sp" />
@@ -49,6 +49,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
+        android:autofillHints="password"
         android:background="@drawable/bg_field"
         android:hint="Kata sandi"
         android:imeOptions="actionGo"
@@ -57,6 +58,7 @@
         android:paddingEnd="16dp"
         android:paddingTop="14dp"
         android:paddingBottom="14dp"
+        android:singleLine="true"
         android:textColor="#1B2335"
         android:textColorHint="#707889"
         android:textSize="15sp" />
@@ -72,18 +74,35 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
-    <Button
-        android:id="@+id/authAction"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="18dp"
-        android:background="@drawable/bg_button"
-        android:paddingTop="15dp"
-        android:paddingBottom="15dp"
-        android:stateListAnimator="@null"
-        android:textColor="#FFFFFF"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/authAction"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/bg_button"
+            android:paddingTop="15dp"
+            android:paddingBottom="15dp"
+            android:stateListAnimator="@null"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/authProgress"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:indeterminateTint="#0063D6"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/authToggle"

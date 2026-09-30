@@ -1,13 +1,35 @@
 R_DEF: Internal format may change without notice
 local
+drawable bg_button
+drawable bg_dialog
+drawable bg_error
+drawable bg_field
+drawable bg_option
+drawable bghome
 drawable checkout
 drawable detail
 drawable home
+drawable ic_stat_orders
 drawable orders
 drawable profile
 drawable qris
 drawable ready
 drawable role
 drawable welcome
+id authAction
+id authEmail
+id authError
+id authPassword
+id authProgress
+id authSubtitle
+id authTitle
+id authToggle
+id locationOptions
+id searchApply
+id searchClear
+id searchInput
+layout dialog_auth
+layout dialog_location
+layout dialog_search
 string app_name
 style AppTheme

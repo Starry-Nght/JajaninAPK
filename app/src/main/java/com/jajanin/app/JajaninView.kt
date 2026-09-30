@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
@@ -16,6 +17,12 @@ internal data class MenuItem(val name: String, val stall: String, val price: Str
 }
 
 internal const val SERVICE_FEE = 1_000
+
+internal val LOCATION_OPTIONS = listOf(
+    "X PPLG 1", "X PPLG 2", "X PPLG 3",
+    "XI PPLG 1", "XI PPLG 2", "XI PPLG 3",
+    "XII PPLG 1", "XII PPLG 2", "XII PPLG 3",
+)
 
 internal fun formatRupiah(amount: Int): String =
     "Rp " + amount.toString().reversed().chunked(3).joinToString(".").reversed()
@@ -38,6 +45,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var quantity = 1
     internal var query = ""
     internal var activeCategory = "Semua"
+    internal var location = LOCATION_OPTIONS.first()
     internal var scroll = 0f
     internal var contentHeight = 0f
 
@@ -47,7 +55,10 @@ internal class JajaninView(context: Context) : View(context) {
     private var touchStartY = 0f
     private var previousY = 0f
     private var moved = false
-    private var searchFocused = false
+
+    // Dikonsumsi drawBottomNav di BottomNav.kt: tab yang ditekan + waktu mulai animasi indikator.
+    internal var pressedTab: String? = null
+    internal var navAnimAt = 0L
 
     internal fun go(next: Screen) {
         if (screen == next) return
@@ -68,6 +79,17 @@ internal class JajaninView(context: Context) : View(context) {
     fun showHome() { screen = Screen.HOME; history.clear(); invalidate() }
 
     fun showLogin() { screen = Screen.LOGIN; history.clear(); invalidate() }
+
+    internal fun applyQuery(value: String) {
+        query = value
+        scroll = 0f
+        invalidate()
+    }
+
+    internal fun applyLocation(value: String) {
+        location = value
+        invalidate()
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -97,30 +119,28 @@ internal class JajaninView(context: Context) : View(context) {
         bounds["headerBack"] = RectF(0f, 0f, 54f, 72f)
     }
 
-    internal fun drawBottomNav(c: Canvas, w: Float, h: Float, active: String) {
-        val y = h - 67f
-        kit.rect(c, 0f, y, w, h, Color.WHITE)
-        kit.line(c, 0f, y, w, y)
-        val labels = listOf("Home", "Search", "Orders", "Profile")
-        val icons = listOf("⌂", "⌕", "▤", "♙")
-        labels.forEachIndexed { i, label ->
-            val cx = 48f + i * 98f
-            val color = if (label == active) kit.blue else kit.muted
-            kit.centerText(c, icons[i], RectF(cx - 24f, y + 4f, cx + 24f, y + 37f), 22f, color, true)
-            kit.centerText(c, label, RectF(cx - 39f, y + 37f, cx + 39f, y + 61f), 10f, color, label == active)
-            bounds["tab:$label"] = RectF(cx - 48f, y, cx + 48f, h)
-        }
-    }
-
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val s = width / 390f
         val x = event.x / s
         val y = event.y / s
         when (event.action) {
-            MotionEvent.ACTION_DOWN -> { touchStartY = y; previousY = y; moved = false; return true }
+            MotionEvent.ACTION_DOWN -> {
+                touchStartY = y; previousY = y; moved = false
+                val tabHit = bounds.entries.firstOrNull { it.value.contains(x, y) }?.key
+                    ?.takeIf { it.startsWith("tab:") }
+                if (tabHit != null) {
+                    pressedTab = tabHit
+                    invalidate()
+                }
+                return true
+            }
             MotionEvent.ACTION_MOVE -> {
                 if (screen == Screen.HOME && abs(y - touchStartY) > 6f) {
                     moved = true
+                    if (pressedTab != null) {
+                        pressedTab = null
+                        invalidate()
+                    }
                     val maxScroll = (contentHeight - height / s + 78f).coerceAtLeast(0f)
                     scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
                     previousY = y
@@ -128,7 +148,16 @@ internal class JajaninView(context: Context) : View(context) {
                 }
                 return true
             }
+            MotionEvent.ACTION_CANCEL -> {
+                pressedTab = null
+                invalidate()
+                return true
+            }
             MotionEvent.ACTION_UP -> {
+                if (pressedTab != null) {
+                    pressedTab = null
+                    invalidate()
+                }
                 if (moved) return true
                 val hit = bounds.entries.firstOrNull { it.value.contains(x, y) }?.key ?: return true
                 when {
@@ -138,19 +167,26 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "passwordField" -> activity()?.showAuthForm(true)
                     hit == "emailLogin" -> activity()?.showAuthForm(false)
                     hit == "toggleAuth" -> activity()?.showAuthForm(false, signup = true)
-                    hit == "search" -> searchFocused = true
-                    hit.startsWith("cat:") -> { activeCategory = hit.removePrefix("cat:"); invalidate() }
+                    hit == "search" -> activity()?.showSearchForm()
+                    hit == "location" -> activity()?.showLocationForm()
+                    hit.startsWith("cat:") -> {
+                        activeCategory = hit.removePrefix("cat:")
+                        scroll = 0f
+                        invalidate()
+                    }
                     hit.startsWith("item") -> {
                         val i = hit.removePrefix("item").toIntOrNull() ?: 0
                         selected = items[i]; quantity = 1; go(Screen.DETAIL)
                     }
                     hit.startsWith("tab:") -> {
+                        navAnimAt = SystemClock.uptimeMillis()
                         when (hit.removePrefix("tab:")) {
                             "Home" -> { tab = "Home"; if (screen != Screen.HOME) go(Screen.HOME) }
-                            "Search" -> { tab = "Search"; screen = Screen.HOME; searchFocused = true; invalidate() }
+                            "Search" -> { tab = "Search"; screen = Screen.HOME; activity()?.showSearchForm() }
                             "Orders" -> { tab = "Orders"; go(Screen.ORDERS) }
                             "Profile" -> { tab = "Profile"; go(Screen.PROFILE) }
                         }
+                        invalidate()
                     }
                     hit == "logout" -> activity()?.logout()
                     hit == "back" || hit == "headerBack" -> goBack()

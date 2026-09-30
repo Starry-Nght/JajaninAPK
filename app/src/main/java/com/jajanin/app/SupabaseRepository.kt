@@ -9,6 +9,10 @@ import io.github.jan.supabase.gotrue.exception.AuthRestException
 import io.github.jan.supabase.gotrue.exception.AuthWeakPasswordException
 import io.github.jan.supabase.gotrue.providers.builtin.Email
 import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.realtime.Realtime
+import kotlinx.serialization.Serializable
 import java.io.IOException
 
 /** Hasil dari [SupabaseRepository.register]. */
@@ -46,6 +50,7 @@ object SupabaseRepository {
                 host = "auth-callback"
             }
             install(Postgrest)
+            install(Realtime)
         }
     }
 
@@ -68,6 +73,29 @@ object SupabaseRepository {
     fun hasSession() = configured && client.auth.currentSessionOrNull() != null
 
     fun currentEmail(): String? = if (configured) client.auth.currentUserOrNull()?.email else null
+
+    fun currentUid(): String? = if (configured) client.auth.currentUserOrNull()?.id else null
+
+    @Serializable
+    private data class RoleRow(val role: String)
+
+    /**
+     * Membaca role pemilik session dari tabel profiles (baris milik sendiri).
+     *
+     * Dipakai untuk memutuskan rute setelah login/restore: role 'seller' = admin.
+     * Mengembalikan null bila session belum siap atau query gagal.
+     */
+    suspend fun currentRole(): String? {
+        val uid = currentUid() ?: return null
+        return runCatching {
+            client.postgrest.from("profiles")
+                .select(Columns.list("role")) {
+                    filter { eq("id", uid) }
+                    limit(1)
+                }
+                .decodeSingleOrNull<RoleRow>()?.role
+        }.getOrNull()
+    }
 
     /**
      * Mendaftarkan akun baru lewat Supabase Auth.

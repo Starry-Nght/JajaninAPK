@@ -4,13 +4,17 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -72,6 +76,93 @@ class MainActivity : Activity() {
         form.show(signup, focusPassword)
     }
 
+    private var searchDialog: Dialog? = null
+
+    fun showSearchForm() {
+        val open = searchDialog
+        if (open != null && open.isShowing) {
+            open.findViewById<EditText>(R.id.searchInput)?.requestFocus()
+            return
+        }
+        val dialog = Dialog(this).apply {
+            setContentView(R.layout.dialog_search)
+            window?.setBackgroundDrawableResource(android.R.color.transparent)
+            setOnDismissListener { searchDialog = null }
+        }
+        searchDialog = dialog
+        val input = dialog.findViewById<EditText>(R.id.searchInput)
+        val apply = dialog.findViewById<Button>(R.id.searchApply)
+        val clear = dialog.findViewById<TextView>(R.id.searchClear)
+
+        input.setText(ui.query)
+        input.setSelection(ui.query.length)
+        clear.visibility = if (ui.query.isEmpty()) View.GONE else View.VISIBLE
+
+        input.imeOptions = EditorInfo.IME_ACTION_SEARCH
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                submitSearch(dialog, input)
+                true
+            } else false
+        }
+        apply.setOnClickListener { submitSearch(dialog, input) }
+        clear.setOnClickListener {
+            ui.applyQuery("")
+            dialog.dismiss()
+        }
+
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        input.requestFocus()
+        input.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun submitSearch(dialog: Dialog, input: EditText) {
+        ui.applyQuery(input.text.toString().trim())
+        dialog.dismiss()
+    }
+
+    private var locationDialog: Dialog? = null
+
+    fun showLocationForm() {
+        val open = locationDialog
+        if (open != null && open.isShowing) return
+        val dialog = Dialog(this).apply {
+            setContentView(R.layout.dialog_location)
+            window?.setBackgroundDrawableResource(android.R.color.transparent)
+            setOnDismissListener { locationDialog = null }
+        }
+        locationDialog = dialog
+        val container = dialog.findViewById<LinearLayout>(R.id.locationOptions)
+        val density = resources.displayMetrics.density
+        val padH = (16 * density).toInt()
+        val padV = (13 * density).toInt()
+
+        LOCATION_OPTIONS.forEach { option ->
+            val selected = option == ui.location
+            val row = TextView(this).apply {
+                text = if (selected) "✓  $option" else option
+                setTextColor(if (selected) Color.rgb(0, 99, 214) else Color.rgb(27, 35, 53))
+                textSize = 15f
+                setPadding(padH, padV, padH, padV)
+                isClickable = true
+                setBackgroundResource(R.drawable.bg_option)
+            }
+            row.setOnClickListener {
+                ui.applyLocation(option)
+                dialog.dismiss()
+            }
+            container.addView(row)
+        }
+
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
     fun logout() {
         authScope.launch {
             try {
@@ -100,6 +191,7 @@ class MainActivity : Activity() {
         private val password = dialog.findViewById<EditText>(R.id.authPassword)
         private val error = dialog.findViewById<TextView>(R.id.authError)
         private val action = dialog.findViewById<Button>(R.id.authAction)
+        private val progress = dialog.findViewById<ProgressBar>(R.id.authProgress)
         private val toggle = dialog.findViewById<TextView>(R.id.authToggle)
 
         private var signup = false
@@ -126,6 +218,7 @@ class MainActivity : Activity() {
             applyMode()
             dialog.show()
             dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             focus(focusPasswordField)
         }
 
@@ -158,6 +251,9 @@ class MainActivity : Activity() {
             busy = value
             action.isEnabled = !value
             toggle.isEnabled = !value
+            email.isEnabled = !value
+            password.isEnabled = !value
+            progress.visibility = if (value) View.VISIBLE else View.GONE
             action.text = when {
                 value && signup -> "Mendaftar..."
                 value -> "Masuk..."

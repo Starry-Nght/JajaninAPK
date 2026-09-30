@@ -31,28 +31,35 @@ internal fun JajaninView.drawRole(c: Canvas, w: Float, h: Float) {
 
 internal fun JajaninView.drawLogin(c: Canvas, w: Float, h: Float) {
     c.drawColor(Color.WHITE)
+
+    // Dekorasi ringan: dua bentuk lembut bertint biru, digambar dulu agar semua
+    // konten di atasnya. Tanpa gambar tambahan sehingga ukuran APK tidak berubah.
     kit.rounded(c, RectF(268f, -76f, 448f, 104f), Color.argb(20, 0, 99, 214), 90f)
-    kit.text(c, "JAJANIN", 24f, 55f, 16f, kit.blue, true)
-    kit.text(c, "Masuk ke akunmu", 24f, 132f, 27f, kit.ink, true)
-    kit.text(c, "Lanjutkan jajan favoritmu di kampus.", 24f, 158f, 13f, kit.muted)
+    kit.rounded(c, RectF(238f, 36f, 290f, 88f), Color.argb(14, 0, 99, 214), 26f)
 
-    authField(c, "emailField", "Email", "nama@kampus.ac.id", 190f)
-    authField(c, "passwordField", "Kata sandi", "Minimal 6 karakter", 266f)
+    kit.text(c, "JAJANIN", 24f, 58f, 17f, kit.blue, true)
+    kit.text(c, "Masuk ke akunmu", 24f, 140f, 27f, kit.ink, true)
+    kit.text(c, "Lanjutkan jajan favoritmu di kampus.", 24f, 168f, 13f, kit.muted)
 
-    val submit = RectF(24f, 344f, 366f, 398f)
+    authField(c, "emailField", "Email", "nama@kampus.ac.id", 202f)
+    authField(c, "passwordField", "Kata sandi", "Minimal 6 karakter", 280f)
+
+    val submit = RectF(24f, 366f, 366f, 420f)
     kit.button(c, "Masuk dengan email", submit)
     bounds["emailLogin"] = RectF(submit)
 
-    kit.centerText(c, "Belum punya akun?  Daftar", RectF(24f, 440f, 366f, 476f), 13f, kit.blue, true)
-    bounds["toggleAuth"] = RectF(24f, 436f, 366f, 480f)
+    val toggle = RectF(24f, 448f, 366f, 486f)
+    kit.centerText(c, "Belum punya akun?  Daftar", toggle, 13f, kit.blue, true)
+    bounds["toggleAuth"] = RectF(toggle)
+
     kit.centerText(c, "Dengan masuk, kamu menyetujui ketentuan Jajanin.", RectF(18f, h - 66f, w - 18f, h - 35f), 10f, kit.muted)
 }
 
 private fun JajaninView.authField(c: Canvas, key: String, label: String, hint: String, top: Float) {
-    val r = RectF(24f, top, 366f, top + 60f)
+    val r = RectF(24f, top, 366f, top + 62f)
     kit.rounded(c, r, Color.WHITE, 14f, kit.border)
-    kit.text(c, label, r.left + 16f, r.top + 24f, 11f, kit.muted)
-    kit.text(c, hint, r.left + 16f, r.top + 47f, 14f, kit.ink)
+    kit.text(c, label, r.left + 18f, r.top + 25f, 11f, kit.muted, true)
+    kit.text(c, hint, r.left + 18f, r.top + 48f, 14f, kit.ink)
     bounds[key] = RectF(r)
 }
 
