@@ -54,45 +54,39 @@ internal fun JajaninView.drawSplash(c: Canvas, w: Float, h: Float) {
     if (currentScreen == Screen.SPLASH) postInvalidateDelayed(500)
 }
 
-/** Tutorial 4 langkah untuk pengguna pertama kali (Skip/Back/Next/indikator). */
+/** Tutorial 4 langkah: rata kiri, bernomor, progres garis tipis di atas. */
 internal fun JajaninView.drawOnboard(c: Canvas, w: Float, h: Float) {
     c.drawColor(kit.bg)
     val page = ONBOARD_PAGES[onboardPage.coerceIn(0, ONBOARD_PAGES.size - 1)]
     val last = onboardPage >= ONBOARD_PAGES.size - 1
 
-    val skip = RectF(w - 110f, 46f, w - 20f, 86f)
+    // Progres: garis tipis segmen, bukan dot.
+    val segW = (w - 40f) / ONBOARD_PAGES.size
+    ONBOARD_PAGES.forEachIndexed { index, _ ->
+        kit.rounded(
+            c,
+            RectF(20f + index * segW + 2f, 52f, 20f + (index + 1) * segW - 2f, 56f),
+            if (index <= onboardPage) kit.blue else kit.border, 2f,
+        )
+    }
+    val skip = RectF(w - 110f, 66f, w - 20f, 100f)
     kit.centerText(c, "Lewati", skip, 13f, kit.muted, true)
     bounds["obSkip"] = RectF(skip)
 
-    // Ilustrasi: lingkaran ikon vektor + kartu judul.
-    kit.rounded(c, RectF(w / 2f - 70f, h * .16f, w / 2f + 70f, h * .16f + 140f), kit.tint, 70f)
-    drawIcon(c, page.icon, w / 2f, h * .16f + 70f, 56f, kit.blue)
-    kit.centerText(c, page.title, RectF(24f, h * .16f + 172f, w - 24f, h * .16f + 212f), 24f, kit.ink, true)
-    kit.centerText(c, page.line1, RectF(24f, h * .16f + 226f, w - 24f, h * .16f + 252f), 14f, kit.muted)
-    kit.centerText(c, page.line2, RectF(24f, h * .16f + 250f, w - 24f, h * .16f + 276f), 14f, kit.muted)
+    kit.text(c, "${onboardPage + 1} / ${ONBOARD_PAGES.size}", 24f, 130f, 12f, kit.muted, true)
+    drawIcon(c, page.icon, 52f, 200f, 30f, kit.blue)
+    kit.text(c, page.title, 24f, 268f, 26f, kit.ink, true)
+    kit.text(c, page.line1, 24f, 302f, 14f, kit.muted)
+    kit.text(c, page.line2, 24f, 326f, 14f, kit.muted)
 
-    // Indikator halaman.
-    val dotsWidth = ONBOARD_PAGES.size * 22f
-    var dx = w / 2f - dotsWidth / 2f + 11f
-    ONBOARD_PAGES.forEachIndexed { index, _ ->
-        val active = index == onboardPage
-        kit.rounded(
-            c,
-            RectF(dx - (if (active) 12f else 5f), h - 168f, dx + (if (active) 12f else 5f), h - 160f),
-            if (active) kit.blue else kit.border, 4f,
-        )
-        dx += 22f
-    }
-
-    // Navigasi bawah: Kembali (kecuali halaman 1) + Lanjut/Mulai.
+    // Navigasi bawah: Kembali teks polos + Lanjut.
     if (!last) {
         if (onboardPage > 0) {
-            val back = RectF(20f, h - 140f, 170f, h - 84f)
-            kit.rounded(c, back, kit.card, 14f, kit.border)
+            val back = RectF(20f, h - 140f, 150f, h - 84f)
             kit.centerText(c, "‹ Kembali", back, 15f, kit.ink, true)
             bounds["obBack"] = RectF(back)
         }
-        val next = RectF(if (onboardPage > 0) 182f else 20f, h - 140f, w - 20f, h - 84f)
+        val next = RectF(if (onboardPage > 0) 162f else 20f, h - 140f, w - 20f, h - 84f)
         kit.button(c, "Lanjut", next)
         bounds["obNext"] = RectF(next)
     } else {
