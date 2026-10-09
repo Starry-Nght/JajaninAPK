@@ -9,7 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
 
-internal enum class Screen { SPLASH, ONBOARD, WELCOME, ROLE, LOGIN, HOME, EXPLORE, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE, NOTIF, ADMIN, ADMIN_DETAIL, PRODUCT_FORM, DEV }
+internal enum class Screen { SPLASH, ONBOARD, WELCOME, ROLE, LOGIN, HOME, EXPLORE, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE, NOTIF, ADMIN, ADMIN_DETAIL, PRODUCT_FORM, HELP, ABOUT, INFO, DEV }
 
 internal const val STATUS_PENDING = "pending"
 internal const val STATUS_CONFIRMED = "confirmed"
@@ -138,6 +138,9 @@ internal class JajaninView(context: Context) : View(context) {
     // --- Buyer checkout state (multi-item cart, satu warung per order) ---
     internal var cartStallId: String? = null
     internal var cartStallName: String = "Kantin Jajanin"
+    // QRIS warung isi keranjang: null = belum dicek (tampilkan semua),
+    // "" = warung belum pasang (tunai saja), berisi URL = QRIS tersedia.
+    internal var cartStallQris: String? = null
     internal var checkoutPayment: String = "cash"
     internal var placingOrder = false
     internal var lastOrderId: String? = null
@@ -349,6 +352,9 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.ORDERS -> drawOrders(canvas, 390f, height / s)
             Screen.PROFILE -> drawProfile(canvas, 390f, height / s)
             Screen.NOTIF -> drawNotif(canvas, 390f, height / s)
+            Screen.HELP -> drawHelp(canvas, 390f, height / s)
+            Screen.ABOUT -> drawAbout(canvas, 390f, height / s)
+            Screen.INFO -> drawInfoPage(canvas, 390f, height / s)
             Screen.ADMIN -> drawAdminDashboard(canvas, 390f, height / s)
             Screen.ADMIN_DETAIL -> drawAdminDetail(canvas, 390f, height / s)
             Screen.PRODUCT_FORM -> drawProductForm(canvas, 390f, height / s)
@@ -634,6 +640,9 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("productCategory:") -> { productCategory = hit.substringAfter(':'); invalidate() }
                     hit == "back" || hit == "headerBack" -> goBack()
                     hit == "inbox" -> activity()?.openNotif()
+                    hit == "help" -> go(Screen.HELP)
+                    hit == "about" -> go(Screen.ABOUT)
+                    hit == "infoPage" -> go(Screen.INFO)
                     hit.startsWith("notifInvite:") -> activity()?.showInviteVerify(hit.substringAfter(':'))
                     hit.startsWith("devNotifInviteCancel:") -> activity()?.confirmCancelInvite(hit.substringAfter(':'))
                     hit.startsWith("notifWarn:") -> activity()?.showNotifWarning(hit.substringAfter(':'))

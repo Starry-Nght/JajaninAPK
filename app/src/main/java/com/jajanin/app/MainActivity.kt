@@ -51,6 +51,14 @@ class MainActivity : Activity() {
         set(value) { appPrefs().edit().putBoolean(PREF_ACCESS_DEVELOPER, value).apply() }
 
     /**
+     * Bebas kode akses penjual bila perangkat ini sudah unlock ATAU akun
+     * diundang developer (flag server seller_invited). Seller non-undangan
+     * tetap wajib kode.
+     */
+    private suspend fun isSellerAdmitted(): Boolean =
+        sellerUnlocked || SupabaseRepository.isSellerInvited()
+
+    /**
      * Gerbang kode akses role istimewa. Sekali benar di perangkat ini,
      * tidak diminta lagi selamanya (tidak reset saat logout).
      */
@@ -73,7 +81,8 @@ class MainActivity : Activity() {
             .setMessage("Masukkan kode akses untuk memasuki role $label.")
             .setView(container)
             .setPositiveButton("Masuk") { _, _ ->
-                if (input.text.toString().trim() == PRIVILEGED_ACCESS_CODE) {
+                val expected = if (role == "seller") SELLER_ACCESS_CODE else DEVELOPER_ACCESS_CODE
+                if (input.text.toString().trim() == expected) {
                     if (role == "seller") sellerUnlocked = true else developerUnlocked = true
                     onGranted()
                 } else {
@@ -176,7 +185,8 @@ class MainActivity : Activity() {
             return
         }
         if (role == "seller") {
-            if (!sellerUnlocked) {
+            // Undangan developer = bebas kode; non-undangan wajib kode akses.
+            if (!isSellerAdmitted()) {
                 ui.myRole = "buyer"
                 ui.showHome()
                 refreshProducts()
@@ -681,7 +691,10 @@ class MainActivity : Activity() {
     fun setCartQty(productId: String, qty: Int) {
         if (qty <= 0) {
             ui.cart.remove(productId)
-            if (ui.cart.isEmpty()) ui.cartStallId = null
+            if (ui.cart.isEmpty()) {
+                ui.cartStallId = null
+                ui.cartStallQris = null
+            }
         } else {
             // Jumlah dikunci 1 (aturan satu menu per pesanan).
             if (qty > 1) Toast.makeText(this, "Satu pesanan hanya untuk satu menu (1x).", Toast.LENGTH_SHORT).show()
@@ -713,11 +726,15 @@ class MainActivity : Activity() {
         ui.go(Screen.CHECKOUT)
         refreshOrderingStatus()
         refreshStallAvailability()
+        ui.cartStallQris = null
         authScope.launch {
             val stallId = ui.cartStallId ?: return@launch
             runCatching { OrderRepository.fetchStall(stallId) }
                 .onSuccess { stall ->
                     ui.cartStallName = stall?.name ?: "Kantin Jajanin"
+                    ui.cartStallQris = stall?.qrisImageUrl.orEmpty()
+                    // Warung belum pasang QRIS = tunai saja, opsi QRIS disembunyikan.
+                    if (ui.cartStallQris.isNullOrBlank()) ui.checkoutPayment = "cash"
                     ui.invalidate()
                 }
         }
@@ -828,7 +845,9 @@ class MainActivity : Activity() {
             return
         }
         val lines = ui.cart.entries.map { it.key to it.value }
-        val method = ui.checkoutPayment
+        // Pengaman balapan: QRIS dicabut penjual setelah checkout dibuka = tunai.
+        val method = if (ui.checkoutPayment == "qris" && ui.cartStallQris?.isBlank() == true) "cash" else ui.checkoutPayment
+        ui.checkoutPayment = method
         ui.placingOrder = true
         ui.invalidate()
         authScope.launch {
@@ -837,6 +856,7 @@ class MainActivity : Activity() {
                 val stallId = ui.cartStallId
                 ui.cart.clear()
                 ui.cartStallId = null
+                ui.cartStallQris = null
                 ui.lastOrderId = placed.id
                 ui.lastOrderPickup = placed.pickupCode
                 ui.lastOrderTotal = placed.totalIdr
@@ -1144,7 +1164,7 @@ class MainActivity : Activity() {
                 }
             }
             ui.myRole = "seller"
-            if (!sellerUnlocked) {
+            if (!isSellerAdmitted()) {
                 requirePrivilegedAccess("seller") { backToSellerHome() }
                 ui.myRole = "buyer"
                 return@launch
@@ -1348,13 +1368,9 @@ class MainActivity : Activity() {
     }
 
     fun enterSellerDashboard() {
-        // Kode akses dulu sebelum apa pun (termasuk login).
-        if (!sellerUnlocked) {
-            requirePrivilegedAccess("seller") { enterSellerDashboard() }
-            return
-        }
         // Dashboard penjual wajib login dulu DAN ber-role seller di database:
         // tanpa role seller tidak ada baris yang terbaca RLS, dashboard akan kosong.
+        // Kode akses hanya untuk seller non-undangan; undangan developer bebas kode.
         if (!SupabaseRepository.hasSession()) {
             Toast.makeText(this, "Masuk dulu untuk membuka dashboard penjual.", Toast.LENGTH_LONG).show()
             showAuthForm(false)
@@ -1368,6 +1384,10 @@ class MainActivity : Activity() {
                 ui.myRole = "buyer"
                 ui.showHome()
                 refreshProducts()
+                return@launch
+            }
+            if (!isSellerAdmitted()) {
+                requirePrivilegedAccess("seller") { enterSellerDashboard() }
                 return@launch
             }
             ui.adminOrders = emptyList()
@@ -1840,9 +1860,12 @@ class MainActivity : Activity() {
         authScope.launch {
             try {
                 DeveloperRepository.acceptInvite(inviteId)
+                // Undangan diterima = unlock perangkat ini juga (flag server
+                // seller_invited jadi bukti di HP lain).
+                sellerUnlocked = true
                 Toast.makeText(this@MainActivity, "Selamat! Akunmu sekarang penjual.", Toast.LENGTH_LONG).show()
                 refreshInbox()
-                // Rute ulang sesuai role baru: seller diminta kode akses + nama toko, lalu dashboard.
+                // Rute ulang sesuai role baru: langsung nama toko + dashboard.
                 routeSignedInUser()
             } catch (error: Throwable) {
                 Toast.makeText(this@MainActivity, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
@@ -2002,7 +2025,7 @@ class MainActivity : Activity() {
             // Bila routeSignedInUser sudah lebih dulu mengonsumsi id ini, jangan navigasi ulang.
             if (pendingOrderNotificationId != orderId) return@launch
             pendingOrderNotificationId = null
-            if (!sellerUnlocked) {
+            if (!isSellerAdmitted()) {
                 requirePrivilegedAccess("seller") {
                     pendingOrderNotificationId = orderId
                     enterSellerDashboard()
@@ -2120,7 +2143,8 @@ class MainActivity : Activity() {
         private const val PREF_ONBOARDED = "onboarded"
         private const val PREF_ACCESS_SELLER = "access_verified_seller"
         private const val PREF_ACCESS_DEVELOPER = "access_verified_developer"
-        private const val PRIVILEGED_ACCESS_CODE = "0098567843"
+        private const val SELLER_ACCESS_CODE = "0910261916"
+        private const val DEVELOPER_ACCESS_CODE = "0000000010"
     }
 
     private fun themePrefs() = getSharedPreferences(PREFS_THEME, MODE_PRIVATE)

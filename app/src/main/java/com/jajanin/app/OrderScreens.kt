@@ -80,19 +80,24 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     }
 
     kit.text(c, "Metode pembayaran", 22f, y + 26f, 15f, kit.ink, true)
-    val cashBox = RectF(18f, y + 38f, 190f, y + 96f)
-    val qrisBox = RectF(198f, y + 38f, 372f, y + 96f)
-    val cashOn = checkoutPayment == "cash"
+    // QRIS hanya ditawarkan bila warung sudah pasang (null = belum dicek).
+    val stallQris = cartStallQris
+    val qrisOffered = stallQris == null || stallQris.isNotBlank()
+    val cashBox = if (qrisOffered) RectF(18f, y + 38f, 190f, y + 96f) else RectF(18f, y + 38f, 372f, y + 96f)
+    val cashOn = checkoutPayment == "cash" || !qrisOffered
     kit.rounded(c, cashBox, kit.card, 13f, if (cashOn) kit.blue else kit.border)
     kit.text(c, "Tunai", 34f, y + 63f, 13f, kit.ink, true)
-    kit.text(c, "Bayar saat ambil", 34f, y + 83f, 10f, kit.muted)
-    if (cashOn) kit.centerText(c, "●", RectF(158f, y + 56f, 182f, y + 80f), 13f, kit.blue, true)
-    kit.rounded(c, qrisBox, kit.card, 13f, if (!cashOn) kit.blue else kit.border)
-    kit.text(c, "QRIS", 214f, y + 63f, 13f, kit.ink, true)
-    kit.text(c, "Scan lalu konfirmasi", 214f, y + 83f, 10f, kit.muted)
-    if (!cashOn) kit.centerText(c, "●", RectF(338f, y + 56f, 362f, y + 80f), 13f, kit.blue, true)
+    kit.text(c, if (qrisOffered) "Bayar saat ambil" else "Bayar saat ambil · satu-satunya metode", 34f, y + 83f, 10f, kit.muted)
+    if (cashOn) kit.centerText(c, "●", RectF(cashBox.right - 32f, y + 56f, cashBox.right - 8f, y + 80f), 13f, kit.blue, true)
     bounds["payMethod:cash"] = RectF(cashBox)
-    bounds["payMethod:qris"] = RectF(qrisBox)
+    if (qrisOffered) {
+        val qrisBox = RectF(198f, y + 38f, 372f, y + 96f)
+        kit.rounded(c, qrisBox, kit.card, 13f, if (!cashOn) kit.blue else kit.border)
+        kit.text(c, "QRIS", 214f, y + 63f, 13f, kit.ink, true)
+        kit.text(c, "Scan lalu konfirmasi", 214f, y + 83f, 10f, kit.muted)
+        if (!cashOn) kit.centerText(c, "●", RectF(338f, y + 56f, 362f, y + 80f), 13f, kit.blue, true)
+        bounds["payMethod:qris"] = RectF(qrisBox)
+    }
 
     val subtotal = lines.sumOf { (p, qty) -> p.priceIdr * qty }
     val totalY = y + 134f
@@ -132,6 +137,12 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         fullLines.forEachIndexed { index, line -> kit.text(c, line, 32f, fullTop + 25f + index * 20f, 11f, kit.ink) }
         kit.rounded(c, cta, kit.muted, 14f)
         kit.centerText(c, "Warung penuh", cta, 14f, Color.WHITE, true)
+        // Tanpa bounds["pay"]: tombol sengaja tidak bisa diketuk.
+    } else if (!orderingStatusLoading && ordersToday >= 2) {
+        // Jatah harian habis (2/2): kunci tombol, server juga menolak.
+        kit.text(c, "Jatah pesananmu hari ini habis (2/2). Balik lagi besok.", 22f, cta.top - 20f, 11f, kit.danger, true)
+        kit.rounded(c, cta, kit.muted, 14f)
+        kit.centerText(c, "Jatah habis", cta, 14f, Color.WHITE, true)
         // Tanpa bounds["pay"]: tombol sengaja tidak bisa diketuk.
     } else if (placingOrder) {
         kit.rounded(c, cta, kit.muted, 14f)
@@ -394,8 +405,9 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
             else -> true
         }
     }.sortedWith(compareBy({ statusSortOrder(it.status) }, { it.createdAt }))
-    val rowHeight = 156f
-    val contentTotal = ordersStart + filtered.size * rowHeight + 170f
+    val rowHeight = 172f
+    val listTop = ordersStart + 24f
+    val contentTotal = listTop + filtered.size * rowHeight + 170f
     if (pendingScrollToOrders) {
         pendingScrollToOrders = false
         val maxScroll = (contentTotal - h + 78f).coerceAtLeast(0f)
@@ -467,56 +479,56 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
     filters.forEach { filter ->
         // Chip "Baru" memuat jumlahnya supaya pesanan yang menunggu langsung terbaca.
         val labelText = if (filter == "Baru" && pending > 0) "Baru ($pending)" else filter
-        val width = kit.measure(labelText, 10f, true) + 22f
-        val chip = RectF(x, productsEnd + 32f + off, x + width, productsEnd + 60f + off)
+        val width = kit.measure(labelText, 11f, true) + 32f
+        val chip = RectF(x, ordersStart - 24f + off, x + width, ordersStart + 8f + off)
         val active = adminFilter == filter
-        kit.rounded(c, chip, if (active) kit.blue else kit.card, 14f, if (active) null else kit.border)
-        kit.centerText(c, labelText, chip, 10f, if (active) Color.WHITE else kit.ink, true)
-        press(c, "adminFilter:$filter", chip, 14f)
+        kit.rounded(c, chip, if (active) kit.blue else kit.card, 16f, if (active) null else kit.border)
+        kit.centerText(c, labelText, chip, 11f, if (active) Color.WHITE else kit.ink, true)
+        press(c, "adminFilter:$filter", chip, 16f)
         bounds.putVisible("adminFilter:$filter", chip, bottomLimit = h - 78f)
-        x += width + 7f
+        x += width + 8f
     }
 
     filtered.forEachIndexed { index, order ->
-        val top = ordersStart + index * rowHeight + off
-        if (top + 146f < 86f || top > h - 78f) return@forEachIndexed
-        val card = RectF(20f, top, 370f, top + 146f)
-        kit.card(c, card, 15f)
+        val top = listTop + index * rowHeight + off
+        if (top + 156f < 86f || top > h - 78f) return@forEachIndexed
+        val card = RectF(20f, top, 370f, top + 156f)
+        kit.card(c, card, 22f)
+        // Aksen status berupa bar inset (menghormati sudut kartu).
         val stripeColor = when (order.status.lowercase()) {
             STATUS_PENDING -> Color.rgb(183, 116, 0)
             STATUS_CONFIRMED, STATUS_PREPARING, STATUS_PROCESSING_LEGACY -> kit.blue
             STATUS_READY -> kit.success
             else -> kit.border
         }
-        kit.rounded(c, RectF(20f, top, 26f, top + 146f), stripeColor, 6f)
-        kit.rounded(c, RectF(20f, top, 34f, top + 146f), stripeColor, 0f)
-        kit.text(c, order.buyerName.take(18), 44f, top + 25f, 13f, kit.ink, true)
-        kit.text(c, order.timeLabel, 356f - kit.measure(order.timeLabel, 11f), top + 25f, 11f, kit.muted)
-        kit.text(c, "${order.itemCount} item  ·  ${order.itemsSummary.take(30)}", 44f, top + 47f, 10f, kit.muted)
-        kit.text(c, "Kode ${order.pickupCode}", 44f, top + 71f, 11f, kit.blue, true)
+        kit.rounded(c, RectF(30f, top + 18f, 36f, top + 138f), stripeColor, 3f)
+        kit.text(c, order.buyerName.take(18), 48f, top + 27f, 13f, kit.ink, true)
+        kit.text(c, order.timeLabel, 350f - kit.measure(order.timeLabel, 11f), top + 27f, 11f, kit.muted)
+        kit.text(c, "${order.itemCount} item  ·  ${order.itemsSummary.take(28)}", 48f, top + 49f, 10f, kit.muted)
+        kit.text(c, "Kode ${order.pickupCode}", 48f, top + 73f, 11f, kit.blue, true)
         val total = formatRupiah(order.totalIdr)
-        kit.text(c, total, 356f - kit.measure(total, 12f, true), top + 71f, 12f, kit.ink, true)
-        kit.text(c, order.paymentMethod?.takeIf { it.isNotBlank() } ?: "QRIS", 44f, top + 95f, 10f, kit.muted)
+        kit.text(c, total, 350f - kit.measure(total, 12f, true), top + 73f, 12f, kit.ink, true)
+        kit.text(c, order.paymentMethod?.takeIf { it.isNotBlank() } ?: "QRIS", 48f, top + 97f, 10f, kit.muted)
         // Pill status di kanan agar tidak lagi tertimpa tombol aksi di baris bawah.
         val (label, color) = statusLabel(order.status)
-        statusPill(c, kit, label, color, 356f - (kit.measure(label, 10f, true) + 22f), top + 81f)
+        statusPill(c, kit, label, color, 350f - (kit.measure(label, 10f, true) + 22f), top + 83f)
         bounds.putVisible("adminOrder:${order.id}", card, bottomLimit = h)
         val nextAction = statusNextAction(order.status)
         val actionY0 = top + 112f
         val actionY1 = top + 140f
         if (nextAction != null) {
-            val action = RectF(198f, actionY0, 356f, actionY1)
+            val action = RectF(198f, actionY0, 350f, actionY1)
             kit.rounded(c, action, kit.tint, 12f)
             kit.centerText(c, nextAction.first, action, 10f, kit.blue, true)
             press(c, "adminStatus:${order.id}", action, 12f)
             bounds.putVisible("adminStatus:${order.id}", action, bottomLimit = h - 78f)
         } else if (!isTerminalStatus(order.status)) {
-            val action = RectF(198f, actionY0, 356f, actionY1)
+            val action = RectF(198f, actionY0, 350f, actionY1)
             kit.rounded(c, action, kit.tint, 12f)
             kit.centerText(c, statusLabelShort(order.status), action, 10f, kit.blue, true)
         }
         if (!isTerminalStatus(order.status)) {
-            val cancel = RectF(44f, actionY0, 190f, actionY1)
+            val cancel = RectF(48f, actionY0, 190f, actionY1)
             kit.rounded(c, cancel, kit.card, 12f, kit.dangerBorder)
             kit.centerText(c, "Batalkan", cancel, 10f, kit.danger, true)
             press(c, "adminCancel:${order.id}", cancel, 12f)
@@ -524,7 +536,7 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
         }
     }
 
-    val emptyTop = ordersStart + 8f + off
+    val emptyTop = listTop + 8f + off
     when {
         adminLoading && today.isEmpty() ->
             kit.centerText(c, "Memuat pesanan...", RectF(24f, emptyTop, 366f, emptyTop + 60f), 14f, kit.muted)
@@ -788,15 +800,22 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     val suspended = myAccountStatus == "suspended"
     kit.text(c, if (suspended) "Status: Ditangguhkan" else "Status: Aktif", 110f, 178f, 11f, if (suspended) kit.danger else kit.success, true)
 
-    listOf("Informasi akun", "Alamat tersimpan", "Bantuan", "Tentang Jajanin").forEachIndexed { i, v ->
-        val y = 216f + i * 62f
+    // Baris info: Bantuan + Tentang + Info Penting (ketuk = halaman sendiri).
+    var y = 216f
+    listOf(
+        "Bantuan" to "help",
+        "Tentang Jajanin" to "about",
+        "INFORMASI PENTING" to "infoPage",
+    ).forEach { (title, key) ->
         kit.rounded(c, RectF(18f, y, 372f, y + 50f), kit.card, 13f, kit.border)
-        kit.text(c, v, 34f, y + 31f, 14f, kit.ink)
+        kit.text(c, title, 34f, y + 31f, 14f, kit.ink)
         drawIcon(c, "chevronRight", 349f, y + 25f, 15f, kit.muted)
+        bounds[key] = RectF(18f, y, 372f, y + 50f)
+        y += 62f
     }
 
     // Kotak masuk developer: peringatan + pengumuman, badge bila ada yang belum dibaca.
-    val inboxY = 216f + 4 * 62f
+    val inboxY = y
     kit.rounded(c, RectF(18f, inboxY, 372f, inboxY + 50f), kit.card, 13f, kit.border)
     kit.text(c, "Notifikasi", 34f, inboxY + 22f, 14f, kit.ink)
     val unread = inboxUnreadCount()
@@ -812,9 +831,10 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     drawIcon(c, "chevronRight", 349f, themeY + 25f, 15f, kit.muted)
     bounds["theme"] = RectF(18f, themeY, 372f, themeY + 50f)
 
+    var logoutTop = themeY + 58f + 18f
     if (isSellerProfile) {
         // Button ubah nama toko (seller saja).
-        val sy = 216f + 6 * 62f
+        val sy = themeY + 58f
         kit.rounded(c, RectF(18f, sy, 372f, sy + 50f), kit.card, 13f, kit.border)
         kit.text(c, "Nama toko", 34f, sy + 22f, 14f, kit.ink)
         kit.text(c, "${myStallName.takeIf { it.isNotBlank() } ?: "Belum diisi"} · Ubah", 34f, sy + 40f, 10f, kit.blue, true)
@@ -822,16 +842,17 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
         press(c, "profileStallName", RectF(18f, sy, 372f, sy + 50f), 13f)
         bounds["profileStallName"] = RectF(18f, sy, 372f, sy + 50f)
 
-        val qy = 216f + 7 * 62f
+        val qy = sy + 58f
         kit.rounded(c, RectF(18f, qy, 372f, qy + 50f), kit.card, 13f, kit.border)
         kit.text(c, "QRIS warung saya", 34f, qy + 22f, 14f, kit.ink)
         kit.text(c, if (myStallQris.isBlank()) "Belum dipasang" else "Terpasang ✓", 34f, qy + 40f, 10f, if (myStallQris.isBlank()) kit.danger else kit.success, true)
         drawIcon(c, "chevronRight", 349f, qy + 25f, 15f, kit.muted)
         press(c, "profileQris", RectF(18f, qy, 372f, qy + 50f), 13f)
         bounds["profileQris"] = RectF(18f, qy, 372f, qy + 50f)
+        logoutTop = qy + 50f + 18f
     }
 
-    val logoutRow = RectF(18f, if (isSellerProfile) 722f else 602f, 372f, if (isSellerProfile) 776f else 656f)
+    val logoutRow = RectF(18f, logoutTop, 372f, logoutTop + 54f)
     kit.rounded(c, logoutRow, kit.card, 14f, kit.dangerBorder)
     kit.centerText(c, "Keluar dari akun", logoutRow, 14f, kit.danger, true)
     press(c, "logout", logoutRow, 14f)

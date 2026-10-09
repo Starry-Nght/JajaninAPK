@@ -147,6 +147,22 @@ object SupabaseRepository {
         }.getOrNull()
     }
 
+    /** True bila akun ini jadi seller lewat undangan developer (bebas kode akses). */
+    suspend fun isSellerInvited(): Boolean {
+        val uid = currentUid() ?: return false
+        return runCatching {
+            client.postgrest.from("profiles")
+                .select(Columns.list("seller_invited")) {
+                    filter { eq("id", uid) }
+                    limit(1)
+                }
+                .decodeSingleOrNull<SellerInvitedRow>()?.invited == true
+        }.getOrDefault(false)
+    }
+
+    @Serializable
+    private data class SellerInvitedRow(@SerialName("seller_invited") val invited: Boolean = false)
+
     /** Nama asli pemilik session dari tabel profiles (null/blank bila belum diisi). */
     suspend fun myDisplayName(): String? {
         val uid = currentUid() ?: return null
