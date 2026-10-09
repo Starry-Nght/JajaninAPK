@@ -8,16 +8,25 @@ import android.graphics.RectF
 import android.os.SystemClock
 
 /*
- * Bottom navigation bergaya Material 3: indikator pill di belakang ikon, ikon
- * vektor (Path), umpan balik tekan, dan pill yang mengembang saat tab dipilih.
+ * Navigasi kaca melayang: satu komponen bersama untuk buyer ("tab:") dan
+ * seller ("stab:"). Kontrak bounds dipertahankan — kunci "tab:$label" /
+ * "stab:$label" tetap didaftarkan sehingga touch handling tidak berubah.
+ * Tanpa blur platform (mahal saat scroll): efek kaca dari permukaan navy
+ * translusens + hairline terang + bayangan lembut. Teks putih di kedua tema
+ * agar kontras di atas konten apa pun.
  *
- * Kontrak dengan JajaninView: bounds tiap tab WAJIB tetap kunci "tab:$label"
- * dan dibagi sebagai slot horizontal bersebelahan (i*w/4 .. (i+1)*w/4, tinggi
- * penuh bar) supaya seluruh area bar punya pemilik dan tidak ada tap yang jatuh
- * ke kartu konten. pressedTab dan navAnimAt di-set dari JajaninView.onTouchEvent.
+ * Kontrak dengan JajaninView: pressedTab dan navAnimAt di-set dari
+ * JajaninView.onTouchEvent; seller memakai pressedKey.
  */
 
-private const val NAV_HEIGHT = 67f
+// Geometri nav melayang (dp desain, kanvas 390 lebar).
+internal const val GLASS_MARGIN = 16f
+internal const val GLASS_BOTTOM = 14f
+internal const val GLASS_H = 68f
+internal const val GLASS_R = 24f
+/** Batas atas nav melayang dari bawah layar; konten scroll memakai ini. */
+internal const val GLASS_TOP_OFFSET = GLASS_BOTTOM + GLASS_H // 82f
+
 private const val NAV_ANIM_MS = 180L
 
 private val navStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -29,37 +38,72 @@ private val navStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 private val navFill = Paint(Paint.ANTI_ALIAS_FLAG)
 private val navPath = Path()
 
-internal fun JajaninView.drawBottomNav(c: Canvas, w: Float, h: Float, active: String) {
-    val top = h - NAV_HEIGHT
-    kit.rect(c, 0f, top, w, h, kit.card)
-    kit.line(c, 0f, top, w, top)
+internal data class FloatNavItem(
+    val label: String,
+    val icon: String,
+    val tabIcon: Boolean,
+)
+
+/**
+ * Bar kaca melayang generik. [prefix] = "tab:" (buyer) atau "stab:" (seller).
+ * Kapsul biru menandai destinasi aktif; animasi indikator tetap 180ms dan
+ * menghormati reduced-motion lewat navGrowProgress (0 bingkai ekstra).
+ */
+internal fun JajaninView.drawFloatingNav(
+    c: Canvas,
+    w: Float,
+    h: Float,
+    items: List<FloatNavItem>,
+    active: String,
+    prefix: String,
+) {
+    val top = h - GLASS_TOP_OFFSET
+    val bottom = h - GLASS_BOTTOM
+    // Chrome stabil: nav tidak ikut geser bersama konten halaman.
+    c.save()
+    c.translate(-slideX, 0f)
+    val bar = RectF(GLASS_MARGIN, top, w - GLASS_MARGIN, bottom)
+    // Bayangan lembut di bawah bar.
+    kit.rounded(c, RectF(bar.left, bar.top + 3f, bar.right, bar.bottom + 4f), kit.glassShadow, GLASS_R)
+    // Permukaan kaca + hairline terang.
+    kit.rounded(c, bar, kit.glass, GLASS_R, kit.glassBorder)
 
     val grow = navGrowProgress()
-    val labels = listOf("Home", "Search", "Orders", "Profile")
-    val slot = w / labels.size
-    labels.forEachIndexed { i, label ->
-        val cx = 48f + i * 98f
-        val pressed = pressedTab == "tab:$label"
-        val selected = label == active
+    val slot = bar.width() / items.size
+    items.forEachIndexed { i, item ->
+        val segL = bar.left + i * slot
+        val segR = segL + slot
+        val cx = (segL + segR) / 2f
+        val selected = item.label == active
+        val pressed = pressedTab == "$prefix${item.label}" || pressedKey == "$prefix${item.label}"
 
         if (selected || pressed) {
-            val halfWidth = if (pressed) 32f else 20f + 12f * grow
-            val fill = if (pressed) kit.blue else kit.tint
-            kit.rounded(c, RectF(cx - halfWidth, top + 6f, cx + halfWidth, top + 36f), fill, 15f)
+            val halfWidth = if (pressed) 34f else 24f + 10f * grow
+            val capsule = RectF(cx - halfWidth, top + 8f, cx + halfWidth, top + 42f)
+            kit.rounded(c, capsule, if (pressed) Color.argb(60, 255, 255, 255) else kit.blue, 17f)
         }
 
-        val iconColor = when {
-            pressed -> Color.WHITE
-            selected -> kit.blue
-            else -> kit.muted
-        }
-        drawTabIcon(c, label, cx, top + 21f, iconColor)
+        val fg = if (selected || pressed) Color.WHITE else Color.argb(165, 255, 255, 255)
+        if (item.tabIcon) drawTabIcon(c, item.label, cx, top + 25f, fg)
+        else drawIcon(c, item.icon, cx, top + 25f, 17f, fg)
+        kit.centerText(c, item.label, RectF(cx - 45f, top + 44f, cx + 45f, top + 64f), 10f, fg, selected)
 
-        val labelColor = if (selected || pressed) kit.blue else kit.muted
-        kit.centerText(c, label, RectF(cx - 45f, top + 38f, cx + 45f, top + 62f), 10f, labelColor, selected)
-
-        bounds["tab:$label"] = RectF(i * slot, top, (i + 1) * slot, h)
+        bounds["$prefix${item.label}"] = RectF(segL, top, segR, bottom)
     }
+    c.restore()
+}
+
+internal fun JajaninView.drawBottomNav(c: Canvas, w: Float, h: Float, active: String) {
+    drawFloatingNav(
+        c, w, h,
+        listOf(
+            FloatNavItem("Home", "home", true),
+            FloatNavItem("Explore", "explore", true),
+            FloatNavItem("Orders", "orders", true),
+            FloatNavItem("Profile", "profile", true),
+        ),
+        active, "tab:",
+    )
 }
 
 // 0..1 selama 180ms setelah navAnimAt; postInvalidateOnAnimation menjaga frame
@@ -98,6 +142,16 @@ private fun drawTabIcon(c: Canvas, tab: String, cx: Float, cy: Float, color: Int
                 c.drawCircle(cx - 7f, y, 1.5f, navFill)
                 c.drawLine(cx - 3f, y, cx + 8f, y, navStroke)
             }
+        }
+        "Explore" -> {
+            c.drawCircle(cx, cy, 8.5f, navStroke)
+            navPath.reset()
+            navPath.moveTo(cx + 4.5f, cy - 4.5f)
+            navPath.lineTo(cx - 1f, cy + 1f)
+            navPath.lineTo(cx - 4.5f, cy + 0.5f)
+            navPath.lineTo(cx - 0.5f, cy - 4.5f)
+            navPath.close()
+            c.drawPath(navPath, navStroke)
         }
         "Profile" -> {
             c.drawCircle(cx, cy - 4f, 4f, navStroke)

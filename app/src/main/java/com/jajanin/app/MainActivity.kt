@@ -27,6 +27,9 @@ import kotlinx.serialization.Serializable
 
 class MainActivity : Activity() {
     private lateinit var ui: JajaninView
+
+    /** Akses tema gelap untuk helper dialog bertema. */
+    internal fun isDarkMode(): Boolean = ui.darkMode
     private val authScope = CoroutineScope(Dispatchers.Main)
     private var authForm: AuthForm? = null
     private var adminObserver: OrderObserver? = null
@@ -34,7 +37,6 @@ class MainActivity : Activity() {
     private var adminStatusBusy = false
     private var productObserver: OrderObserver? = null
     private var productRefreshJob: Job? = null
-    private var productImageDialog: Dialog? = null
     private val REQUEST_PRODUCT_IMAGE = 8301
     private val REQUEST_QRIS_IMAGE = 8302
 
@@ -94,7 +96,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.setFlags(1024, 1024)
         ui = JajaninView(this)
-        ui.setDarkMode(themePrefs().getBoolean(PREF_DARK_THEME, false))
+        ui.setDarkMode(resolveTheme())
+        ui.themeLabel = themeModeLabel()
         setContentView(ui)
         NotificationHelper.ensureChannel(this)
         requestNotificationPermission()
@@ -318,19 +321,20 @@ class MainActivity : Activity() {
             val stallId = OrderRepository.sellerStallId()
             if (stallId == null) {
                 Toast.makeText(this@MainActivity, "Lengkapi nama warung dulu.", Toast.LENGTH_LONG).show()
-                ensureSellerStallName { showProductDialog(existing = null) }
+                ensureSellerStallName { openProductForm(null) }
                 return@launch
             }
-            showProductDialog(existing = null)
+            openProductForm(null)
         }
     }
 
     fun showProductEditForm(productId: String) {
         val product = ui.sellerProducts.firstOrNull { it.id == productId } ?: return
-        showProductDialog(existing = product)
+        openProductForm(product)
     }
 
-    private fun showProductDialog(existing: ProductRow?) {
+    /** Buka halaman form produk (geser, bukan dialog). */
+    private fun openProductForm(existing: ProductRow?) {
         if (existing != null) {
             ui.productEditId = existing.id
             ui.productName = existing.name
@@ -341,7 +345,6 @@ class MainActivity : Activity() {
             ui.productImageUrl = existing.imageUrl.orEmpty()
             ui.productIngredients = existing.ingredients
             ui.productAvailable = existing.available
-            ui.invalidate()
         } else {
             ui.productEditId = null
             ui.productName = ""
@@ -352,71 +355,102 @@ class MainActivity : Activity() {
             ui.productImageUrl = ""
             ui.productIngredients = ""
             ui.productAvailable = true
+        }
+        ui.productSaving = false
+        ui.productError = ""
+        ui.go(Screen.PRODUCT_FORM)
+    }
+
+    /** Input satu baris form produk lewat dialog fokus (judul + keyboard sesuai). */
+    fun showProductTextField(field: String) {
+        // title, hint, initial, numeric, maxLen, multiline
+        val spec = when (field) {
+            "harga" -> arrayOf("Harga", "cth. 12000", ui.productPrice, "1", "9", "0")
+            "stok" -> arrayOf("Stok", "Kosongkan = tanpa batas", ui.productStock, "1", "5", "0")
+            "deskripsi" -> arrayOf("Deskripsi", "Singkat saja", ui.productDescription, "0", "200", "1")
+            "bahan" -> arrayOf("Bahan", "Opsional", ui.productIngredients, "0", "120", "1")
+            else -> arrayOf("Nama produk", "cth. Nasi goreng", ui.productName, "0", "60", "0")
+        }
+        val title = spec[0]
+        val hintText = spec[1]
+        val initial = spec[2]
+        val numeric = spec[3] == "1"
+        val multiline = spec[5] == "1"
+        val input = EditText(this).apply {
+            setSingleLine(!multiline)
+            if (multiline) {
+                minLines = 2
+                gravity = android.view.Gravity.TOP
+            }
+            if (numeric) inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            filters = arrayOf(android.text.InputFilter.LengthFilter(spec[4].toInt()))
+            setText(initial)
+            setSelection(initial.length)
+            hint = hintText
+        }
+        android.app.AlertDialog.Builder(this).setTitle(title)
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val value = input.text.toString().trim()
+                when (field) {
+                    "harga" -> ui.productPrice = value.filter(Char::isDigit)
+                    "stok" -> ui.productStock = value.filter(Char::isDigit)
+                    "deskripsi" -> ui.productDescription = value
+                    "bahan" -> ui.productIngredients = value
+                    else -> ui.productName = value
+                }
+                ui.productError = ""
+                ui.invalidate()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+        input.requestFocus()
+        input.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    /** Pilih kategori lewat opsi bertema. */
+    fun showProductCategoryPicker() {
+        val choices = listOf("Food", "Drinks")
+        showThemedOptions("Kategori", choices, choices.indexOf(ui.productCategory).coerceAtLeast(0)) { which ->
+            ui.productCategory = choices[which]
             ui.invalidate()
         }
-        val dialog = Dialog(this).apply {
-            setContentView(R.layout.dialog_product)
-            window?.setBackgroundDrawableResource(android.R.color.transparent)
+    }
+
+    /** Saklar tampil di etalase dari halaman form. */
+    fun toggleProductFormAvailable() {
+        ui.productAvailable = !ui.productAvailable
+        ui.invalidate()
+    }
+
+    /** Validasi + simpan dari halaman form (error tampil inline). */
+    fun saveProductForm() {
+        if (ui.productSaving || ui.productImageUploading) return
+        if (ui.productImageUploading) {
+            ui.productError = "Tunggu gambar selesai diunggah."
+            ui.invalidate()
+            return
         }
-        val name = dialog.findViewById<EditText>(R.id.productName)
-        val description = dialog.findViewById<EditText>(R.id.productDescription)
-        val price = dialog.findViewById<EditText>(R.id.productPrice)
-        val stock = dialog.findViewById<EditText>(R.id.productStock)
-        val ingredients = dialog.findViewById<EditText>(R.id.productIngredients)
-        val category = dialog.findViewById<TextView>(R.id.productCategory)
-        val image = dialog.findViewById<TextView>(R.id.productImage)
-        val save = dialog.findViewById<Button>(R.id.productSave)
-        val delete = dialog.findViewById<Button>(R.id.productDelete)
-        name.setText(ui.productName)
-        description.setText(ui.productDescription)
-        price.setText(ui.productPrice)
-        stock.setText(ui.productStock)
-        ingredients.setText(ui.productIngredients)
-        save.text = if (existing == null) "Simpan produk" else "Simpan perubahan"
-        delete?.visibility = if (existing == null) View.GONE else View.VISIBLE
-        delete?.setOnClickListener {
-            dialog.dismiss()
-            confirmDeleteProduct(existing?.id ?: return@setOnClickListener)
+        val priceValue = ui.productPrice.filter(Char::isDigit).toIntOrNull()
+        val stockText = ui.productStock.trim()
+        ui.productError = when {
+            ui.productName.isBlank() -> "Nama produk wajib diisi."
+            priceValue == null || priceValue <= 0 -> "Harga wajib angka lebih dari Rp 0."
+            priceValue > 999_999_999 -> "Harga terlalu besar."
+            stockText.isNotBlank() && (stockText.toIntOrNull() == null || stockText.toInt() < 0) ->
+                "Stok harus angka 0 ke atas, atau kosongkan."
+            else -> ""
         }
-        category.text = "Kategori: ${ui.productCategory} (ketuk untuk ganti)"
-        fun refreshImageLabel() {
-            image.text = when {
-                ui.productImageUploading -> "Mengunggah gambar..."
-                ui.productImageUrl.isBlank() -> "Ketuk untuk upload gambar (opsional)"
-                else -> "Gambar terpasang ✓ (ketuk untuk ganti)"
-            }
+        if (ui.productError.isNotBlank()) {
+            ui.invalidate()
+            return
         }
-        refreshImageLabel()
-        category.setOnClickListener {
-            val choices = arrayOf("Food", "Drinks")
-            android.app.AlertDialog.Builder(this).setTitle("Kategori")
-                .setItems(choices) { _, which -> ui.productCategory = choices[which]; category.text = "Kategori: ${choices[which]} (ketuk untuk ganti)" }
-                .show()
-        }
-        // Gambar produk selalu lewat upload galeri (bukan tempel URL).
-        image.setOnClickListener { pickProductImage() }
-        save.setOnClickListener {
-            if (ui.productImageUploading) {
-                Toast.makeText(this, "Tunggu gambar selesai diunggah.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val priceValue = price.text.toString().filter(Char::isDigit).toIntOrNull()
-            if (name.text.isBlank() || priceValue == null || priceValue <= 0) {
-                Toast.makeText(this, "Nama dan harga produk wajib diisi.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            ui.productName = name.text.toString().trim()
-            ui.productDescription = description.text.toString().trim()
-            ui.productPrice = priceValue.toString()
-            ui.productStock = stock.text.toString()
-            ui.productIngredients = ingredients.text.toString().trim()
-            save.isEnabled = false
-            saveProduct(dialog)
-        }
-        dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
-        productImageDialog = dialog
-        dialog.setOnDismissListener { if (productImageDialog == dialog) productImageDialog = null }
+        ui.productSaving = true
+        ui.invalidate()
+        saveProduct(null)
     }
 
     fun pickProductImage() {
@@ -427,21 +461,10 @@ class MainActivity : Activity() {
         startActivityForResult(intent, REQUEST_PRODUCT_IMAGE)
     }
 
-    private fun refreshProductImageLabel() {
-        val dialog = productImageDialog ?: return
-        val label = dialog.findViewById<TextView>(R.id.productImage) ?: return
-        label.text = when {
-            ui.productImageUploading -> "Mengunggah gambar..."
-            ui.productImageUrl.isBlank() -> "Ketuk untuk upload gambar (opsional)"
-            else -> "Gambar terpasang ✓ (ketuk untuk ganti)"
-        }
-    }
-
     /** Upload gambar produk pilihan ke Storage publik lalu simpan URL-nya. */
     fun uploadProductImage(uri: android.net.Uri) {
         ui.productImageUploading = true
         ui.invalidate()
-        refreshProductImageLabel()
         authScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -476,15 +499,13 @@ class MainActivity : Activity() {
                     ui.productImageUrl = publicUrl
                     ui.productImageUploading = false
                     ui.invalidate()
-                    refreshProductImageLabel()
-                    Toast.makeText(this@MainActivity, "Gambar terunggah.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@MainActivity, "Gambar terunggah.", Toast.LENGTH_SHORT).show()
                 }
             } catch (error: Throwable) {
                 launch(kotlinx.coroutines.Dispatchers.Main) {
                     ui.productImageUploading = false
                     ui.invalidate()
-                    refreshProductImageLabel()
-                    Toast.makeText(this@MainActivity, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                                Toast.makeText(this@MainActivity, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -532,14 +553,22 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Simpan dari halaman form (dialog selalu null; param dipertahankan kompat). */
     fun saveProduct(dialog: Dialog? = null) {
         if (ui.productImageUploading) {
-            Toast.makeText(this, "Tunggu gambar selesai diunggah.", Toast.LENGTH_SHORT).show()
-            dialog?.findViewById<Button>(R.id.productSave)?.isEnabled = true
+            ui.productError = "Tunggu gambar selesai diunggah."
+            ui.productSaving = false
+            ui.invalidate()
             return
         }
-        val price = ui.productPrice.toIntOrNull() ?: return
-        val stock = ui.productStock.toIntOrNull()
+        val price = ui.productPrice.filter(Char::isDigit).toIntOrNull()
+        val stock = ui.productStock.filter(Char::isDigit).toIntOrNull()
+        if (price == null) {
+            ui.productError = "Harga tidak valid."
+            ui.productSaving = false
+            ui.invalidate()
+            return
+        }
         authScope.launch {
             try {
                 val imageUrl = ui.productImageUrl.takeIf { it.startsWith("https://") }
@@ -555,12 +584,17 @@ class MainActivity : Activity() {
                     ui.productEditId = null
                 }
                 dialog?.dismiss()
+                ui.productSaving = false
+                ui.productError = ""
                 refreshProducts()
                 refreshSellerProducts()
                 Toast.makeText(this@MainActivity, "Produk berhasil disimpan.", Toast.LENGTH_SHORT).show()
+                if (dialog == null && ui.currentScreen == Screen.PRODUCT_FORM) ui.goBack()
             } catch (error: Throwable) {
-                Toast.makeText(this@MainActivity, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
-                dialog?.findViewById<Button>(R.id.productSave)?.isEnabled = true
+                ui.productSaving = false
+                ui.productError = SupabaseRepository.errorMessage(error)
+                ui.invalidate()
+                Toast.makeText(this@MainActivity, ui.productError, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -568,22 +602,26 @@ class MainActivity : Activity() {
     /** Konfirmasi lalu hapus produk milik penjual. */
     fun confirmDeleteProduct(productId: String) {
         val product = ui.sellerProducts.firstOrNull { it.id == productId } ?: return
-        android.app.AlertDialog.Builder(this).setTitle("Hapus produk?")
-            .setMessage("\"${product.name}\" tidak lagi tampil di beranda pembeli.")
-            .setPositiveButton("Hapus") { _, _ ->
+        showThemedInfo(
+            title = "Hapus produk?",
+            message = "\"${product.name}\" tidak lagi tampil di beranda pembeli.",
+            posLabel = "Hapus",
+            destructivePos = true,
+            onPos = {
                 authScope.launch {
                     try {
                         OrderRepository.deleteProduct(productId)
                         refreshProducts()
                         refreshSellerProducts()
                         Toast.makeText(this@MainActivity, "Produk dihapus.", Toast.LENGTH_SHORT).show()
+                        if (ui.currentScreen == Screen.PRODUCT_FORM) ui.goBack()
                     } catch (error: Throwable) {
                         Toast.makeText(this@MainActivity, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
                     }
                 }
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+            },
+            negLabel = "Batal",
+        )
     }
 
     private fun refreshSellerProducts() {
@@ -1788,12 +1826,14 @@ class MainActivity : Activity() {
 
     /** Verifikasi pembeli dari Notifikasi: terima = jadi penjual, tolak = tetap pembeli. */
     fun showInviteVerify(inviteId: String) {
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Undangan jadi penjual")
-            .setMessage("Developer Jajanin mengundangmu membuka toko dan mengelola menu + pesanan kantin.\n\nTerima undangan ini?")
-            .setPositiveButton("Terima") { _, _ -> acceptSellerInvite(inviteId) }
-            .setNegativeButton("Tolak") { _, _ -> declineSellerInvite(inviteId) }
-            .show()
+        showThemedInfo(
+            title = "Undangan jadi penjual",
+            message = "Developer Jajanin mengundangmu membuka toko dan mengelola menu + pesanan kantin.\n\nTerima undangan ini?",
+            posLabel = "Terima",
+            onPos = { acceptSellerInvite(inviteId) },
+            negLabel = "Tolak",
+            onNeg = { declineSellerInvite(inviteId) },
+        )
     }
 
     private fun acceptSellerInvite(inviteId: String) {
@@ -1822,6 +1862,53 @@ class MainActivity : Activity() {
                 refreshInbox()
             }
         }
+    }
+
+    /** Lonceng -> halaman Notifikasi (tujuan nyata, bukan popup). */
+    fun openNotif() {
+        if (!SupabaseRepository.hasSession()) {
+            Toast.makeText(this, "Masuk dulu untuk melihat notifikasi.", Toast.LENGTH_SHORT).show()
+            showAuthForm(false)
+            return
+        }
+        ui.go(Screen.NOTIF)
+        if (ui.myRole == "developer") {
+            // Developer melihat riwayat yang ia kirim + undangan menunggu.
+            authScope.launch {
+                ui.devWarnings = runCatching { DeveloperRepository.fetchWarningHistory() }.getOrDefault(emptyList())
+                ui.devAnnouncements = runCatching { DeveloperRepository.fetchAnnouncements() }.getOrDefault(emptyList())
+                ui.devInvites = runCatching { DeveloperRepository.fetchPendingInvites() }.getOrDefault(emptyList())
+                ui.myWarnings = ui.devWarnings
+                ui.myAnnouncements = ui.devAnnouncements
+                ui.invalidate()
+            }
+            return
+        }
+        refreshInbox()
+        if (ui.myRole == "seller") refreshAdminOrders()
+    }
+
+    /** Detail satu peringatan dari halaman Notifikasi (buka = tandai dibaca). */
+    fun showNotifWarning(warningId: String) {
+        val w = ui.myWarnings.firstOrNull { it.id == warningId } ?: return
+        authScope.launch {
+            DeveloperRepository.markWarningRead(warningId)
+            refreshInbox()
+        }
+        showThemedInfo(
+            title = w.title.ifBlank { "Peringatan" },
+            message = "${w.message}\n\nTingkat: ${w.severity}\nTanggal: ${w.createdAt.take(16).replace('T', ' ')}",
+            severity = w.severity,
+        )
+    }
+
+    /** Detail satu pengumuman dari halaman Notifikasi. */
+    fun showNotifAnn(annId: String) {
+        val a = ui.myAnnouncements.firstOrNull { it.id == annId } ?: return
+        showThemedInfo(
+            title = a.title.ifBlank { "Pengumuman" },
+            message = "${a.message}\n\nTanggal: ${a.createdAt.take(16).replace('T', ' ')}",
+        )
     }
 
     fun cancelAdminOrder(orderId: String) {
@@ -2029,6 +2116,7 @@ class MainActivity : Activity() {
     companion object {
         private const val PREFS_THEME = "jajanin_prefs"
         private const val PREF_DARK_THEME = "dark_theme"
+        private const val PREF_THEME_MODE = "theme_mode"
         private const val PREF_ONBOARDED = "onboarded"
         private const val PREF_ACCESS_SELLER = "access_verified_seller"
         private const val PREF_ACCESS_DEVELOPER = "access_verified_developer"
@@ -2037,21 +2125,60 @@ class MainActivity : Activity() {
 
     private fun themePrefs() = getSharedPreferences(PREFS_THEME, MODE_PRIVATE)
 
-    /** Dialog pilih tema (Terang/Gelap); tersimpan permanen di perangkat. */
-    fun showThemePicker() {
-        val choices = arrayOf("Terang", "Gelap")
-        android.app.AlertDialog.Builder(this).setTitle("Tema aplikasi")
-            .setSingleChoiceItems(choices, if (ui.darkMode) 1 else 0) { dialog, which ->
-                setTheme(which == 1)
-                dialog.dismiss()
-            }
-            .setNegativeButton("Batal", null)
-            .show()
+    /** Mode tema tersimpan: "light" | "dark" | "system" (default light). */
+    private fun themeMode(): String {
+        val stored = themePrefs().getString(PREF_THEME_MODE, null)
+        if (stored == "light" || stored == "dark" || stored == "system") return stored
+        // Migrasi dari saklar lama.
+        return if (themePrefs().getBoolean(PREF_DARK_THEME, false)) "dark" else "light"
     }
 
-    /** Terapkan + simpan tema; berlaku untuk buyer, seller, dan developer. */
+    private fun systemInDark(): Boolean =
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    /** Selesaikan mode menjadi boolean untuk kanvas. */
+    private fun resolveTheme(): Boolean = when (themeMode()) {
+        "dark" -> true
+        "system" -> systemInDark()
+        else -> false
+    }
+
+    private fun themeModeLabel(): String = when (themeMode()) {
+        "dark" -> "Gelap"
+        "system" -> "Sistem"
+        else -> "Terang"
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (themeMode() == "system") ui.setDarkMode(systemInDark())
+    }
+
+    /** Dialog pilih tema bertema (Terang/Gelap/Sistem); tersimpan permanen. */
+    fun showThemePicker() {
+        val options = listOf("Terang", "Gelap", "Ikuti sistem")
+        val checked = when (themeMode()) {
+            "dark" -> 1
+            "system" -> 2
+            else -> 0
+        }
+        showThemedOptions("Tema aplikasi", options, checked) { which ->
+            val mode = when (which) {
+                1 -> "dark"
+                2 -> "system"
+                else -> "light"
+            }
+            themePrefs().edit().putString(PREF_THEME_MODE, mode).apply()
+            ui.setDarkMode(resolveTheme())
+            ui.themeLabel = themeModeLabel()
+            Toast.makeText(this, "Tema ${options[which].lowercase()} aktif.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Terapkan + simpan tema boolean (kompat); berlaku untuk semua role. */
     fun setTheme(dark: Boolean) {
-        themePrefs().edit().putBoolean(PREF_DARK_THEME, dark).apply()
+        themePrefs().edit().putString(PREF_THEME_MODE, if (dark) "dark" else "light").apply()
         ui.setDarkMode(dark)
         Toast.makeText(this, if (dark) "Tema gelap aktif." else "Tema terang aktif.", Toast.LENGTH_SHORT).show()
     }

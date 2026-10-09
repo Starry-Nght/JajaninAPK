@@ -1,4 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/productRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/bg_dialog"
@@ -11,22 +13,78 @@
         android:padding="20dp">
 
         <TextView
+            android:id="@+id/productTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingBottom="12dp"
+            android:paddingBottom="4dp"
             android:text="Tambah produk"
             android:textColor="#1B2335"
             android:textSize="20sp"
             android:textStyle="bold" />
 
-        <EditText android:id="@+id/productName" style="@style/DialogField" android:hint="Nama produk" />
-        <EditText android:id="@+id/productDescription" style="@style/DialogField" android:gravity="top" android:hint="Deskripsi" android:minLines="2" />
+        <TextView
+            android:id="@+id/productSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="12dp"
+            android:text="Langsung tampil di beranda pembeli."
+            android:textColor="#707889"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/productSecBasic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="6dp"
+            android:text="INFO DASAR"
+            android:textColor="#707889"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <EditText android:id="@+id/productName" style="@style/DialogField" android:hint="Nama produk" android:inputType="text" android:maxLength="60" />
         <TextView android:id="@+id/productCategory" style="@style/DialogField" android:clickable="true" android:focusable="true" android:gravity="center_vertical" android:text="Kategori: Food" />
-        <EditText android:id="@+id/productPrice" style="@style/DialogField" android:hint="Harga (Rp)" android:inputType="number" />
-        <EditText android:id="@+id/productStock" style="@style/DialogField" android:hint="Stok (kosongkan jika tidak dibatasi)" android:inputType="number" />
-        <EditText android:id="@+id/productIngredients" style="@style/DialogField" android:gravity="top" android:hint="Bahan / ingredients (opsional)" android:minLines="2" />
-        <TextView android:id="@+id/productImage" style="@style/DialogField" android:clickable="true" android:focusable="true" android:gravity="center_vertical" android:text="Pilih gambar produk" />
-        <Button android:id="@+id/productSave" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="8dp" android:text="Simpan produk" />
+        <EditText android:id="@+id/productPrice" style="@style/DialogField" android:hint="Harga (Rp, angka saja)" android:inputType="number" android:maxLength="9" />
+
+        <TextView
+            android:id="@+id/productSecDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:paddingBottom="6dp"
+            android:text="DETAIL"
+            android:textColor="#707889"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <EditText android:id="@+id/productDescription" style="@style/DialogField" android:gravity="top" android:hint="Deskripsi singkat" android:minLines="2" android:maxLength="200" />
+        <EditText android:id="@+id/productIngredients" style="@style/DialogField" android:gravity="top" android:hint="Bahan (opsional)" android:minLines="2" android:maxLength="120" />
+        <EditText android:id="@+id/productStock" style="@style/DialogField" android:hint="Stok (kosongkan = tanpa batas)" android:inputType="number" android:maxLength="5" />
+
+        <TextView
+            android:id="@+id/productSecPhoto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:paddingBottom="6dp"
+            android:text="FOTO"
+            android:textColor="#707889"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView android:id="@+id/productImage" style="@style/DialogField" android:clickable="true" android:focusable="true" android:gravity="center_vertical" android:text="Ketuk untuk upload gambar (opsional)" />
+
+        <TextView
+            android:id="@+id/productError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_error"
+            android:padding="12dp"
+            android:textColor="#CE3C3C"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <Button android:id="@+id/productSave" android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="10dp" android:text="Simpan produk" />
         <Button android:id="@+id/productDelete" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginTop="4dp" android:text="Hapus produk" android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

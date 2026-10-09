@@ -32,6 +32,13 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
     var warnSoft = Color.rgb(211, 228, 251); private set
     var warnBox = Color.rgb(255, 244, 224); private set
     var pressOverlay = Color.argb(32, 15, 25, 45); private set
+    // --- Kaca melayang (identitas navy Jajanin): dipakai nav bawah +
+    // header fixed di semua role. Navy gelap di kedua tema agar kontras
+    // di atas konten terang maupun gelap.
+    var glass = Color.argb(231, 22, 30, 52); private set
+    var glassBorder = Color.argb(46, 255, 255, 255); private set
+    var glassShadow = Color.argb(42, 5, 10, 25); private set
+    var bgTrans = Color.argb(222, 247, 248, 252); private set
 
     /** Terapkan palet terang/gelap. Berlaku untuk buyer, seller, dan developer. */
     fun applyTheme(dark: Boolean) {
@@ -52,6 +59,10 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
             warnSoft = Color.rgb(211, 228, 251)
             warnBox = Color.rgb(255, 244, 224)
             pressOverlay = Color.argb(32, 15, 25, 45)
+            glass = Color.argb(231, 22, 30, 52)
+            glassBorder = Color.argb(46, 255, 255, 255)
+            glassShadow = Color.argb(42, 5, 10, 25)
+            bgTrans = Color.argb(222, 247, 248, 252)
         } else {
             ink = Color.rgb(235, 238, 245)
             blue = Color.rgb(80, 150, 255)
@@ -69,6 +80,10 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
             warnSoft = Color.rgb(40, 60, 100)
             warnBox = Color.rgb(64, 48, 20)
             pressOverlay = Color.argb(48, 255, 255, 255)
+            glass = Color.argb(228, 24, 33, 58)
+            glassBorder = Color.argb(52, 255, 255, 255)
+            glassShadow = Color.argb(60, 0, 0, 0)
+            bgTrans = Color.argb(222, 13, 17, 26)
         }
     }
 
@@ -104,6 +119,21 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
             c.drawRoundRect(r, radius, radius, paint)
             paint.style = Paint.Style.FILL
         }
+    }
+
+    /**
+     * Kartu permukaan: bayangan halus dua lapis + isi + hairline.
+     * Dipakai untuk kartu konten (produk, order, menu, profil) agar terasa
+     * terangkat tanpa terlihat berat. Pil/chip/tombol tetap memakai rounded
+     * polos supaya tidak semua elemen berbayang.
+     */
+    fun card(c: Canvas, r: RectF, radius: Float = 16f) {
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(16, 15, 25, 45)
+        c.drawRoundRect(RectF(r.left, r.top + 2f, r.right, r.bottom + 3f), radius, radius, paint)
+        paint.color = Color.argb(10, 15, 25, 45)
+        c.drawRoundRect(RectF(r.left, r.top + 5f, r.right, r.bottom + 6f), radius, radius, paint)
+        rounded(c, r, card, radius, border)
     }
 
     fun rect(c: Canvas, left: Float, top: Float, right: Float, bottom: Float, color: Int) {

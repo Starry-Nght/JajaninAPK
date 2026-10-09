@@ -9,7 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
 
-internal enum class Screen { SPLASH, ONBOARD, WELCOME, ROLE, LOGIN, HOME, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE, ADMIN, ADMIN_DETAIL, DEV }
+internal enum class Screen { SPLASH, ONBOARD, WELCOME, ROLE, LOGIN, HOME, EXPLORE, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE, NOTIF, ADMIN, ADMIN_DETAIL, PRODUCT_FORM, DEV }
 
 internal const val STATUS_PENDING = "pending"
 internal const val STATUS_CONFIRMED = "confirmed"
@@ -64,6 +64,9 @@ internal data class ProductRow(
 )
 
 internal const val SERVICE_FEE = 1_000
+
+/** Durasi transisi geser antar halaman (ms). */
+private const val PAGE_SLIDE_MS = 240L
 
 internal val LOCATION_OPTIONS = listOf(
     "X PPLG 1", "X PPLG 2", "X PPLG 3",
@@ -121,6 +124,9 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productIngredients = ""
     internal var productAvailable = true
     internal var productEditId: String? = null
+    // Status form produk (halaman): loading simpan + error inline.
+    internal var productSaving = false
+    internal var productError = ""
     internal var myOrders: List<AdminOrder> = emptyList()
     internal var myOrdersLoading = false
     internal var myOrdersError: String? = null
@@ -208,6 +214,8 @@ internal class JajaninView(context: Context) : View(context) {
     private var screen = Screen.SPLASH
     private val history = ArrayDeque<Screen>()
     private var tab = "Home"
+    // Posisi scroll per halaman tab agar tidak reset saat pindah tab.
+    private val pageScroll = HashMap<String, Float>()
     private var touchStartY = 0f
     private var previousY = 0f
     private var moved = false
@@ -217,6 +225,34 @@ internal class JajaninView(context: Context) : View(context) {
     internal var navAnimAt = 0L
     // Tema aplikasi (dibaca dari SharedPreferences saat MainActivity.onCreate).
     internal var darkMode = false
+    // Label mode tema aktif untuk baris Profil ("Terang"/"Gelap"/"Sistem").
+    internal var themeLabel = "Terang"
+    // Offset geser halaman saat ini (untuk chrome yang stabil: header/nav
+    // menggambar dengan counter-translate sehingga tetap diam).
+    internal var slideX = 0f
+    // Transisi geser antar halaman: arah (+1 dari kanan, -1 dari kiri, 0 mati)
+    // + waktu mulai. Digambar di onDraw selama ~240ms, lalu berhenti sendiri.
+    private var pageSlideDir = 0f
+    private var pageSlideAt = 0L
+
+    /** Hormati preferensi reduced-motion Android: matikan animasi bila skala 0. */
+    private fun motionEnabled(): Boolean = runCatching {
+        android.provider.Settings.Global.getFloat(
+            context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
+        ) != 0f
+    }.getOrDefault(true)
+
+    /** Mulai transisi geser halaman ke arah [dir]. */
+    internal fun beginSlide(dir: Float) {
+        if (dir == 0f || !motionEnabled()) {
+            pageSlideDir = 0f
+            return
+        }
+        pageSlideDir = dir
+        pageSlideAt = SystemClock.uptimeMillis()
+        invalidate()
+    }
 
     /** Ganti tema terang/gelap; berlaku untuk buyer, seller, dan developer. */
     fun setDarkMode(dark: Boolean) {
@@ -233,6 +269,7 @@ internal class JajaninView(context: Context) : View(context) {
         history.addLast(screen)
         screen = next
         scroll = 0f
+        beginSlide(1f)
         invalidate()
     }
 
@@ -242,6 +279,7 @@ internal class JajaninView(context: Context) : View(context) {
         if (target != Screen.ADMIN) adminNotifOpen = false
         screen = target
         scroll = 0f
+        beginSlide(-1f)
         invalidate()
         return true
     }
@@ -278,6 +316,23 @@ internal class JajaninView(context: Context) : View(context) {
         val s = width / 390f
         canvas.save()
         canvas.scale(s, s)
+        // Geser halaman masuk (decelerate, ~240ms). Hit area dihitung tanpa
+        // offset sehingga tap selama animasi singkat tetap akurat.
+        if (pageSlideDir != 0f) {
+            val elapsed = android.os.SystemClock.uptimeMillis() - pageSlideAt
+            if (elapsed >= PAGE_SLIDE_MS) {
+                pageSlideDir = 0f
+                slideX = 0f
+            } else {
+                val t = elapsed / PAGE_SLIDE_MS.toFloat()
+                val eased = 1f - (1f - t) * (1f - t)
+                slideX = (1f - eased) * pageSlideDir * 56f
+                canvas.translate(slideX, 0f)
+                postInvalidateOnAnimation()
+            }
+        } else {
+            slideX = 0f
+        }
         bounds.clear()
         when (screen) {
             Screen.SPLASH -> drawSplash(canvas, 390f, height / s)
@@ -286,24 +341,39 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.ROLE -> drawRole(canvas, 390f, height / s)
             Screen.LOGIN -> drawLogin(canvas, 390f, height / s)
             Screen.HOME -> drawHome(canvas, 390f, height / s)
+            Screen.EXPLORE -> drawExplore(canvas, 390f, height / s)
             Screen.DETAIL -> drawProductDetail(canvas, 390f, height / s)
             Screen.CHECKOUT -> drawCheckout(canvas, 390f, height / s)
             Screen.QRIS -> drawPayment(canvas, 390f, height / s)
             Screen.READY -> drawReady(canvas, 390f, height / s)
             Screen.ORDERS -> drawOrders(canvas, 390f, height / s)
             Screen.PROFILE -> drawProfile(canvas, 390f, height / s)
+            Screen.NOTIF -> drawNotif(canvas, 390f, height / s)
             Screen.ADMIN -> drawAdminDashboard(canvas, 390f, height / s)
             Screen.ADMIN_DETAIL -> drawAdminDetail(canvas, 390f, height / s)
+            Screen.PRODUCT_FORM -> drawProductForm(canvas, 390f, height / s)
             Screen.DEV -> drawDeveloper(canvas, 390f, height / s)
         }
         canvas.restore()
     }
 
+    /**
+     * Toolbar kaca melayang halaman dalam: terlepas dari tepi layar, tombol
+     * kembali + judul putih di atas kaca navy. Konten tiap layar mulai di
+     * y >= 88 sehingga tidak tertutup. Stabil saat slide (counter-translate).
+     */
     internal fun header(c: Canvas, title: String) {
-        kit.rect(c, 0f, 0f, 390f, 72f, kit.card)
-        drawIcon(c, "chevronLeft", 27f, 36f, 24f, kit.blue)
-        kit.text(c, title, 60f, 45f, 19f, kit.ink, true)
-        bounds["headerBack"] = RectF(0f, 0f, 54f, 72f)
+        c.save()
+        c.translate(-slideX, 0f)
+        val bar = RectF(16f, 12f, 374f, 68f)
+        kit.rounded(c, RectF(bar.left, bar.top + 2f, bar.right, bar.bottom + 3f), kit.glassShadow, 20f)
+        kit.rounded(c, bar, kit.glass, 20f, kit.glassBorder)
+        val back = RectF(28f, 22f, 64f, 58f)
+        kit.rounded(c, back, kit.tint, 18f)
+        drawIcon(c, "chevronLeft", back.centerX(), back.centerY(), 19f, kit.blue)
+        kit.text(c, title, 78f, 46f, 18f, android.graphics.Color.WHITE, true)
+        c.restore()
+        bounds["headerBack"] = RectF(20f, 14f, 84f, 64f)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -322,9 +392,9 @@ internal class JajaninView(context: Context) : View(context) {
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val scrollable = screen == Screen.HOME || screen == Screen.ORDERS ||
-                    screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
-                    screen == Screen.DEV || screen == Screen.CHECKOUT
+                val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
+                    screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
+                    screen == Screen.DEV || screen == Screen.CHECKOUT || screen == Screen.NOTIF
                 if (scrollable && !adminNotifOpen && abs(y - touchStartY) > 6f) {
                     moved = true
                     if (pressedTab != null || pressedKey != null) {
@@ -418,7 +488,18 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "qrisUrl" -> activity()?.showQrisUrlForm()
                     hit.startsWith("tab:") -> {
                         navAnimAt = SystemClock.uptimeMillis()
-                        when (hit.removePrefix("tab:")) {
+                        // Arah geser mengikuti urutan tab (kiri/kanan).
+                        val tabOrder = listOf("Home", "Explore", "Orders", "Profile")
+                        val nextTab = hit.removePrefix("tab:")
+                        val beforeTabScreen = screen
+                        val beforeTabScroll = scroll
+                        val beforeTabKey = "$screen:$tab"
+                        val tabDir = when {
+                            tabOrder.indexOf(nextTab) > tabOrder.indexOf(tab) -> 1f
+                            tabOrder.indexOf(nextTab) < tabOrder.indexOf(tab) -> -1f
+                            else -> 0f
+                        }
+                        when (nextTab) {
                             "Home" -> {
                                 isSellerProfile = false
                                 if (myRole == "seller") activity()?.backToSellerHome()
@@ -429,7 +510,12 @@ internal class JajaninView(context: Context) : View(context) {
                                     activity()?.refreshOrderingStatus()
                                 }
                             }
-                            "Search" -> { tab = "Search"; screen = Screen.HOME; activity()?.showSearchForm() }
+                            "Explore" -> {
+                                tab = "Explore"
+                                isSellerProfile = false
+                                if (screen != Screen.EXPLORE) go(Screen.EXPLORE)
+                                activity()?.refreshProducts()
+                            }
                             "Orders" -> { tab = "Orders"; go(Screen.ORDERS); activity()?.refreshMyOrders() }
                             "Profile" -> {
                                 tab = "Profile"
@@ -441,11 +527,22 @@ internal class JajaninView(context: Context) : View(context) {
                                 }
                             }
                         }
+                        // go() selalu menggeser dari kanan; timpa dengan arah
+                        // tab yang benar bila layar memang berpindah.
+                        if (tabDir != 0f && screen != beforeTabScreen) beginSlide(tabDir)
+                        // Pertahankan posisi scroll tiap tab.
+                        if (screen != beforeTabScreen) {
+                            pageScroll[beforeTabKey] = beforeTabScroll
+                            scroll = pageScroll["$screen:$tab"] ?: scroll
+                        }
                         invalidate()
                     }
                     hit == "logout" -> activity()?.logout()
+                    hit == "devBell" -> activity()?.openNotif()
                     hit == "adminRefresh" -> activity()?.refreshAdminOrders()
                     hit.startsWith("stab:") -> {
+                        val beforeStabScreen = screen
+                        val beforeStabScroll = scroll
                         when (hit.removePrefix("stab:")) {
                             "Dashboard" -> go(Screen.ADMIN)
                             "Pesanan" -> {
@@ -453,11 +550,7 @@ internal class JajaninView(context: Context) : View(context) {
                                 go(Screen.ADMIN)
                             }
                             "Produk" -> activity()?.showProductForm()
-                            "Notifikasi" -> {
-                                go(Screen.ADMIN)
-                                adminNotifOpen = true
-                                scroll = 0f
-                            }
+                            "Notifikasi" -> activity()?.openNotif()
                             "Profil" -> {
                                 isSellerProfile = true
                                 if (SupabaseRepository.hasSession()) {
@@ -469,15 +562,15 @@ internal class JajaninView(context: Context) : View(context) {
                                 }
                             }
                         }
+                        if (screen != beforeStabScreen) {
+                            pageScroll["s:$beforeStabScreen"] = beforeStabScroll
+                            scroll = pageScroll["s:$screen"] ?: scroll
+                        }
                         invalidate()
                     }
                     hit.startsWith("productEdit:") -> activity()?.showProductEditForm(hit.substringAfter(':'))
                     hit.startsWith("productDelete:") -> activity()?.confirmDeleteProduct(hit.substringAfter(':'))
-                    hit == "adminBell" -> {
-                        adminNotifOpen = !adminNotifOpen
-                        if (adminNotifOpen) scroll = 0f
-                        invalidate()
-                    }
+                    hit == "adminBell" -> activity()?.openNotif()
                     hit == "adminNotifClose" || hit == "adminNotifCloseBtn" -> { adminNotifOpen = false; invalidate() }
                     hit == "adminProfile" -> {
                         if (SupabaseRepository.hasSession()) {
@@ -525,10 +618,35 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "productAdd" -> activity()?.showProductForm()
                     hit.startsWith("productToggle:") -> activity()?.toggleProductAvailability(hit.substringAfter(':'))
                     hit == "productSave" -> activity()?.saveProduct()
+                    hit == "pfName" -> activity()?.showProductTextField("nama")
+                    hit == "pfPrice" -> activity()?.showProductTextField("harga")
+                    hit == "pfStock" -> activity()?.showProductTextField("stok")
+                    hit == "pfDesc" -> activity()?.showProductTextField("deskripsi")
+                    hit == "pfIngredients" -> activity()?.showProductTextField("bahan")
+                    hit == "pfCategory" -> activity()?.showProductCategoryPicker()
+                    hit == "pfImage" -> activity()?.pickProductImage()
+                    hit == "pfAvailable" -> activity()?.toggleProductFormAvailable()
+                    hit == "pfSave" -> activity()?.saveProductForm()
+                    hit == "pfDelete" -> {
+                        productEditId?.let { activity()?.confirmDeleteProduct(it) }
+                    }
                     hit == "productImage" -> activity()?.pickProductImage()
                     hit.startsWith("productCategory:") -> { productCategory = hit.substringAfter(':'); invalidate() }
                     hit == "back" || hit == "headerBack" -> goBack()
-                    hit == "inbox" -> activity()?.showInbox()
+                    hit == "inbox" -> activity()?.openNotif()
+                    hit.startsWith("notifInvite:") -> activity()?.showInviteVerify(hit.substringAfter(':'))
+                    hit.startsWith("devNotifInviteCancel:") -> activity()?.confirmCancelInvite(hit.substringAfter(':'))
+                    hit.startsWith("notifWarn:") -> activity()?.showNotifWarning(hit.substringAfter(':'))
+                    hit.startsWith("notifAnn:") -> activity()?.showNotifAnn(hit.substringAfter(':'))
+                    hit.startsWith("notifOrder:") -> {
+                        val orderId = hit.substringAfter(':')
+                        adminDetailOrder = adminOrders.firstOrNull { it.id == orderId }
+                        adminDetailId = orderId
+                        adminDetailError = null
+                        adminDetailLoading = adminDetailOrder == null
+                        go(Screen.ADMIN_DETAIL)
+                        activity()?.loadAdminOrderDetail(orderId)
+                    }
                     hit == "theme" -> activity()?.showThemePicker()
                     hit == "devSearch" -> activity()?.showDevSearch()
                     hit == "devReset" -> activity()?.confirmDailyReset()

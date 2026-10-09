@@ -27,6 +27,7 @@
         android:theme="@style/AppTheme" >
         <activity
             android:name="com.jajanin.app.MainActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTop"
             android:screenOrientation="portrait" >

@@ -151,6 +151,8 @@ ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:5:9-
 		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:5:109-139
 	android:exported
 		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:5:85-108
+	android:configChanges
+		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:5:140-227
 	android:name
 		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:5:19-47
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER

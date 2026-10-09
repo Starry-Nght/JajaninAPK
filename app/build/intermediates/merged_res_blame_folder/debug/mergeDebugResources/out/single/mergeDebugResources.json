@@ -88,10 +88,6 @@
         "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-23:/drawable-nodpi/orders.jpg"
     },
     {
-        "merged": "com.jajanin.app-debug-21:/layout_dialog_auth.xml.flat",
-        "source": "com.jajanin.app-main-23:/layout/dialog_auth.xml"
-    },
-    {
         "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-21:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
         "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-23:/mipmap-xxxhdpi/ic_launcher_round.png"
     },
@@ -114,6 +110,14 @@
     {
         "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-21:/mipmap-mdpi_ic_launcher_foreground.png.flat",
         "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-23:/mipmap-mdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "com.jajanin.app-debug-21:/drawable_bg_field_dark.xml.flat",
+        "source": "com.jajanin.app-main-23:/drawable/bg_field_dark.xml"
+    },
+    {
+        "merged": "com.jajanin.app-debug-21:/drawable_bg_dialog_dark.xml.flat",
+        "source": "com.jajanin.app-main-23:/drawable/bg_dialog_dark.xml"
     },
     {
         "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-21:/drawable-nodpi_bghome.jpg.flat",
@@ -150,5 +154,9 @@
     {
         "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-21:/mipmap-xhdpi_ic_launcher.png.flat",
         "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-23:/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.jajanin.app-debug-21:/layout_dialog_product.xml.flat",
+        "source": "com.jajanin.app-main-23:/layout/dialog_product.xml"
     }
 ]
