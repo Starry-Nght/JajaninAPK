@@ -3,6 +3,7 @@ package com.jajanin.app
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.channel
@@ -13,11 +14,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
-import java.util.UUID
 
 /** Satu baris order dengan item yang di-embed PostgREST lewat relasi `order_items`. */
 @Serializable
@@ -28,6 +30,8 @@ internal data class OrderRow(
     @SerialName("total_idr") val totalIdr: Int,
     @SerialName("pickup_code") val pickupCode: String,
     @SerialName("created_at") val createdAt: String,
+    @SerialName("payment_method") val paymentMethod: String? = null,
+    @SerialName("payment_status") val paymentStatus: String = "unpaid",
     @SerialName("order_items") val items: List<OrderItemRow> = emptyList(),
 )
 
@@ -59,6 +63,8 @@ internal data class AdminOrder(
     val items: List<OrderItemRow>,
     val buyerName: String,
     val timeLabel: String,
+    val paymentMethod: String? = null,
+    val paymentStatus: String = "unpaid",
 ) {
     val itemCount: Int
         get() = items.sumOf { it.quantity }
@@ -80,24 +86,60 @@ internal class OrderObserver internal constructor(
 }
 
 @Serializable
-private data class NewOrder(
-    val id: String,
-    @SerialName("user_id") val userId: String,
-    val status: String,
-    @SerialName("total_idr") val totalIdr: Int,
-)
-
-@Serializable
-private data class NewOrderItem(
-    @SerialName("order_id") val orderId: String,
-    @SerialName("menu_item_id") val menuItemId: String?,
-    @SerialName("item_name") val itemName: String,
-    @SerialName("unit_price_idr") val unitPriceIdr: Int,
-    val quantity: Int,
-)
-
-@Serializable
 private data class StatusPatch(val status: String)
+
+@Serializable
+private data class PaymentPatch(@SerialName("payment_status") val paymentStatus: String)
+
+@Serializable
+internal data class PlacedOrder(
+    val id: String,
+    @SerialName("pickup_code") val pickupCode: String,
+    @SerialName("total_idr") val totalIdr: Int,
+    @SerialName("payment_method") val paymentMethod: String,
+    @SerialName("payment_status") val paymentStatus: String = "unpaid",
+    val status: String = "pending",
+)
+
+@Serializable
+internal data class StallInfo(
+    val id: String,
+    val name: String,
+    @SerialName("qris_image_url") val qrisImageUrl: String? = null,
+)
+
+/** Hasil probe stall_availability: antrean aktif warung (maksimal 10). */
+@Serializable
+internal data class StallAvailabilityRow(
+    @SerialName("stall_id") val stallId: String = "",
+    @SerialName("active_orders") val activeOrders: Int = 0,
+    val capacity: Int = 10,
+    @SerialName("is_full") val isFull: Boolean = false,
+)
+
+/** Hasil probe ordering_status: flag blackout (waktu server) + hitungan order hari ini. */
+@Serializable
+internal data class OrderingStatusRow(
+    val blocked: Boolean = false,
+    @SerialName("block_message") val blockMessage: String? = null,
+    @SerialName("orders_today") val ordersToday: Int = 0,
+    val remaining: Int = 2,
+    @SerialName("server_time") val serverTime: String = "",
+)
+
+@Serializable
+private data class IdRow(val id: String)
+
+internal data class ProductDraft(
+    val name: String,
+    val description: String,
+    val category: String,
+    val priceIdr: Int,
+    val imageUrl: String?,
+    val stock: Int?,
+    val ingredients: String = "",
+    val available: Boolean = true,
+)
 
 @Serializable
 private data class NewDevice(
@@ -118,38 +160,239 @@ internal object OrderRepository {
     // Kolom eksplisit + embed order_items: respons tidak pernah membawa kolom
     // tak dikenal dan daftar order tidak memicu N+1 query per item.
     private val orderColumns = Columns.raw(
-        "id,user_id,status,total_idr,pickup_code,created_at," +
+        "id,user_id,status,total_idr,pickup_code,created_at,payment_method,payment_status," +
             "order_items(id,menu_item_id,item_name,unit_price_idr,quantity)"
     )
 
-    /**
-     * Membuat order 'pending' dari keranjang checkout, lalu itemnya.
-     *
-     * Order ditulis lebih dulu karena order_items bergantung pada foreign key
-     * order; bila penyisipan item gagal, order dibersihkan kembali agar admin
-     * tidak melihat order kosong (best-effort, di bawah policy hapus pending).
-     * Mengembalikan id order untuk dipakai layar QRIS.
-     */
-    suspend fun createOrder(itemName: String, unitPriceIdr: Int, quantity: Int): String {
-        val uid = SupabaseRepository.currentUid()
-            ?: error("Belum masuk. Silakan masuk kembali sebelum membayar.")
-        val orderId = UUID.randomUUID().toString()
-        val total = unitPriceIdr * quantity + SERVICE_FEE
-        client.postgrest.from("orders")
-            .insert(NewOrder(orderId, uid, "pending", total), defaultToNull = false)
-        try {
-            client.postgrest.from("order_items")
-                .insert(
-                    listOf(NewOrderItem(orderId, null, itemName, unitPriceIdr, quantity)),
-                    defaultToNull = false,
-                )
-        } catch (t: Throwable) {
-            runCatching {
-                client.postgrest.from("orders").delete { filter { eq("id", orderId) } }
-            }
-            throw t
+    private val productColumns = Columns.raw(
+        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients"
+    )
+
+    fun observeProducts(scope: CoroutineScope, onChange: () -> Unit): OrderObserver {
+        val channel = SupabaseRepository.client.realtime.channel("available-menu-items")
+        val flow = channel.postgresChangeFlow<PostgresAction>("public") { table = "menu_items" }
+        val job = scope.launch {
+            launch { flow.collect { onChange() } }
+            channel.subscribe()
         }
-        return orderId
+        return OrderObserver(channel, job, scope)
+    }
+
+    suspend fun fetchAvailableProducts(): List<ProductRow> = client.postgrest.from("menu_items")
+        .select(productColumns) {
+            filter { eq("is_available", true) }
+            order("created_at", Order.DESCENDING)
+        }
+        .decodeList<ProductRow>()
+        .filter { it.name.isNotBlank() && it.priceIdr > 0 && it.category.isNotBlank() }
+
+    /** Produk milik warung penjual ini saja (dua langkah agar sintaks PostgREST pasti valid). */
+    suspend fun fetchSellerProducts(): List<ProductRow> {
+        val uid = SupabaseRepository.currentUid() ?: return emptyList()
+        val stallIds = runCatching {
+            client.postgrest.from("stalls").select(Columns.list("id")) {
+                filter { eq("owner_id", uid) }
+            }.decodeList<IdRow>().map { it.id }
+        }.getOrNull().orEmpty()
+        if (stallIds.isEmpty()) return emptyList()
+        return client.postgrest.from("menu_items")
+            .select(productColumns) {
+                filter { isIn("stall_id", stallIds.map { id -> "\"$id\"" }) }
+                order("created_at", Order.DESCENDING)
+            }
+            .decodeList<ProductRow>()
+    }
+
+    /** Warung milik penjual ini; null bila belum ada (daftar produk pertama akan membuatnya). */
+    suspend fun sellerStallId(): String? {
+        val uid = SupabaseRepository.currentUid() ?: return null
+        return runCatching {
+            client.postgrest.from("stalls").select(Columns.list("id")) {
+                filter { eq("owner_id", uid) }
+                limit(1)
+            }.decodeSingleOrNull<IdRow>()?.id
+        }.getOrNull()
+    }
+
+    suspend fun createProduct(draft: ProductDraft): ProductRow {
+        val uid = SupabaseRepository.currentUid() ?: error("Silakan masuk untuk menyimpan produk.")
+        val stallId = resolveSellerStall(uid)
+        val payload = buildJsonObject {
+            put("stall_id", stallId)
+            put("name", draft.name)
+            put("description", draft.description)
+            put("category", draft.category)
+            put("price_idr", draft.priceIdr)
+            put("image_url", draft.imageUrl)
+            put("is_available", draft.available)
+            put("ingredients", draft.ingredients)
+            draft.stock?.let { put("stock", it) }
+        }
+        return client.postgrest.from("menu_items").insert(payload) {
+            select(productColumns)
+        }.decodeSingle<ProductRow>()
+    }
+
+    suspend fun updateProduct(productId: String, draft: ProductDraft) {
+        val patch = buildJsonObject {
+            put("name", draft.name)
+            put("description", draft.description)
+            put("category", draft.category)
+            put("price_idr", draft.priceIdr)
+            put("image_url", draft.imageUrl)
+            put("is_available", draft.available)
+            put("ingredients", draft.ingredients)
+            put("stock", draft.stock)
+        }
+        val result = client.postgrest.from("menu_items").update(patch) {
+            select(Columns.raw("id"))
+            filter { eq("id", productId) }
+        }
+        if (result.decodeList<IdRow>().isEmpty()) error("Produk tidak dapat diperbarui.")
+    }
+
+    suspend fun deleteProduct(productId: String) {
+        val result = client.postgrest.from("menu_items").delete {
+            select(Columns.raw("id"))
+            filter { eq("id", productId) }
+        }
+        if (result.decodeList<IdRow>().isEmpty()) error("Produk gagal dihapus. Coba lagi.")
+    }
+
+    suspend fun setProductAvailable(productId: String, available: Boolean) {
+        val patch = buildJsonObject { put("is_available", available) }
+        val result = client.postgrest.from("menu_items").update(patch) {
+            select(Columns.raw("id"))
+            filter { eq("id", productId) }
+        }
+        if (result.decodeList<IdRow>().isEmpty()) error("Produk tidak dapat diperbarui.")
+    }
+
+    private suspend fun resolveSellerStall(userId: String): String {
+        val existing = client.postgrest.from("stalls").select(Columns.list("id")) {
+            filter { eq("owner_id", userId) }
+            limit(1)
+        }.decodeSingleOrNull<IdRow>()
+        if (existing != null) return existing.id
+        val payload = buildJsonObject {
+            put("name", "Kantin Penjual")
+            put("description", "Menu kantin Jajanin")
+            put("location", "Kantin")
+            put("owner_id", userId)
+        }
+        return client.postgrest.from("stalls").insert(payload) {
+            select(Columns.list("id"))
+        }.decodeSingle<IdRow>().id
+    }
+
+    /**
+     * Warung penjual wajib punya nama toko/brand. Dipanggil saat penjual
+     * masuk dashboard: bila belum ada warung dibuatkan dengan nama yang
+     * diinput; bila nama masih kosong/default, diperbarui ke nama baru.
+     * Mengembalikan id warung.
+     */
+    suspend fun ensureSellerStall(name: String): String {
+        val clean = name.trim()
+        require(clean.length >= 3) { "Nama toko minimal 3 karakter." }
+        val uid = SupabaseRepository.currentUid() ?: error("Silakan masuk untuk menyimpan warung.")
+        val existing = client.postgrest.from("stalls").select(Columns.list("id")) {
+            filter { eq("owner_id", uid) }
+            limit(1)
+        }.decodeSingleOrNull<IdRow>()
+        if (existing != null) {
+            updateStallName(existing.id, clean)
+            return existing.id
+        }
+        val payload = buildJsonObject {
+            put("name", clean)
+            put("description", "Menu kantin Jajanin")
+            put("location", "Kantin")
+            put("owner_id", uid)
+        }
+        return client.postgrest.from("stalls").insert(payload) {
+            select(Columns.list("id"))
+        }.decodeSingle<IdRow>().id
+    }
+
+    /** Mengganti nama warung milik penjual ini. */
+    suspend fun updateStallName(stallId: String, name: String) {
+        val clean = name.trim()
+        require(clean.length >= 3) { "Nama toko minimal 3 karakter." }
+        val patch = buildJsonObject { put("name", clean) }
+        val result = client.postgrest.from("stalls").update(patch) {
+            select(Columns.raw("id"))
+            filter { eq("id", stallId) }
+        }
+        if (result.decodeList<IdRow>().isEmpty()) error("Nama warung tidak dapat disimpan.")
+    }
+
+    /**
+     * Menempatkan order lewat RPC server-side `place_order`: validasi menu,
+     * ketersediaan, dan stok + hitung harga dari database, snapshot item,
+     * kurangi stok, tulis order + items atomis. Total client tidak dipercaya.
+     */
+    suspend fun placeOrder(lines: List<Pair<String, Int>>, paymentMethod: String): PlacedOrder {
+        val method = paymentMethod.lowercase()
+        require(method == "cash" || method == "qris") { "Metode bayar tidak valid." }
+        require(lines.isNotEmpty()) { "Keranjang masih kosong." }
+        val array = kotlinx.serialization.json.JsonArray(
+            lines.map { (id, qty) ->
+                buildJsonObject {
+                    put("menu_item_id", id)
+                    put("quantity", qty)
+                }
+            }
+        )
+        val params = mapOf(
+            "p_items" to array,
+            "p_payment_method" to kotlinx.serialization.json.JsonPrimitive(method),
+        )
+        return try {
+            // place_order mengembalikan satu objek jsonb telanjang (bukan array).
+            client.postgrest.rpc("place_order", params).decodeAs<PlacedOrder>()
+        } catch (t: Throwable) {
+            throw IllegalStateException(parseDbError(t), t)
+        }
+    }
+
+    /**
+     * Probe status pemesanan dari server (waktu WIB + hitungan order hari ini).
+     * Hanya untuk tampilan; penegakan tetap di place_order.
+     */
+    suspend fun fetchOrderingStatus(): OrderingStatusRow {
+        return client.postgrest.rpc("ordering_status").decodeAs<OrderingStatusRow>()
+    }
+
+    /**
+     * Antrean aktif satu warung dari server (maksimal 10).
+     * Hanya untuk tampilan; place_order selalu memeriksa ulang.
+     */
+    suspend fun fetchStallAvailability(stallId: String): StallAvailabilityRow {
+        val params = mapOf("p_stall_id" to kotlinx.serialization.json.JsonPrimitive(stallId))
+        return client.postgrest.rpc("stall_availability", params).decodeAs<StallAvailabilityRow>()
+    }
+
+    /** Pesan error DB yang aman tampil (ambil detail raise exception Postgres). */
+    private fun parseDbError(t: Throwable): String {
+        val msg = t.message.orEmpty()
+        // PostgREST mengembalikan body JSON berisi "message" dari raise exception.
+        val jsonMsg = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(msg)?.groupValues?.getOrNull(1)
+        val clean = (jsonMsg ?: msg).replace("\\n", " ").trim()
+        return when {
+            clean.contains("Masuk dulu", true) -> "Masuk dulu sebelum memesan."
+            clean.contains("Keranjang", true) -> "Keranjang masih kosong."
+            clean.contains("ditutup pukul", true) -> clean.take(200)
+            clean.contains("Warung sedang penuh", true) -> clean.take(200)
+            clean.contains("Batas pesanan harian", true) -> clean.take(200)
+            clean.contains("Satu pesanan hanya", true) -> clean.take(200)
+            clean.contains("tepat 1", true) -> clean.take(200)
+            clean.contains("ditangguhkan", true) -> clean.take(200)
+            clean.contains("tidak valid", true) -> clean.take(160)
+            clean.contains("tidak ditemukan", true) -> "Menu tidak ditemukan."
+            clean.contains("tidak tersedia", true) -> clean.take(160)
+            clean.contains("Stok", true) -> clean.take(160)
+            else -> SupabaseRepository.errorMessage(t)
+        }
     }
 
     /**
@@ -171,10 +414,76 @@ internal object OrderRepository {
     }
 
     /**
-     * Mengambil order hari ini (maksimal 50, terbaru dahulu) lengkap dengan
-     * nama pembeli yang di-hydrate terpisah karena orders tidak punya relasi
-     * FK langsung ke profiles.
+     * Pembeli mengajukan bukti bayar QRIS: unpaid|rejected -> waiting_verification.
+     * Trigger DB menolak perubahan lain; penjual yang memverifikasi.
      */
+    suspend fun submitPaymentProof(orderId: String) {
+        val result = client.postgrest.from("orders")
+            .update(PaymentPatch("waiting_verification")) {
+                select(Columns.raw("id"))
+                filter { eq("id", orderId) }
+            }
+        if (result.decodeList<IdRow>().isEmpty()) {
+            error("Konfirmasi bayar gagal disimpan.")
+        }
+    }
+
+    /** Penjual menandai lunas (tunai saat ambil, atau verifikasi QRIS). paid_at + verified_by diisi server. */
+    suspend fun markOrderPaid(orderId: String) {
+        val result = client.postgrest.from("orders")
+            .update(PaymentPatch("paid")) {
+                select(Columns.raw("id"))
+                filter { eq("id", orderId) }
+            }
+        if (result.decodeList<IdRow>().isEmpty()) {
+            error("Gagal menandai lunas. Pastikan ini order warungmu.")
+        }
+    }
+
+    /** Penjual menolak bukti bayar QRIS; pembeli boleh mengajukan ulang. */
+    suspend fun rejectOrderPayment(orderId: String) {
+        val result = client.postgrest.from("orders")
+            .update(PaymentPatch("rejected")) {
+                select(Columns.raw("id"))
+                filter { eq("id", orderId) }
+            }
+        if (result.decodeList<IdRow>().isEmpty()) {
+            error("Gagal menolak pembayaran.")
+        }
+    }
+
+    /** Info publik satu warung (nama + QR QRIS) untuk layar bayar pembeli. */
+    suspend fun fetchStall(stallId: String): StallInfo? = runCatching {
+        client.postgrest.from("stalls")
+            .select(Columns.raw("id,name,qris_image_url")) {
+                filter { eq("id", stallId) }
+                limit(1)
+            }
+            .decodeSingleOrNull<StallInfo>()
+    }.getOrNull()
+
+    /** Warung milik penjual ini beserta QRIS-nya (untuk pengaturan). */
+    suspend fun fetchMyStall(): StallInfo? {
+        val uid = SupabaseRepository.currentUid() ?: return null
+        return runCatching {
+            client.postgrest.from("stalls")
+                .select(Columns.raw("id,name,qris_image_url")) {
+                    filter { eq("owner_id", uid) }
+                    limit(1)
+                }
+                .decodeSingleOrNull<StallInfo>()
+        }.getOrNull()
+    }
+
+    /** Penjual menyimpan URL gambar QRIS warungnya sendiri. */
+    suspend fun updateStallQris(stallId: String, qrisUrl: String?) {
+        val patch = buildJsonObject { put("qris_image_url", qrisUrl) }
+        val result = client.postgrest.from("stalls").update(patch) {
+            select(Columns.raw("id"))
+            filter { eq("id", stallId) }
+        }
+        if (result.decodeList<IdRow>().isEmpty()) error("QRIS warung tidak dapat disimpan.")
+    }
     suspend fun fetchAdminTodayOrders(): List<AdminOrder> {
         val rows = client.postgrest.from("orders")
             .select(orderColumns) {
@@ -246,8 +555,23 @@ internal object OrderRepository {
                 items = row.items,
                 buyerName = buyerNames[row.userId] ?: "Pembeli",
                 timeLabel = formatOrderTime(row.createdAt),
+                paymentMethod = row.paymentMethod,
+                paymentStatus = row.paymentStatus,
             )
         }
+    }
+
+    /** Riwayat order pembeli yang sedang masuk (dipakai layar Pesanan pembeli). */
+    suspend fun fetchMyOrders(max: Int = 20): List<AdminOrder> {
+        val uid = SupabaseRepository.currentUid() ?: return emptyList()
+        val rows = client.postgrest.from("orders")
+            .select(orderColumns) {
+                filter { eq("user_id", uid) }
+                order("created_at", Order.DESCENDING)
+                limit(max.toLong())
+            }
+            .decodeList<OrderRow>()
+        return hydrate(rows)
     }
 
     private suspend fun resolveBuyerNames(rows: List<OrderRow>): Map<String, String> {

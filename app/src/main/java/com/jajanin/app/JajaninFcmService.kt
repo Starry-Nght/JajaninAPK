@@ -9,8 +9,9 @@ class JajaninFcmService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         if (message.data["type"] != "new_order") return
         val orderId = message.data["order_id"] ?: return
-        val title = message.notification?.title ?: "Pesanan baru"
-        val body = message.notification?.body ?: "Ada pesanan baru menunggu diproses."
+        val buyer = message.data["buyer_name"]?.takeIf { it.isNotBlank() } ?: "pembeli"
+        val title = message.notification?.title ?: "Pesanan Baru"
+        val body = message.notification?.body ?: "Ada pesanan baru dari $buyer"
         NotificationHelper.showNewOrder(this, orderId, title, body)
     }
 

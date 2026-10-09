@@ -132,11 +132,15 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] /home/aths/.gradle/caches/9
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.2.0] /home/aths/.gradle/caches/9.3.0/transforms/35239d3a3815a85c1ef3b906e6bce6fd/transformed/core-1.2.0/AndroidManifest.xml:24:18-86
 	android:supportsRtl
-		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:101-127
+		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:182-208
 	android:label
 		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:50-73
+	android:roundIcon
+		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:109-154
+	android:icon
+		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:74-108
 	android:allowBackup
-		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:74-100
+		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:155-181
 	android:theme
 		ADDED from /home/aths/Downloads/JajaninApp/app/src/main/AndroidManifest.xml:4:18-49
 activity#com.jajanin.app.MainActivity

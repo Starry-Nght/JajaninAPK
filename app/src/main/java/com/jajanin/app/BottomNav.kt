@@ -31,7 +31,7 @@ private val navPath = Path()
 
 internal fun JajaninView.drawBottomNav(c: Canvas, w: Float, h: Float, active: String) {
     val top = h - NAV_HEIGHT
-    kit.rect(c, 0f, top, w, h, Color.WHITE)
+    kit.rect(c, 0f, top, w, h, kit.card)
     kit.line(c, 0f, top, w, top)
 
     val grow = navGrowProgress()

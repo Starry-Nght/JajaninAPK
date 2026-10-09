@@ -13,19 +13,64 @@ import android.graphics.Typeface
 
 internal class DrawKit(private val res: Resources, private val canvasScale: () -> Float) {
 
-    val ink = Color.rgb(27, 35, 53)
-    val blue = Color.rgb(0, 99, 214)
-    val muted = Color.rgb(112, 120, 137)
-    val bg = Color.rgb(247, 248, 252)
-    val divider = Color.rgb(232, 234, 240)
-    val tint = Color.rgb(232, 242, 255)
-    val border = Color.rgb(224, 228, 236)
-    val star = Color.rgb(225, 151, 0)
-    val danger = Color.rgb(206, 60, 60)
-    val dangerBorder = Color.rgb(240, 214, 214)
-    val success = Color.rgb(31, 158, 95)
-    val successSoft = Color.rgb(230, 248, 239)
-    val warnSoft = Color.rgb(211, 228, 251)
+    // Palet tema: Surface di semua screen WAJIB memakai kit.card / kit.bg /
+    // kit.warnBox (jangan Color.WHITE langsung) agar dark mode bekerja di
+    // semua role. Teks di atas tombol berwarna tetap Color.WHITE.
+    var ink = Color.rgb(27, 35, 53); private set
+    var blue = Color.rgb(0, 99, 214); private set
+    var muted = Color.rgb(112, 120, 137); private set
+    var bg = Color.rgb(247, 248, 252); private set
+    var card = Color.WHITE; private set
+    var divider = Color.rgb(232, 234, 240); private set
+    var tint = Color.rgb(232, 242, 255); private set
+    var border = Color.rgb(224, 228, 236); private set
+    var star = Color.rgb(225, 151, 0); private set
+    var danger = Color.rgb(206, 60, 60); private set
+    var dangerBorder = Color.rgb(240, 214, 214); private set
+    var success = Color.rgb(31, 158, 95); private set
+    var successSoft = Color.rgb(230, 248, 239); private set
+    var warnSoft = Color.rgb(211, 228, 251); private set
+    var warnBox = Color.rgb(255, 244, 224); private set
+    var pressOverlay = Color.argb(32, 15, 25, 45); private set
+
+    /** Terapkan palet terang/gelap. Berlaku untuk buyer, seller, dan developer. */
+    fun applyTheme(dark: Boolean) {
+        if (!dark) {
+            ink = Color.rgb(27, 35, 53)
+            blue = Color.rgb(0, 99, 214)
+            muted = Color.rgb(112, 120, 137)
+            bg = Color.rgb(247, 248, 252)
+            card = Color.WHITE
+            divider = Color.rgb(232, 234, 240)
+            tint = Color.rgb(232, 242, 255)
+            border = Color.rgb(224, 228, 236)
+            star = Color.rgb(225, 151, 0)
+            danger = Color.rgb(206, 60, 60)
+            dangerBorder = Color.rgb(240, 214, 214)
+            success = Color.rgb(31, 158, 95)
+            successSoft = Color.rgb(230, 248, 239)
+            warnSoft = Color.rgb(211, 228, 251)
+            warnBox = Color.rgb(255, 244, 224)
+            pressOverlay = Color.argb(32, 15, 25, 45)
+        } else {
+            ink = Color.rgb(235, 238, 245)
+            blue = Color.rgb(80, 150, 255)
+            muted = Color.rgb(150, 158, 175)
+            bg = Color.rgb(13, 17, 26)
+            card = Color.rgb(26, 32, 48)
+            divider = Color.rgb(48, 56, 76)
+            tint = Color.rgb(30, 50, 90)
+            border = Color.rgb(48, 56, 76)
+            star = Color.rgb(225, 151, 0)
+            danger = Color.rgb(235, 110, 110)
+            dangerBorder = Color.rgb(90, 50, 50)
+            success = Color.rgb(60, 190, 120)
+            successSoft = Color.rgb(24, 60, 45)
+            warnSoft = Color.rgb(40, 60, 100)
+            warnBox = Color.rgb(64, 48, 20)
+            pressOverlay = Color.argb(48, 255, 255, 255)
+        }
+    }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val regular = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -139,4 +184,8 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
     private companion object {
         const val MAX_BITMAP_EDGE = 1600
     }
+}
+
+internal object ProductImageCache {
+    val images = java.util.concurrent.ConcurrentHashMap<String, Bitmap>()
 }

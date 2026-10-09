@@ -1,3 +1,14 @@
+// Trigger Postgres (pg_net) -> fungsi ini -> FCM v1 ke HP admin.
+//
+// Autentikasi: header x-notify-secret harus cocok dengan secret di vault
+// ('notify_secret') yang dibaca lewat RPC edge_config (service_role only).
+// Konfigurasi tidak memakai env var sama sekali agar bisa dijalankan dari
+// MCP/Dashboard tanpa `supabase secrets set`:
+//   vault 'notify_secret'        -> header autentikasi trigger
+//   vault 'fcm_service_account'  -> JSON service account Firebase (FCM v1)
+// Env var NOTIFY_SECRET / FCM_SERVICE_ACCOUNT_JSON tetap didukung sebagai
+// fallback bila suatu saat di-set lewat CLI.
+
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { importPKCS8, SignJWT } from "npm:jose@5";
 
@@ -9,8 +20,6 @@ interface ServiceAccount {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const NOTIFY_SECRET = Deno.env.get("NOTIFY_SECRET");
-const FCM_SERVICE_ACCOUNT_JSON = Deno.env.get("FCM_SERVICE_ACCOUNT_JSON");
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
@@ -23,6 +32,19 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** Baca satu key dari vault lewat RPC edge_config (hanya service_role yang boleh). */
+async function edgeConfig(
+  db: ReturnType<typeof createClient>,
+  key: string,
+): Promise<string> {
+  const { data, error } = await db.rpc("edge_config", { p_key: key });
+  if (error) {
+    console.error(`edge_config(${key}) failed: ${error.message}`);
+    return "";
+  }
+  return typeof data === "string" ? data : "";
 }
 
 async function getFcmAccessToken(sa: ServiceAccount): Promise<string> {
@@ -66,7 +88,7 @@ async function sendToDevice(
   accessToken: string,
   projectId: string,
   deviceToken: string,
-  orderId: string,
+  data: Record<string, string>,
   title: string,
   body: string,
 ): Promise<SendResult> {
@@ -82,10 +104,7 @@ async function sendToDevice(
         message: {
           token: deviceToken,
           notification: { title, body },
-          data: {
-            type: "new_order",
-            order_id: orderId,
-          },
+          data,
           android: {
             priority: "HIGH",
             notification: {
@@ -112,11 +131,16 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return json({ error: "method not allowed" }, 405);
   }
-  if (!NOTIFY_SECRET || req.headers.get("x-notify-secret") !== NOTIFY_SECRET) {
-    return json({ error: "unauthorized" }, 401);
-  }
-  if (!FCM_SERVICE_ACCOUNT_JSON || !SERVICE_ROLE_KEY || !SUPABASE_URL) {
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
     return json({ error: "server not configured" }, 500);
+  }
+
+  const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  const notifySecret =
+    Deno.env.get("NOTIFY_SECRET") || await edgeConfig(db, "notify_secret");
+  if (!notifySecret || req.headers.get("x-notify-secret") !== notifySecret) {
+    return json({ error: "unauthorized" }, 401);
   }
 
   let orderId = "";
@@ -129,15 +153,6 @@ Deno.serve(async (req) => {
   if (!orderId) {
     return json({ error: "order_id required" }, 400);
   }
-
-  let serviceAccount: ServiceAccount;
-  try {
-    serviceAccount = JSON.parse(FCM_SERVICE_ACCOUNT_JSON);
-  } catch {
-    return json({ error: "invalid FCM service account json" }, 500);
-  }
-
-  const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
   const { data: order, error: orderError } = await db
     .from("orders")
@@ -158,19 +173,51 @@ Deno.serve(async (req) => {
         .select("display_name, email")
         .eq("id", order.user_id)
         .maybeSingle(),
-      db.from("admin_devices").select("id, fcm_token"),
+      db.from("admin_devices").select("id, user_id, fcm_token"),
     ]);
   if (devicesError) {
     return json({ error: devicesError.message }, 500);
   }
-  if (!devices || devices.length === 0) {
+
+  // Pertahanan berlapis: hanya device milik akun role 'seller' (admin) yang
+  // menerima notifikasi, walau RLS sudah mencegah non-admin mendaftarkan token.
+  const { data: admins, error: adminsError } = await db
+    .from("profiles")
+    .select("id")
+    .eq("role", "seller");
+  if (adminsError) {
+    return json({ error: adminsError.message }, 500);
+  }
+  const adminIds = new Set((admins ?? []).map((row) => row.id));
+  const targets = (devices ?? []).filter((device) =>
+    adminIds.has(device.user_id)
+  );
+  if (targets.length === 0) {
     return json({ ok: true, sent: 0, reason: "no registered devices" });
   }
 
+  const fcmJson =
+    Deno.env.get("FCM_SERVICE_ACCOUNT_JSON") ||
+    await edgeConfig(db, "fcm_service_account");
+  if (!fcmJson) {
+    return json({ error: "server not configured" }, 500);
+  }
+  let serviceAccount: ServiceAccount;
+  try {
+    serviceAccount = JSON.parse(fcmJson);
+  } catch {
+    return json({ error: "invalid FCM service account json" }, 500);
+  }
+
   const buyerName = profile?.display_name || profile?.email || "Pembeli";
-  const total = new Intl.NumberFormat("id-ID").format(order.total_idr);
-  const title = "Pesanan baru";
-  const body = `${buyerName} - kode ${order.pickup_code} - Rp${total}`;
+  const title = "Pesanan Baru";
+  const body = `Ada pesanan baru dari ${buyerName}`;
+  const data: Record<string, string> = {
+    type: "new_order",
+    order_id: order.id,
+    buyer_name: buyerName,
+    pickup_code: order.pickup_code,
+  };
 
   let accessToken: string;
   try {
@@ -183,12 +230,12 @@ Deno.serve(async (req) => {
   let sent = 0;
   let removed = 0;
   let failed = 0;
-  for (const device of devices) {
+  for (const device of targets) {
     const result = await sendToDevice(
       accessToken,
       serviceAccount.project_id,
       device.fcm_token,
-      orderId,
+      data,
       title,
       body,
     );

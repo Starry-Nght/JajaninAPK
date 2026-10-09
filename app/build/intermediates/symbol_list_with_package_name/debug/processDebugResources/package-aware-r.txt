@@ -32,6 +32,7 @@ color common_google_signin_btn_text_light_disabled
 color common_google_signin_btn_text_light_focused
 color common_google_signin_btn_text_light_pressed
 color common_google_signin_btn_tint
+color ic_launcher_background
 color notification_action_color_filter
 color notification_icon_bg_color
 color ripple_material_light
@@ -153,8 +154,10 @@ id async
 id authAction
 id authEmail
 id authError
+id authName
 id authPassword
 id authProgress
+id authShowPass
 id authSubtitle
 id authTitle
 id authToggle
@@ -183,6 +186,15 @@ id normal
 id notification_background
 id notification_main_column
 id notification_main_column_container
+id productCategory
+id productDelete
+id productDescription
+id productImage
+id productIngredients
+id productName
+id productPrice
+id productSave
+id productStock
 id right_icon
 id right_side
 id searchApply
@@ -211,6 +223,7 @@ layout browser_actions_context_menu_row
 layout custom_dialog
 layout dialog_auth
 layout dialog_location
+layout dialog_product
 layout dialog_search
 layout notification_action
 layout notification_action_tombstone
@@ -218,6 +231,9 @@ layout notification_template_custom_big
 layout notification_template_icon_group
 layout notification_template_part_chronometer
 layout notification_template_part_time
+mipmap ic_launcher
+mipmap ic_launcher_foreground
+mipmap ic_launcher_round
 raw firebase_common_keep
 string androidx_startup
 string app_name
@@ -246,6 +262,7 @@ string fallback_menu_item_share_link
 string fcm_fallback_notification_channel_label
 string status_bar_notification_info_overflow
 style AppTheme
+style DialogField
 style TextAppearance_Compat_Notification
 style TextAppearance_Compat_Notification_Info
 style TextAppearance_Compat_Notification_Line2

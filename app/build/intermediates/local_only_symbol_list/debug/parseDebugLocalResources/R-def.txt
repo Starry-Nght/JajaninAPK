@@ -1,5 +1,6 @@
 R_DEF: Internal format may change without notice
 local
+color ic_launcher_background
 drawable bg_button
 drawable bg_dialog
 drawable bg_error
@@ -19,17 +20,33 @@ drawable welcome
 id authAction
 id authEmail
 id authError
+id authName
 id authPassword
 id authProgress
+id authShowPass
 id authSubtitle
 id authTitle
 id authToggle
 id locationOptions
+id productCategory
+id productDelete
+id productDescription
+id productImage
+id productIngredients
+id productName
+id productPrice
+id productSave
+id productStock
 id searchApply
 id searchClear
 id searchInput
 layout dialog_auth
 layout dialog_location
+layout dialog_product
 layout dialog_search
+mipmap ic_launcher
+mipmap ic_launcher_foreground
+mipmap ic_launcher_round
 string app_name
 style AppTheme
+style DialogField

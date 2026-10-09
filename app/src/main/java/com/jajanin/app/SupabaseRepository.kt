@@ -11,8 +11,10 @@ import io.github.jan.supabase.gotrue.providers.builtin.Email
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.Realtime
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import java.io.IOException
 
 /** Hasil dari [SupabaseRepository.register]. */
@@ -56,6 +58,14 @@ object SupabaseRepository {
 
     fun isConfigured() = configured
 
+    /** Base URL + publishable key untuk panggilan HTTP mentah (mis. upload Storage). */
+    val baseUrl: String get() = projectUrl
+    val publishableKey: String get() = BuildConfig.SUPABASE_PUBLISHABLE_KEY.trim()
+
+    /** JWT sesi aktif untuk header Authorization panggilan HTTP mentah. */
+    fun currentAccessToken(): String? =
+        if (configured) client.auth.currentSessionOrNull()?.accessToken else null
+
     /**
      * Menunggu Auth selesai memulihkan session dari penyimpanan, lalu melaporkan
      * apakah user sudah login.
@@ -64,6 +74,24 @@ object SupabaseRepository {
      * masih `LoadingFromStorage` sehingga [hasSession] bisa salah mengembalikan
      * false walau session valid tersimpan.
      */
+    /**
+     * Memulihkan session yang tersimpan (persistent login).
+     *
+     * Dipakai sekali saat aplikasi dibuka: menunggu Auth selesai memuat
+     * penyimpanan, lalu mencoba refresh token bila access token kedaluwarsa.
+     * True = ada session valid → langsung masuk dashboard tanpa login ulang.
+     * Tidak pernah menyimpan kata sandi; sepenuhnya milik Supabase Auth.
+     */
+    suspend fun restoreSession(): Boolean {
+        if (!configured) return false
+        client.auth.awaitInitialization()
+        if (client.auth.currentSessionOrNull() != null) return true
+        return runCatching {
+            client.auth.refreshCurrentSession()
+            client.auth.currentSessionOrNull() != null
+        }.getOrDefault(false)
+    }
+
     suspend fun awaitLoggedIn(): Boolean {
         if (!configured) return false
         client.auth.awaitInitialization()
@@ -78,6 +106,28 @@ object SupabaseRepository {
 
     @Serializable
     private data class RoleRow(val role: String)
+
+    @Serializable
+    private data class NameRow(@SerialName("display_name") val displayName: String? = null)
+
+    @Serializable
+    private data class StatusRow(
+        val role: String = "buyer",
+        @SerialName("account_status") val accountStatus: String = "active",
+    )
+
+    /** Status akun pemilik session (dipakai banner penangguhan). Null bila belum login. */
+    suspend fun myAccountStatus(): String? {
+        val uid = currentUid() ?: return null
+        return runCatching {
+            client.postgrest.from("profiles")
+                .select(Columns.list("role", "account_status")) {
+                    filter { eq("id", uid) }
+                    limit(1)
+                }
+                .decodeSingleOrNull<StatusRow>()?.accountStatus
+        }.getOrNull()
+    }
 
     /**
      * Membaca role pemilik session dari tabel profiles (baris milik sendiri).
@@ -97,6 +147,30 @@ object SupabaseRepository {
         }.getOrNull()
     }
 
+    /** Nama asli pemilik session dari tabel profiles (null/blank bila belum diisi). */
+    suspend fun myDisplayName(): String? {
+        val uid = currentUid() ?: return null
+        return runCatching {
+            client.postgrest.from("profiles")
+                .select(Columns.list("display_name")) {
+                    filter { eq("id", uid) }
+                    limit(1)
+                }
+                .decodeSingleOrNull<NameRow>()?.displayName
+        }.getOrNull()
+    }
+
+    /**
+     * Menyimpan nama asli milik sendiri (validasi 3-50 karakter di server).
+     * Dipakai form daftar + dialog wajib-isi untuk akun lama yang belum punya nama.
+     */
+    suspend fun setMyName(name: String) {
+        val params = mapOf("p_name" to kotlinx.serialization.json.JsonPrimitive(name.trim()))
+        // RPC mengembalikan satu objek jsonb telanjang (bukan array), jadi
+        // tidak di-decode: gagal = exception, sukses = lanjut.
+        client.postgrest.rpc("set_my_name", params)
+    }
+
     /**
      * Mendaftarkan akun baru lewat Supabase Auth.
      *
@@ -105,11 +179,17 @@ object SupabaseRepository {
      * Supabase langsung mengembalikan session sehingga user masuk tanpa langkah
      * tambahan.
      */
-    suspend fun register(email: String, password: String): RegisterResult {
+    suspend fun register(email: String, password: String, name: String = ""): RegisterResult {
         check(configured) { NOT_CONFIGURED }
+        val cleanName = name.trim()
         client.auth.signUpWith(Email, redirectUrl = AUTH_REDIRECT_URL) {
             this.email = email
             this.password = password
+            if (cleanName.isNotBlank()) {
+                this.data = kotlinx.serialization.json.buildJsonObject {
+                    put("display_name", kotlinx.serialization.json.JsonPrimitive(cleanName))
+                }
+            }
         }
         return if (client.auth.currentSessionOrNull() != null) {
             RegisterResult.LOGGED_IN
