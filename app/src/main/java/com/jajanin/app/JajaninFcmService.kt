@@ -22,7 +22,7 @@ class JajaninFcmService : FirebaseMessagingService() {
             runCatching {
                 if (!SupabaseRepository.awaitLoggedIn()) return@runCatching
                 val uid = SupabaseRepository.currentUid() ?: return@runCatching
-                if (SupabaseRepository.currentRole() != "seller") return@runCatching
+                // Semua role didaftarkan (server menyaring penerima per jenis notif).
                 OrderRepository.registerDevice(uid, token)
             }
         }

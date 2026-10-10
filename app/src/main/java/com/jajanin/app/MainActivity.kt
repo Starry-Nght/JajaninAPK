@@ -210,7 +210,7 @@ class MainActivity : Activity() {
                 if (ui.currentScreen != Screen.ADMIN_DETAIL) ui.showAdmin()
                 startAdminOrders()
                 refreshSellerProducts()
-                registerAdminDevice()
+                registerMyDevice()
                 refreshMyOrders()
                 refreshInbox()
                 startInboxObserver()
@@ -226,6 +226,7 @@ class MainActivity : Activity() {
             refreshMyOrders()
             refreshInbox()
             refreshOrderingStatus()
+            registerMyDevice()
             startInboxObserver()
         }
     }
@@ -233,6 +234,7 @@ class MainActivity : Activity() {
     /** Status akun sendiri (mis. suspended) untuk banner + blokir client-side. */
     private suspend fun refreshMyStatus() {
         ui.myAccountStatus = SupabaseRepository.myAccountStatus() ?: "active"
+        ui.myPhone = runCatching { PhoneRepository.myPhone() }.getOrNull().orEmpty()
         ui.invalidate()
     }
 
@@ -244,8 +246,8 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Mendaftarkan token FCM perangkat ini ke admin_devices (seller saja). Gagal = diam, bukan crash. */
-    private fun registerAdminDevice() {
+    /** Mendaftarkan token FCM perangkat ini (semua role). Gagal = diam. */
+    private fun registerMyDevice() {
         if (!SupabaseRepository.hasSession()) return
         authScope.launch {
             runCatching {
@@ -723,6 +725,15 @@ class MainActivity : Activity() {
             showAuthForm(false)
             return
         }
+        // Nomor HP wajib sebelum memesan (akun lama yang belum punya).
+        if (ui.myPhone.isBlank()) {
+            authScope.launch {
+                ui.myPhone = runCatching { PhoneRepository.myPhone() }.getOrNull().orEmpty()
+                if (ui.myPhone.isBlank()) showPhoneGate { openCheckout() }
+                else openCheckout()
+            }
+            return
+        }
         ui.go(Screen.CHECKOUT)
         refreshOrderingStatus()
         refreshStallAvailability()
@@ -842,6 +853,11 @@ class MainActivity : Activity() {
         }
         if (ui.myAccountStatus == "suspended") {
             Toast.makeText(this, "Akun ditangguhkan. Kamu tidak bisa memesan.", Toast.LENGTH_LONG).show()
+            return
+        }
+        // Pengaman: tanpa nomor HP tidak boleh memesan.
+        if (ui.myPhone.isBlank()) {
+            showPhoneGate { placeCartOrder() }
             return
         }
         val lines = ui.cart.entries.map { it.key to it.value }
@@ -1398,7 +1414,7 @@ class MainActivity : Activity() {
                 ui.showAdmin()
                 startAdminOrders()
                 refreshSellerProducts()
-                registerAdminDevice()
+                registerMyDevice()
                 refreshInbox()
                 startInboxObserver()
             }
@@ -1934,6 +1950,63 @@ class MainActivity : Activity() {
         )
     }
 
+    // ================= Nomor HP =================
+
+    /** Editor nomor HP sendiri (validasi + normalisasi server). */
+    fun showPhoneEditor(onSaved: (() -> Unit)? = null) {
+        val input = EditText(this).apply {
+            hint = "cth. 0812xxxxxxx"
+            inputType = android.text.InputType.TYPE_CLASS_PHONE
+            setSingleLine(true)
+            setText(ui.myPhone)
+            setSelection(ui.myPhone.length)
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
+        container.addView(input)
+        android.app.AlertDialog.Builder(this).setTitle("Nomor HP")
+            .setMessage("Dipakai untuk koordinasi ambil pesanan dan info order penting.")
+            .setView(container)
+            .setPositiveButton("Simpan", null)
+            .setNegativeButton("Batal", null)
+            .show()
+            .also { dialog ->
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    val raw = input.text.toString().trim()
+                    if (PhoneRepository.normalizePhone(raw) == null) {
+                        Toast.makeText(this, "Nomor HP tidak valid. Gunakan 08... atau +62...", Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
+                    }
+                    val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                    saveBtn.isEnabled = false
+                    authScope.launch {
+                        try {
+                            ui.myPhone = PhoneRepository.setMyPhone(raw)
+                            ui.invalidate()
+                            dialog.dismiss()
+                            Toast.makeText(this@MainActivity, "Nomor HP disimpan.", Toast.LENGTH_SHORT).show()
+                            onSaved?.invoke()
+                        } catch (error: Throwable) {
+                            saveBtn.isEnabled = true
+                            Toast.makeText(this@MainActivity, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        input.requestFocus()
+    }
+
+    /** Gerbang wajib-HP sebelum memesan (akun lama tanpa nomor). */
+    private fun showPhoneGate(onReady: () -> Unit) {
+        android.app.AlertDialog.Builder(this).setTitle("Lengkapi nomor HP")
+            .setMessage("Nomor HP wajib diisi sebelum memesan, untuk koordinasi pengambilan pesanan.")
+            .setPositiveButton("Isi nomor") { _, _ -> showPhoneEditor { onReady() } }
+            .setNegativeButton("Nanti", null)
+            .show()
+    }
+
     fun cancelAdminOrder(orderId: String) {
         val order = ui.adminOrders.firstOrNull { it.id == orderId } ?: return
         if (isTerminalStatus(order.status)) return
@@ -2282,6 +2355,7 @@ class MainActivity : Activity() {
                 ui.myAnnouncements = emptyList()
                 ui.myInvites = emptyList()
                 ui.devInvites = emptyList()
+                ui.myPhone = ""
                 ui.stallActiveOrders = -1
                 ui.stallFull = false
                 ui.showLogin()
@@ -2305,6 +2379,7 @@ class MainActivity : Activity() {
         private val title = dialog.findViewById<TextView>(R.id.authTitle)
         private val subtitle = dialog.findViewById<TextView>(R.id.authSubtitle)
         private val name = dialog.findViewById<EditText>(R.id.authName)
+        private val phone = dialog.findViewById<EditText>(R.id.authPhone)
         private val email = dialog.findViewById<EditText>(R.id.authEmail)
         private val password = dialog.findViewById<EditText>(R.id.authPassword)
         private val error = dialog.findViewById<TextView>(R.id.authError)
@@ -2383,6 +2458,7 @@ class MainActivity : Activity() {
             title.text = if (signup) "Buat akun" else "Masuk dengan email"
             subtitle.text = if (signup) "Daftar untuk mulai jajan di kampus." else "Lanjutkan jajan favoritmu di kampus."
             name.visibility = if (signup) View.VISIBLE else View.GONE
+            phone.visibility = if (signup) View.VISIBLE else View.GONE
             // Jarak atas email menyesuaikan: tanpa kolom nama, email yang paling atas.
             (email.layoutParams as ViewGroup.MarginLayoutParams).topMargin =
                 (if (signup) 12 else 22 * resources.displayMetrics.density).toInt()
@@ -2400,6 +2476,7 @@ class MainActivity : Activity() {
             action.isEnabled = !value
             toggle.isEnabled = !value
             name.isEnabled = !value
+            phone.isEnabled = !value
             email.isEnabled = !value
             password.isEnabled = !value
             showPass.isEnabled = !value
@@ -2416,10 +2493,15 @@ class MainActivity : Activity() {
             if (busy) return
             error.visibility = View.GONE
             val nameValue = name.text.toString().trim()
+            val phoneValue = phone.text.toString().trim()
             val emailValue = email.text.toString().trim()
             val passwordValue = password.text.toString()
             if (signup && nameValue.length < 3) {
                 fail("Isi nama aslimu dulu (minimal 3 karakter)")
+                return
+            }
+            if (signup && PhoneRepository.normalizePhone(phoneValue) == null) {
+                fail("Isi nomor HP valid (cth. 0812xxxxxxx)")
                 return
             }
             if (!android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches() || passwordValue.length < 6) {
@@ -2439,6 +2521,8 @@ class MainActivity : Activity() {
                             // (mis. trigger belum jalan) sebelum masuk.
                             runCatching { SupabaseRepository.setMyName(nameValue) }
                             ui.myDisplayName = SupabaseRepository.myDisplayName() ?: nameValue
+                            // Nomor HP wajib: simpan dinormalisasi server.
+                            runCatching { ui.myPhone = PhoneRepository.setMyPhone(phoneValue) }
                             dialog.dismiss()
                             routeSignedInUser()
                         } else {

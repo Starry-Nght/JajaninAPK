@@ -162,8 +162,9 @@ private fun JajaninView.drawDevUsers(c: Canvas, w: Float, h: Float, off: Float, 
         kit.rounded(c, card, kit.card, 14f, kit.blue)
         kit.text(c, selected.displayName.take(26), 34f, listTop + 28f + off, 15f, kit.ink, true)
         kit.text(c, selected.email.take(34), 34f, listTop + 49f + off, 11f, kit.muted)
-        val meta = "${selected.role} · ${selected.accountStatus} · ${selected.orderCount} order · ${selected.warningCount} peringatan"
-        kit.text(c, meta.take(48), 34f, listTop + 69f + off, 10f, kit.muted)
+        val meta = "${selected.role} · ${selected.accountStatus} · ${selected.orderCount} order · ${selected.warningCount} peringatan" +
+            (selected.phone.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
+        kit.text(c, meta.take(64), 34f, listTop + 69f + off, 10f, kit.muted)
         if (selected.role == "seller") {
             val stall = "${selected.stallName ?: "Belum ada warung"}${selected.stallOpen?.let { if (it) " · buka" else " · tutup" } ?: ""}"
             kit.text(c, stall.take(44), 34f, listTop + 89f + off, 10f, kit.blue, true)

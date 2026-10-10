@@ -181,6 +181,8 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myInvites: List<SellerInvite> = emptyList()
     internal var devInvites: List<SellerInvite> = emptyList()
     internal var inboxObserver: OrderObserver? = null
+    // --- Nomor HP sendiri (wajib sebelum memesan) ---
+    internal var myPhone: String = ""
     // --- Onboarding (tutorial pertama kali) ---
     internal var onboardPage = 0
     internal val onboardCount = 4
@@ -488,6 +490,7 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "placeOrder" -> if (!placingOrder) activity()?.placeCartOrder()
                     hit == "paid" -> activity()?.submitPaymentProof()
                     hit.startsWith("myOrderPaid:") -> activity()?.submitPaymentProofFor(hit.substringAfter(':'))
+                    hit == "profilePhone" -> activity()?.showPhoneEditor()
                     hit == "profileQris" -> activity()?.showQrisSettings()
                     hit == "profileStallName" -> activity()?.showStallNameEdit()
                     hit == "qrisPick" -> activity()?.pickQrisImage()

@@ -94,6 +94,7 @@ internal data class DevUser(
     val stallName: String? = null,
     val stallOpen: Boolean? = null,
     val stallId: String? = null,
+    val phone: String = "",
 )
 
 internal data class DevStats(
@@ -184,6 +185,13 @@ internal object DeveloperRepository {
         }.getOrDefault(emptyList())
             .groupingBy { it["user_id"].orEmpty() }.eachCount()
         val stallByOwner = stalls.associateBy { it.ownerId }
+        // Nomor HP (developer boleh baca semua via RLS profile_phones).
+        val phones = runCatching {
+            client.postgrest.from("profile_phones")
+                .select(Columns.list("user_id", "phone")) { limit(1000) }
+                .decodeList<DevPhoneRow>()
+                .associate { it.userId to it.phone }
+        }.getOrDefault(emptyMap())
         return profiles.map { p ->
             val stall = stallByOwner[p.id]
             DevUser(
@@ -199,9 +207,16 @@ internal object DeveloperRepository {
                 stallName = stall?.name,
                 stallOpen = stall?.isOpen,
                 stallId = stall?.id,
+                phone = phones[p.id].orEmpty(),
             )
         }
     }
+
+    @Serializable
+    private data class DevPhoneRow(
+        @SerialName("user_id") val userId: String = "",
+        val phone: String = "",
+    )
 
     /** Platform-wide orders (read-only; capped for the dashboard list). */
     suspend fun fetchAllOrders(max: Int = 60): List<AdminOrder> {

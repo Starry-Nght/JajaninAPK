@@ -158,6 +158,7 @@ id authEmail
 id authError
 id authName
 id authPassword
+id authPhone
 id authProgress
 id authShowPass
 id authSubtitle

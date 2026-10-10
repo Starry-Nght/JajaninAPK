@@ -802,6 +802,16 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
 
     // Baris info: Bantuan + Tentang + Info Penting (ketuk = halaman sendiri).
     var y = 216f
+    // Nomor HP sendiri (pembeli saja; wajib sebelum memesan).
+    if (!isSellerProfile) {
+        kit.rounded(c, RectF(18f, y, 372f, y + 50f), kit.card, 13f, kit.border)
+        kit.text(c, "Nomor HP", 34f, y + 22f, 14f, kit.ink)
+        kit.text(c, myPhone.takeIf { it.isNotBlank() } ?: "Belum diisi · ketuk untuk isi", 34f, y + 40f, 10f, if (myPhone.isBlank()) kit.danger else kit.blue, true)
+        drawIcon(c, "chevronRight", 349f, y + 25f, 15f, kit.muted)
+        press(c, "profilePhone", RectF(18f, y, 372f, y + 50f), 13f)
+        bounds["profilePhone"] = RectF(18f, y, 372f, y + 50f)
+        y += 62f
+    }
     listOf(
         "Bantuan" to "help",
         "Tentang Jajanin" to "about",

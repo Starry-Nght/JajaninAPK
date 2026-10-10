@@ -46,6 +46,26 @@
         android:visibility="gone" />
 
     <EditText
+        android:id="@+id/authPhone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:autofillHints="phone"
+        android:background="@drawable/bg_field"
+        android:hint="Nomor HP (cth. 0812xxxxxxx)"
+        android:imeOptions="actionNext"
+        android:inputType="phone"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:singleLine="true"
+        android:textColor="#1B2335"
+        android:textColorHint="#707889"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
+    <EditText
         android:id="@+id/authEmail"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
