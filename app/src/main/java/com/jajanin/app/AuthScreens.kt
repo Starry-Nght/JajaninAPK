@@ -23,7 +23,6 @@ internal fun JajaninView.drawRole(c: Canvas, w: Float, h: Float) {
     kit.text(c, "sebagai siapa?", 24f, 168f, 28f, kit.ink, true)
     roleCard(c, "Pembeli", "Cari makanan dan pesan dari kantin", 190f, "buyer", selectedRole == "buyer")
     roleCard(c, "Penjual", "Kelola menu dan pesanan kantin", 296f, "seller", selectedRole == "seller")
-    roleCard(c, "Developer", "Monitor platform & kelola pengguna", 402f, "developer", selectedRole == "developer")
     kit.text(c, "Pilih mode aplikasi.", 24f, h - 104f, 13f, kit.muted)
     val cta = RectF(24f, h - 78f, w - 24f, h - 22f)
     kit.button(c, "Lanjutkan", cta)

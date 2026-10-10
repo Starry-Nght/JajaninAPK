@@ -9,7 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
 
-internal enum class Screen { SPLASH, ONBOARD, WELCOME, ROLE, LOGIN, HOME, EXPLORE, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE, NOTIF, ADMIN, ADMIN_DETAIL, PRODUCT_FORM, HELP, ABOUT, INFO, DEV }
+internal enum class Screen { SPLASH, ONBOARD, WELCOME, ROLE, LOGIN, HOME, EXPLORE, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE, EXP_HISTORY, NOTIF, ADMIN, ADMIN_DETAIL, PRODUCT_FORM, HELP, ABOUT, INFO, DEV }
 
 internal const val STATUS_PENDING = "pending"
 internal const val STATUS_CONFIRMED = "confirmed"
@@ -183,6 +183,17 @@ internal class JajaninView(context: Context) : View(context) {
     internal var inboxObserver: OrderObserver? = null
     // --- Nomor HP sendiri (wajib sebelum memesan) ---
     internal var myPhone: String = ""
+    // --- Level & EXP pembeli (saldo dari server, level dihitung lokal) ---
+    internal var myExp = 0
+    internal var myExpLoading = false
+    internal var lastExpBalance = -1
+    internal var lastExpLevel = 0
+    internal var expPulseAt = 0L
+    internal var expHistory: List<ExpEntry> = emptyList()
+    internal var expHistoryLoading = false
+    internal var expHistoryError: String? = null
+    internal var expHistoryLimit = 20
+    internal var expHistoryEnd = false
     // --- Onboarding (tutorial pertama kali) ---
     internal var onboardPage = 0
     internal val onboardCount = 4
@@ -241,7 +252,7 @@ internal class JajaninView(context: Context) : View(context) {
     private var pageSlideAt = 0L
 
     /** Hormati preferensi reduced-motion Android: matikan animasi bila skala 0. */
-    private fun motionEnabled(): Boolean = runCatching {
+    internal fun motionEnabled(): Boolean = runCatching {
         android.provider.Settings.Global.getFloat(
             context.contentResolver,
             android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
@@ -353,6 +364,7 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.READY -> drawReady(canvas, 390f, height / s)
             Screen.ORDERS -> drawOrders(canvas, 390f, height / s)
             Screen.PROFILE -> drawProfile(canvas, 390f, height / s)
+            Screen.EXP_HISTORY -> drawExpHistory(canvas, 390f, height / s)
             Screen.NOTIF -> drawNotif(canvas, 390f, height / s)
             Screen.HELP -> drawHelp(canvas, 390f, height / s)
             Screen.ABOUT -> drawAbout(canvas, 390f, height / s)
@@ -402,7 +414,8 @@ internal class JajaninView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
                     screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
-                    screen == Screen.DEV || screen == Screen.CHECKOUT || screen == Screen.NOTIF
+                    screen == Screen.DEV || screen == Screen.CHECKOUT || screen == Screen.NOTIF ||
+                    screen == Screen.EXP_HISTORY
                 if (scrollable && !adminNotifOpen && abs(y - touchStartY) > 6f) {
                     moved = true
                     if (pressedTab != null || pressedKey != null) {
@@ -447,7 +460,7 @@ internal class JajaninView(context: Context) : View(context) {
                             invalidate()
                         }
                     }
-                    hit == "buyer" || hit == "seller" || hit == "developer" -> {
+                    hit == "buyer" || hit == "seller" -> {
                         selectedRole = hit
                         invalidate()
                     }
@@ -491,6 +504,9 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "paid" -> activity()?.submitPaymentProof()
                     hit.startsWith("myOrderPaid:") -> activity()?.submitPaymentProofFor(hit.substringAfter(':'))
                     hit == "profilePhone" -> activity()?.showPhoneEditor()
+                    hit == "expHistory" -> activity()?.openExpHistory()
+                    hit == "expMore" -> activity()?.loadMoreExp()
+                    hit == "expRetry" -> activity()?.loadExpPage()
                     hit == "profileQris" -> activity()?.showQrisSettings()
                     hit == "profileStallName" -> activity()?.showStallNameEdit()
                     hit == "qrisPick" -> activity()?.pickQrisImage()

@@ -277,6 +277,7 @@ class MainActivity : Activity() {
             try {
                 ui.myOrders = OrderRepository.fetchMyOrders()
                 ui.myOrdersError = null
+                refreshMyExp()
             } catch (error: Throwable) {
                 ui.myOrdersError = SupabaseRepository.errorMessage(error)
             } finally {
@@ -295,6 +296,93 @@ class MainActivity : Activity() {
                 if (SupabaseRepository.hasSession()) refreshMyOrders()
             }
         }
+    }
+
+    private var expJob: Job? = null
+
+    /**
+     * Muat saldo EXP + beri tahu kenaikan (toast) dan animasi badge bila naik
+     * level. Aman dari koneksi lambat: refresh berurutan, saldo dari server.
+     */
+    fun refreshMyExp() {
+        if (!SupabaseRepository.hasSession()) {
+            ui.myExp = 0
+            ui.lastExpBalance = -1
+            ui.lastExpLevel = 0
+            ui.invalidate()
+            return
+        }
+        expJob?.cancel()
+        ui.myExpLoading = true
+        expJob = authScope.launch {
+            val balance = runCatching { ExpRepository.myBalance() }.getOrNull()
+            ui.myExpLoading = false
+            if (balance == null) {
+                ui.invalidate()
+                return@launch
+            }
+            val prevBal = ui.lastExpBalance
+            val prevLvl = ui.lastExpLevel
+            ui.myExp = balance
+            val newLvl = expLevel(balance)
+            if (prevBal >= 0 && balance > prevBal) {
+                val gained = balance - prevBal
+                if (prevLvl > 0 && newLvl > prevLvl) {
+                    Toast.makeText(this@MainActivity, "+$gained EXP! Kamu naik ke Level $newLvl!", Toast.LENGTH_LONG).show()
+                    if (ui.motionEnabled()) {
+                        ui.expPulseAt = android.os.SystemClock.uptimeMillis()
+                    }
+                } else if (gained > 0) {
+                    Toast.makeText(this@MainActivity, "+$gained EXP!", Toast.LENGTH_SHORT).show()
+                }
+            }
+            ui.lastExpBalance = balance
+            ui.lastExpLevel = newLvl
+            ui.invalidate()
+        }
+    }
+
+    /** Buka layar riwayat EXP (halaman pertama). */
+    fun openExpHistory() {
+        ui.expHistoryLimit = 20
+        ui.expHistoryEnd = false
+        ui.expHistoryError = null
+        ui.go(Screen.EXP_HISTORY)
+        loadExpPage()
+    }
+
+    /** Muat ulang halaman riwayat sesuai limit saat ini. */
+    fun loadExpPage() {
+        if (!SupabaseRepository.hasSession()) {
+            ui.expHistory = emptyList()
+            ui.expHistoryError = null
+            ui.expHistoryLoading = false
+            ui.invalidate()
+            return
+        }
+        expJob?.cancel()
+        ui.expHistoryLoading = true
+        ui.expHistoryError = null
+        ui.invalidate()
+        expJob = authScope.launch {
+            val list = runCatching { ExpRepository.myHistory(ui.expHistoryLimit.toLong()) }.getOrNull()
+            ui.expHistoryLoading = false
+            if (list == null) {
+                ui.expHistoryError = "Gagal memuat. Periksa koneksi."
+            } else {
+                ui.expHistory = list
+                ui.expHistoryError = null
+                ui.expHistoryEnd = list.size < ui.expHistoryLimit
+            }
+            ui.invalidate()
+        }
+    }
+
+    /** Tambah 20 entri riwayat (lazy loading). */
+    fun loadMoreExp() {
+        if (ui.expHistoryLoading || ui.expHistoryEnd) return
+        ui.expHistoryLimit += 20
+        loadExpPage()
     }
 
     private fun startProductUpdates() {
@@ -479,26 +567,24 @@ class MainActivity : Activity() {
         ui.invalidate()
         authScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: error("Gambar tidak bisa dibaca.")
+                // Kecilkan dulu di HP (maks 1280px, JPEG q82): upload 10-50x
+                // lebih ringan daripada foto mentah, jarang gagal/timeout.
+                val bytes = compressForUpload(raw)
                 require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
-                val mime = contentResolver.getType(uri) ?: "image/jpeg"
-                val ext = when {
-                    mime.contains("png", true) -> "png"
-                    mime.contains("webp", true) -> "webp"
-                    else -> "jpg"
-                }
                 val token = SupabaseRepository.currentAccessToken()
                     ?: error("Sesi habis, masuk ulang.")
                 val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
-                val path = "$uid/${java.util.UUID.randomUUID()}.$ext"
+                val path = "$uid/${java.util.UUID.randomUUID()}.jpg"
                 val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/product-images/$path")
                 val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
                     requestMethod = "PUT"
                     doOutput = true
+                    setFixedLengthStreamingMode(bytes.size)
                     setRequestProperty("apikey", SupabaseRepository.publishableKey)
                     setRequestProperty("Authorization", "Bearer $token")
-                    setRequestProperty("Content-Type", mime)
+                    setRequestProperty("Content-Type", "image/jpeg")
                     setRequestProperty("x-upsert", "true")
                     connectTimeout = 15000
                     readTimeout = 15000
@@ -523,12 +609,78 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Decode secukupnya (sisi terpanjang [maxEdge]) + putar sesuai EXIF +
+     * kompres JPEG. Foto 12MP (~4-8MB) jadi ~150-400KB tanpa beda kasat mata
+     * di ubin menu. Gagal decode = kembalikan bytes asli.
+     */
+    private fun compressForUpload(raw: ByteArray, maxEdge: Int = 1280, quality: Int = 82): ByteArray {
+        return runCatching {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+            val w = bounds.outWidth
+            val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return raw
+            var sample = 1
+            while (w / sample > maxEdge || h / sample > maxEdge) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            var bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+                ?: return raw
+            val edge = maxOf(bmp.width, bmp.height)
+            if (edge > maxEdge) {
+                val scale = maxEdge.toFloat() / edge
+                val scaled = android.graphics.Bitmap.createScaledBitmap(
+                    bmp, (bmp.width * scale).toInt().coerceAtLeast(1),
+                    (bmp.height * scale).toInt().coerceAtLeast(1), true,
+                )
+                if (scaled != bmp) bmp.recycle()
+                bmp = scaled
+            }
+            val oriented = applyExifOrientation(raw, bmp)
+            val out = java.io.ByteArrayOutputStream()
+            oriented.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, out)
+            if (oriented != bmp) oriented.recycle()
+            bmp.recycle()
+            out.toByteArray().takeIf { it.isNotEmpty() } ?: raw
+        }.getOrDefault(raw)
+    }
+
+    /** Putar bitmap sesuai tag EXIF Orientation (foto kamera sering miring). */
+    private fun applyExifOrientation(raw: ByteArray, bmp: android.graphics.Bitmap): android.graphics.Bitmap {
+        val orientation = runCatching {
+            android.media.ExifInterface(java.io.ByteArrayInputStream(raw))
+                .getAttributeInt(
+                    android.media.ExifInterface.TAG_ORIENTATION,
+                    android.media.ExifInterface.ORIENTATION_NORMAL,
+                )
+        }.getOrDefault(android.media.ExifInterface.ORIENTATION_NORMAL)
+        val matrix = android.graphics.Matrix()
+        when (orientation) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+            android.media.ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+            android.media.ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            else -> return bmp
+        }
+        return runCatching {
+            android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+        }.getOrDefault(bmp)
+    }
+
     fun loadProductImage(url: String) {
         if (ProductImageCache.images.containsKey(url)) return
         authScope.launch(Dispatchers.IO) {
             val bitmap = runCatching {
                 val connection = java.net.URL(url).openConnection().apply { connectTimeout = 6000; readTimeout = 6000 }
-                connection.getInputStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                val raw = connection.getInputStream().use { it.readBytes() }
+                // Ubin menu kecil: decode secukupnya (maks 800px) agar hemat RAM.
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+                var sample = 1
+                while (bounds.outWidth / sample > 800 || bounds.outHeight / sample > 800) sample *= 2
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
             }.getOrNull()
             if (bitmap != null) {
                 ProductImageCache.images[url] = bitmap
@@ -1081,19 +1233,22 @@ class MainActivity : Activity() {
         }
         authScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: error("Gambar tidak bisa dibaca.")
+                // QR tetap tajam di 1000px q90, jauh lebih ringan dari mentah.
+                val bytes = compressForUpload(raw, maxEdge = 1000, quality = 90)
                 require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
                 val token = SupabaseRepository.currentAccessToken()
                     ?: error("Sesi habis, masuk ulang.")
                 val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
-                val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/qris/$uid.png")
+                val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/qris/$uid.jpg")
                 val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
                     requestMethod = "PUT"
                     doOutput = true
+                    setFixedLengthStreamingMode(bytes.size)
                     setRequestProperty("apikey", SupabaseRepository.publishableKey)
                     setRequestProperty("Authorization", "Bearer $token")
-                    setRequestProperty("Content-Type", "image/png")
+                    setRequestProperty("Content-Type", "image/jpeg")
                     setRequestProperty("x-upsert", "true")
                     connectTimeout = 15000
                     readTimeout = 15000
@@ -1101,7 +1256,7 @@ class MainActivity : Activity() {
                 conn.outputStream.use { it.write(bytes) }
                 val code = conn.responseCode
                 if (code !in 200..299) error("Unggah gagal (HTTP $code).")
-                val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/qris/$uid.png"
+                val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/qris/$uid.jpg"
                 OrderRepository.updateStallQris(stallId, publicUrl)
                 launch(kotlinx.coroutines.Dispatchers.Main) {
                     ui.myStallQris = publicUrl
@@ -1130,14 +1285,11 @@ class MainActivity : Activity() {
         refreshAdminOrders()
     }
 
-    /** Pilihan peran dari layar ROLE: penjual/developer tanpa sesi diarahkan masuk, dengan sesi dicek rolenya. */
+    /** Pilihan peran dari layar ROLE: hanya Pembeli/Penjual. Developer masuk
+     * otomatis lewat login karena role-nya dikunci di database. */
     fun submitRoleChoice(role: String) {
         if (role == "seller") {
             enterSellerDashboard()
-            return
-        }
-        if (role == "developer") {
-            enterDeveloper()
             return
         }
         ui.myRole = "buyer"
@@ -2356,6 +2508,13 @@ class MainActivity : Activity() {
                 ui.myInvites = emptyList()
                 ui.devInvites = emptyList()
                 ui.myPhone = ""
+                ui.myExp = 0
+                ui.lastExpBalance = -1
+                ui.lastExpLevel = 0
+                ui.expHistory = emptyList()
+                ui.expHistoryError = null
+                ui.expHistoryLimit = 20
+                ui.expHistoryEnd = false
                 ui.stallActiveOrders = -1
                 ui.stallFull = false
                 ui.showLogin()

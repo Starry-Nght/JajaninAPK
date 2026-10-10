@@ -800,8 +800,40 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     val suspended = myAccountStatus == "suspended"
     kit.text(c, if (suspended) "Status: Ditangguhkan" else "Status: Aktif", 110f, 178f, 11f, if (suspended) kit.danger else kit.success, true)
 
-    // Baris info: Bantuan + Tentang + Info Penting (ketuk = halaman sendiri).
+    // Kartu level pembeli (buyer saja): badge + EXP + progres + riwayat.
     var y = 216f
+    if (!isSellerProfile) {
+        val level = expLevel(myExp)
+        val nextAt = expNextAt(level)
+        val start = expLevelStart(level)
+        val frac = if (nextAt == null) 1f else ((myExp - start).toFloat() / (nextAt - start).toFloat()).coerceIn(0f, 1f)
+        var badgeR = 26f
+        if (expPulseAt > 0L && motionEnabled()) {
+            val t = ((android.os.SystemClock.uptimeMillis() - expPulseAt) / 600f).coerceIn(0f, 1f)
+            if (t < 1f) {
+                badgeR += 8f * (1f - t)
+                postInvalidateOnAnimation()
+            }
+        }
+        val card = RectF(18f, 204f, 372f, 300f)
+        kit.card(c, card, 16f)
+        kit.rounded(c, RectF(66f - badgeR, 252f - badgeR, 66f + badgeR, 252f + badgeR), kit.tint, badgeR)
+        kit.centerText(c, "Lv $level", RectF(30f, 240f, 102f, 264f), 13f, kit.blue, true)
+        kit.text(c, if (level >= EXP_MAX_LEVEL) "★ Prestise" else "Level $level", 104f, 232f, 11f, kit.muted, true)
+        kit.text(c, "$myExp EXP", 104f, 258f, 20f, kit.ink, true)
+        kit.rounded(c, RectF(104f, 268f, 340f, 278f), kit.border, 5f)
+        if (frac > 0f) {
+            val fw = (340f - 104f) * frac
+            if (fw >= 10f) kit.rounded(c, RectF(104f, 268f, 104f + fw, 278f), kit.blue, 5f)
+        }
+        kit.text(
+            c,
+            if (nextAt == null) "$myExp EXP · level maks" else "${myExp - start} / ${nextAt - start} menuju Level ${level + 1}",
+            104f, 294f, 10f, kit.muted,
+        )
+        bounds["expHistory"] = RectF(card)
+        y = 312f
+    }
     // Nomor HP sendiri (pembeli saja; wajib sebelum memesan).
     if (!isSellerProfile) {
         kit.rounded(c, RectF(18f, y, 372f, y + 50f), kit.card, 13f, kit.border)
@@ -812,11 +844,13 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
         bounds["profilePhone"] = RectF(18f, y, 372f, y + 50f)
         y += 62f
     }
-    listOf(
+    val infoRows = mutableListOf(
         "Bantuan" to "help",
         "Tentang Jajanin" to "about",
         "INFORMASI PENTING" to "infoPage",
-    ).forEach { (title, key) ->
+    )
+    if (!isSellerProfile) infoRows.add(0, "Riwayat EXP" to "expHistory")
+    infoRows.forEach { (title, key) ->
         kit.rounded(c, RectF(18f, y, 372f, y + 50f), kit.card, 13f, kit.border)
         kit.text(c, title, 34f, y + 31f, 14f, kit.ink)
         drawIcon(c, "chevronRight", 349f, y + 25f, 15f, kit.muted)
