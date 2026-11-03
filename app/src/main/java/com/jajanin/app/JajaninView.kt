@@ -415,7 +415,7 @@ internal class JajaninView(context: Context) : View(context) {
                 val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
                     screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
                     screen == Screen.DEV || screen == Screen.CHECKOUT || screen == Screen.NOTIF ||
-                    screen == Screen.EXP_HISTORY
+                    screen == Screen.EXP_HISTORY || screen == Screen.PROFILE
                 if (scrollable && !adminNotifOpen && abs(y - touchStartY) > 6f) {
                     moved = true
                     if (pressedTab != null || pressedKey != null) {
