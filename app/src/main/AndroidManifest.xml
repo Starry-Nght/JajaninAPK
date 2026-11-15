@@ -14,7 +14,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".JajaninFcmService"
+            android:name=".notifications.JajaninFcmService"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />

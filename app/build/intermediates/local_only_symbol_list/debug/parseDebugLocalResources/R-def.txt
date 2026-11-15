@@ -12,6 +12,14 @@ drawable bghome
 drawable checkout
 drawable detail
 drawable home
+drawable ic_nav_bell
+drawable ic_nav_box
+drawable ic_nav_explore
+drawable ic_nav_grid
+drawable ic_nav_home
+drawable ic_nav_orders
+drawable ic_nav_profile
+drawable ic_nav_receipt
 drawable ic_stat_orders
 drawable orders
 drawable profile

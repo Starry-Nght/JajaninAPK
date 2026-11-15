@@ -1,8 +1,26 @@
 com.jajanin.app
+anim liquid_glass_dialog_exit
+anim liquid_glass_dialog_none
+attr aberrationIntensity
+attr adaptiveLensScale
+attr adaptiveTint
 attr alpha
+attr backdropSourceId
+attr bevelWidth
+attr blurAmount
 attr buttonSize
 attr circleCrop
 attr colorScheme
+attr cornerRadius
+attr cornerRadiusBottomLeft
+attr cornerRadiusBottomRight
+attr cornerRadiusTopLeft
+attr cornerRadiusTopRight
+attr dispersionStrength
+attr displacementScale
+attr edgeSoftness
+attr elasticity
+attr flatEdges
 attr font
 attr fontProviderAuthority
 attr fontProviderCerts
@@ -10,17 +28,57 @@ attr fontProviderFetchStrategy
 attr fontProviderFetchTimeout
 attr fontProviderPackage
 attr fontProviderQuery
+attr fontProviderSystemFontFamily
 attr fontStyle
 attr fontVariationSettings
 attr fontWeight
+attr glassCheckedIconVisible
+attr glassCheckedTint
+attr glassChipIcon
+attr glassChipSpacingHorizontal
+attr glassChipSpacingVertical
+attr glassCloseIconVisible
+attr glassGroupCornerRadius
+attr glassHeadline
+attr glassIconTint
+attr glassInnerCornerRadius
+attr glassItemSpacing
+attr glassLeadingIcon
+attr glassListPosition
+attr glassListStyle
+attr glassMaterial
+attr glassSelectionRequired
+attr glassSingleLine
+attr glassSingleSelection
+attr glassSupportingText
+attr glassTabEntries
+attr glassTabMode
+attr glassTint
+attr glassTintStrength
+attr glassTrailingIcon
+attr glassTrailingText
 attr imageAspectRatio
 attr imageAspectRatioAdjust
+attr lStar
+attr nestedScrollViewStyle
+attr queryPatterns
+attr refractionFalloff
+attr refractionHeight
+attr refractionNoFold
+attr refractionOutward
+attr saturation
 attr scopeUris
+attr sensorHighlight
+attr shortcutMatchRequired
 attr ttcIndex
+color androidx_core_ripple_material_light
+color androidx_core_secondary_text_default_material_light
 color browser_actions_bg_grey
 color browser_actions_divider_color
 color browser_actions_text_color
 color browser_actions_title_color
+color call_notification_answer_color
+color call_notification_decline_color
 color common_google_signin_btn_text_dark
 color common_google_signin_btn_text_dark_default
 color common_google_signin_btn_text_dark_disabled
@@ -35,8 +93,6 @@ color common_google_signin_btn_tint
 color ic_launcher_background
 color notification_action_color_filter
 color notification_icon_bg_color
-color ripple_material_light
-color secondary_text_default_material_light
 dimen browser_actions_context_menu_max_width
 dimen browser_actions_context_menu_min_padding
 dimen compat_button_inset_horizontal_material
@@ -93,7 +149,23 @@ drawable detail
 drawable googleg_disabled_color_18
 drawable googleg_standard_color_18
 drawable home
+drawable ic_call_answer
+drawable ic_call_answer_low
+drawable ic_call_answer_video
+drawable ic_call_answer_video_low
+drawable ic_call_decline
+drawable ic_call_decline_low
+drawable ic_nav_bell
+drawable ic_nav_box
+drawable ic_nav_explore
+drawable ic_nav_grid
+drawable ic_nav_home
+drawable ic_nav_orders
+drawable ic_nav_profile
+drawable ic_nav_receipt
 drawable ic_stat_orders
+drawable liquid_glass_ic_check
+drawable liquid_glass_ic_close
 drawable notification_action_background
 drawable notification_bg
 drawable notification_bg_low
@@ -102,6 +174,7 @@ drawable notification_bg_low_pressed
 drawable notification_bg_normal
 drawable notification_bg_normal_pressed
 drawable notification_icon_background
+drawable notification_oversize_large_icon_bg
 drawable notification_template_icon_bg
 drawable notification_template_icon_low_bg
 drawable notification_tile_bg
@@ -166,24 +239,34 @@ id authTitle
 id authToggle
 id auto
 id blocking
+id bottom
 id browser_actions_header_text
 id browser_actions_menu_item_icon
 id browser_actions_menu_item_text
 id browser_actions_menu_items
 id browser_actions_menu_view
 id chronometer
+id clear
 id dark
 id dialog_button
+id edit_text_id
+id first
+id fixed
 id forever
+id hide_ime_id
 id icon
 id icon_group
 id icon_only
 id info
 id italic
+id last
+id left
 id light
 id line1
 id line3
 id locationOptions
+id merged
+id middle
 id none
 id normal
 id notification_background
@@ -205,24 +288,35 @@ id productSecPhoto
 id productStock
 id productSubtitle
 id productTitle
+id regular
+id right
 id right_icon
 id right_side
+id scrollable
 id searchApply
 id searchClear
 id searchInput
+id separated
+id single
 id standard
 id tag_accessibility_actions
 id tag_accessibility_clickable_spans
 id tag_accessibility_heading
 id tag_accessibility_pane_title
+id tag_on_apply_window_listener
+id tag_on_receive_content_listener
+id tag_on_receive_content_mime_types
 id tag_screen_reader_focusable
+id tag_state_description
 id tag_transition_group
 id tag_unhandled_key_event_manager
 id tag_unhandled_key_listeners
+id tag_window_insets_animation_callback
 id text
 id text2
 id time
 id title
+id top
 id view_tree_lifecycle_owner
 id view_tree_view_model_store_owner
 id wide
@@ -235,6 +329,8 @@ layout dialog_auth
 layout dialog_location
 layout dialog_product
 layout dialog_search
+layout ime_base_split_test_activity
+layout ime_secondary_split_test_activity
 layout notification_action
 layout notification_action_tombstone
 layout notification_template_custom_big
@@ -247,6 +343,13 @@ mipmap ic_launcher_round
 raw firebase_common_keep
 string androidx_startup
 string app_name
+string call_notification_answer_action
+string call_notification_answer_video_action
+string call_notification_decline_action
+string call_notification_hang_up_action
+string call_notification_incoming_text
+string call_notification_ongoing_text
+string call_notification_screening_text
 string common_google_play_services_enable_button
 string common_google_play_services_enable_text
 string common_google_play_services_enable_title
@@ -270,7 +373,9 @@ string fallback_menu_item_copy_link
 string fallback_menu_item_open_in_browser
 string fallback_menu_item_share_link
 string fcm_fallback_notification_channel_label
+string liquid_glass_chip_close_description
 string status_bar_notification_info_overflow
+style Animation_LiquidGlass_Dialog
 style AppTheme
 style DialogField
 style TextAppearance_Compat_Notification
@@ -280,11 +385,21 @@ style TextAppearance_Compat_Notification_Time
 style TextAppearance_Compat_Notification_Title
 style Widget_Compat_NotificationActionContainer
 style Widget_Compat_NotificationActionText
-styleable ColorStateListItem android_color android_alpha alpha
-styleable FontFamily fontProviderAuthority fontProviderCerts fontProviderFetchStrategy fontProviderFetchTimeout fontProviderPackage fontProviderQuery
+styleable Capability queryPatterns shortcutMatchRequired
+styleable ColorStateListItem android_color android_alpha android_lStar alpha lStar
+styleable FontFamily fontProviderAuthority fontProviderCerts fontProviderFetchStrategy fontProviderFetchTimeout fontProviderPackage fontProviderQuery fontProviderSystemFontFamily
 styleable FontFamilyFont android_font android_fontWeight android_fontStyle android_ttcIndex android_fontVariationSettings font fontStyle fontVariationSettings fontWeight ttcIndex
 styleable GradientColor android_startColor android_endColor android_type android_centerX android_centerY android_gradientRadius android_tileMode android_centerColor android_startX android_startY android_endX android_endY
 styleable GradientColorItem android_color android_offset
+styleable LiquidGlassButton android_textSize android_textColor android_text
+styleable LiquidGlassChip android_textSize android_textColor android_checked android_text android_checkable glassCheckedIconVisible glassCheckedTint glassChipIcon glassCloseIconVisible
+styleable LiquidGlassChipGroup backdropSourceId glassChipSpacingHorizontal glassChipSpacingVertical glassSelectionRequired glassSingleLine glassSingleSelection
+styleable LiquidGlassFab android_src glassIconTint
+styleable LiquidGlassListGroup backdropSourceId cornerRadius glassItemSpacing glassListStyle
+styleable LiquidGlassListItem android_textColor glassGroupCornerRadius glassHeadline glassInnerCornerRadius glassLeadingIcon glassListPosition glassSupportingText glassTrailingIcon glassTrailingText
+styleable LiquidGlassTabBar glassTabEntries
+styleable LiquidGlassTabLayout glassTabEntries glassTabMode
+styleable LiquidGlassView aberrationIntensity adaptiveLensScale adaptiveTint backdropSourceId bevelWidth blurAmount cornerRadius cornerRadiusBottomLeft cornerRadiusBottomRight cornerRadiusTopLeft cornerRadiusTopRight dispersionStrength displacementScale edgeSoftness elasticity flatEdges glassMaterial glassTint glassTintStrength refractionFalloff refractionHeight refractionNoFold refractionOutward saturation sensorHighlight
 styleable LoadingImageView circleCrop imageAspectRatio imageAspectRatioAdjust
 styleable SignInButton buttonSize colorScheme scopeUris
 xml image_share_filepaths

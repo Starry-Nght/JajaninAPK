@@ -38,6 +38,7 @@ dependencies {
     implementation("io.ktor:ktor-client-android:2.3.12")
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("com.github.QWEA0:liquidglass:v2.0.11")
 }
 
 configurations.configureEach {

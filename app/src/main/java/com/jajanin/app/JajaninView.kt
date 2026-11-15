@@ -7,75 +7,66 @@ import android.graphics.RectF
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import com.jajanin.app.core.constants.LOCATION_OPTIONS
+import com.jajanin.app.core.constants.SERVICE_FEE
+import com.jajanin.app.core.constants.STATUS_CANCELLED
+import com.jajanin.app.core.constants.STATUS_COMPLETED
+import com.jajanin.app.core.constants.STATUS_CONFIRMED
+import com.jajanin.app.core.constants.STATUS_PENDING
+import com.jajanin.app.core.constants.STATUS_PREPARING
+import com.jajanin.app.core.constants.STATUS_PROCESSING_LEGACY
+import com.jajanin.app.core.constants.STATUS_READY
+import com.jajanin.app.core.navigation.Screen
+import com.jajanin.app.core.ui.DrawKit
+import com.jajanin.app.core.ui.NavSpec
+import com.jajanin.app.core.ui.drawAbout
+import com.jajanin.app.core.ui.drawHelp
+import com.jajanin.app.core.ui.drawIcon
+import com.jajanin.app.core.ui.drawInfoPage
+import com.jajanin.app.core.ui.statusNextAction
+import com.jajanin.app.core.util.formatRupiah
+import com.jajanin.app.core.util.statusLabelShort
+import com.jajanin.app.core.util.statusSortOrder
+import com.jajanin.app.data.model.MenuItem
+import com.jajanin.app.data.model.ProductRow
+import com.jajanin.app.data.repository.AdminOrder
+import com.jajanin.app.data.repository.DevAnnouncementRow
+import com.jajanin.app.data.repository.DevStats
+import com.jajanin.app.data.repository.DevUser
+import com.jajanin.app.data.repository.DevWarningRow
+import com.jajanin.app.data.repository.OrderObserver
+import com.jajanin.app.data.repository.PlacedOrder
+import com.jajanin.app.data.repository.SellerInvite
+import com.jajanin.app.data.repository.SupabaseRepository
+import com.jajanin.app.feature.auth.drawLogin
+import com.jajanin.app.feature.auth.drawRole
+import com.jajanin.app.feature.auth.drawWelcome
+import com.jajanin.app.feature.buyer.*
+import com.jajanin.app.feature.seller.*
+import com.jajanin.app.feature.developer.*
+import com.jajanin.app.feature.inbox.*
+import com.jajanin.app.feature.buyer.cart.drawCheckout
+import com.jajanin.app.feature.buyer.cart.drawDetail
+import com.jajanin.app.feature.buyer.cart.drawPayment
+import com.jajanin.app.feature.buyer.cart.drawProductDetail
+import com.jajanin.app.feature.buyer.exp.ExpEntry
+import com.jajanin.app.feature.buyer.exp.drawExpHistory
+import com.jajanin.app.feature.buyer.explore.drawExplore
+import com.jajanin.app.feature.buyer.home.drawHome
+import com.jajanin.app.feature.buyer.notifications.drawNotif
+import com.jajanin.app.feature.buyer.orders.drawOrders
+import com.jajanin.app.feature.buyer.orders.drawReady
+import com.jajanin.app.feature.buyer.profile.drawProfile
+import com.jajanin.app.feature.developer.drawDeveloper
+import com.jajanin.app.feature.onboarding.drawOnboard
+import com.jajanin.app.feature.onboarding.drawSplash
+import com.jajanin.app.feature.seller.dashboard.drawAdminDashboard
+import com.jajanin.app.feature.seller.menu.drawProductForm
+import com.jajanin.app.feature.seller.orders.drawAdminDetail
 import kotlin.math.abs
-
-internal enum class Screen { SPLASH, ONBOARD, WELCOME, ROLE, LOGIN, HOME, EXPLORE, DETAIL, CHECKOUT, QRIS, READY, ORDERS, PROFILE, EXP_HISTORY, NOTIF, ADMIN, ADMIN_DETAIL, PRODUCT_FORM, HELP, ABOUT, INFO, DEV }
-
-internal const val STATUS_PENDING = "pending"
-internal const val STATUS_CONFIRMED = "confirmed"
-internal const val STATUS_PREPARING = "preparing"
-internal const val STATUS_READY = "ready"
-internal const val STATUS_COMPLETED = "completed"
-internal const val STATUS_CANCELLED = "cancelled"
-
-// Legacy status kept readable for old orders written before the confirmed step existed.
-internal const val STATUS_PROCESSING_LEGACY = "processing"
-
-/** Label Indonesia yang rapi untuk semua status order baru maupun lama. */
-internal fun statusLabelShort(status: String): String = when (status.lowercase()) {
-    STATUS_PENDING -> "Pending"
-    STATUS_CONFIRMED -> "Confirmed"
-    STATUS_PROCESSING_LEGACY -> "Preparing"
-    STATUS_PREPARING -> "Preparing"
-    STATUS_READY -> "Ready"
-    STATUS_COMPLETED -> "Completed"
-    STATUS_CANCELLED -> "Cancelled"
-    else -> status
-}
-
-/** Urutan tampilan kanban order: terbaru, masih aktif, lalu selesai. */
-internal fun statusSortOrder(status: String): Int = when (status.lowercase()) {
-    STATUS_PENDING -> 0
-    STATUS_CONFIRMED -> 1
-    STATUS_PREPARING, STATUS_PROCESSING_LEGACY -> 2
-    STATUS_READY -> 3
-    STATUS_COMPLETED -> 4
-    STATUS_CANCELLED -> 5
-    else -> 6
-}
-
-internal data class MenuItem(val name: String, val stall: String, val price: String, val rating: String, val image: Int, val category: String) {
-    val priceInRupiah: Int
-        get() = price.filter(Char::isDigit).toIntOrNull() ?: 0
-}
-
-@kotlinx.serialization.Serializable
-internal data class ProductRow(
-    val id: String,
-    val name: String,
-    val description: String = "",
-    val category: String,
-    @kotlinx.serialization.SerialName("price_idr") val priceIdr: Int,
-    @kotlinx.serialization.SerialName("image_url") val imageUrl: String? = null,
-    @kotlinx.serialization.SerialName("is_available") val available: Boolean = true,
-    @kotlinx.serialization.SerialName("stock") val stock: Int? = null,
-    @kotlinx.serialization.SerialName("stall_id") val stallId: String,
-    @kotlinx.serialization.SerialName("ingredients") val ingredients: String = "",
-)
-
-internal const val SERVICE_FEE = 1_000
 
 /** Durasi transisi geser antar halaman (ms). */
 private const val PAGE_SLIDE_MS = 240L
-
-internal val LOCATION_OPTIONS = listOf(
-    "X PPLG 1", "X PPLG 2", "X PPLG 3",
-    "XI PPLG 1", "XI PPLG 2", "XI PPLG 3",
-    "XII PPLG 1", "XII PPLG 2", "XII PPLG 3",
-)
-
-internal fun formatRupiah(amount: Int): String =
-    "Rp " + amount.toString().reversed().chunked(3).joinToString(".").reversed()
 
 internal class JajaninView(context: Context) : View(context) {
 
@@ -239,6 +230,14 @@ internal class JajaninView(context: Context) : View(context) {
     // Dikonsumsi drawBottomNav di BottomNav.kt: tab yang ditekan + waktu mulai animasi indikator.
     internal var pressedTab: String? = null
     internal var navAnimAt = 0L
+    // State dock kaca eksternal: diisi tiap frame oleh drawFloatingNav dan
+    // diteruskan ke host (LiquidGlassTabBar di MainActivity).
+    internal var navSpec: NavSpec? = null
+    internal var navBadgeIndex = -1
+    internal var navBadgeCount = 0
+    internal var navPresenter: ((NavSpec?) -> Unit)? = null
+    internal var navContentInvalidator: (() -> Unit)? = null
+    private var lastPresentedNavSpec: NavSpec? = null
     // Tema aplikasi (dibaca dari SharedPreferences saat MainActivity.onCreate).
     internal var darkMode = false
     // Label mode tema aktif untuk baris Profil ("Terang"/"Gelap"/"Sistem").
@@ -270,11 +269,15 @@ internal class JajaninView(context: Context) : View(context) {
         invalidate()
     }
 
+    /** Dibaca host dock kaca untuk menyelaraskan latar belakang & warna aksen. */
+    internal var themeChangedListener: (() -> Unit)? = null
+
     /** Ganti tema terang/gelap; berlaku untuk buyer, seller, dan developer. */
     fun setDarkMode(dark: Boolean) {
         darkMode = dark
         kit.applyTheme(dark)
         invalidate()
+        themeChangedListener?.invoke()
     }
 
     internal fun go(next: Screen) {
@@ -301,6 +304,96 @@ internal class JajaninView(context: Context) : View(context) {
     }
 
     internal val currentScreen: Screen get() = screen
+
+    /**
+     * Pintu masuk tunggal untuk pilihan tab dari dock kaca. Prefix menjaga
+     * kontrak lama: "tab:" = pembeli, "stab:" = penjual.
+     */
+    internal fun selectNavTab(prefix: String, label: String) {
+        if (prefix == "stab:") selectSellerTab(label) else selectBuyerTab(label)
+    }
+
+    /** Logika tab pembeli (dulu hidup di dalam onTouchEvent). */
+    internal fun selectBuyerTab(nextTab: String) {
+        navAnimAt = SystemClock.uptimeMillis()
+        // Arah geser mengikuti urutan tab (kiri/kanan).
+        val tabOrder = listOf("Home", "Explore", "Orders", "Profile")
+        val beforeTabScreen = screen
+        val beforeTabScroll = scroll
+        val beforeTabKey = "$screen:$tab"
+        val tabDir = when {
+            tabOrder.indexOf(nextTab) > tabOrder.indexOf(tab) -> 1f
+            tabOrder.indexOf(nextTab) < tabOrder.indexOf(tab) -> -1f
+            else -> 0f
+        }
+        when (nextTab) {
+            "Home" -> {
+                isSellerProfile = false
+                if (myRole == "seller") activity()?.backToSellerHome()
+                else {
+                    tab = "Home"
+                    if (screen != Screen.HOME) go(Screen.HOME)
+                    activity()?.refreshProducts()
+                    activity()?.refreshOrderingStatus()
+                }
+            }
+            "Explore" -> {
+                tab = "Explore"
+                isSellerProfile = false
+                if (screen != Screen.EXPLORE) go(Screen.EXPLORE)
+                activity()?.refreshProducts()
+            }
+            "Orders" -> { tab = "Orders"; go(Screen.ORDERS); activity()?.refreshMyOrders() }
+            "Profile" -> {
+                tab = "Profile"
+                isSellerProfile = false
+                if (SupabaseRepository.hasSession()) go(Screen.PROFILE)
+                else {
+                    android.widget.Toast.makeText(context, "Masuk dulu untuk membuka profil.", android.widget.Toast.LENGTH_SHORT).show()
+                    activity()?.showAuthForm(false)
+                }
+            }
+        }
+        // go() selalu menggeser dari kanan; timpa dengan arah
+        // tab yang benar bila layar memang berpindah.
+        if (tabDir != 0f && screen != beforeTabScreen) beginSlide(tabDir)
+        // Pertahankan posisi scroll tiap tab.
+        if (screen != beforeTabScreen) {
+            pageScroll[beforeTabKey] = beforeTabScroll
+            scroll = pageScroll["$screen:$tab"] ?: scroll
+        }
+        invalidate()
+    }
+
+    /** Logika tab penjual (dulu hidup di dalam onTouchEvent). */
+    internal fun selectSellerTab(label: String) {
+        val beforeStabScreen = screen
+        val beforeStabScroll = scroll
+        when (label) {
+            "Dashboard" -> go(Screen.ADMIN)
+            "Pesanan" -> {
+                pendingScrollToOrders = true
+                go(Screen.ADMIN)
+            }
+            "Produk" -> activity()?.showProductForm()
+            "Notifikasi" -> activity()?.openNotif()
+            "Profil" -> {
+                isSellerProfile = true
+                if (SupabaseRepository.hasSession()) {
+                    go(Screen.PROFILE)
+                    activity()?.refreshSellerSettings()
+                } else {
+                    android.widget.Toast.makeText(context, "Masuk dulu untuk membuka profil.", android.widget.Toast.LENGTH_SHORT).show()
+                    activity()?.showAuthForm(false)
+                }
+            }
+        }
+        if (screen != beforeStabScreen) {
+            pageScroll["s:$beforeStabScreen"] = beforeStabScroll
+            scroll = pageScroll["s:$screen"] ?: scroll
+        }
+        invalidate()
+    }
 
     fun showHome() { screen = Screen.HOME; history.clear(); invalidate() }
 
@@ -350,12 +443,23 @@ internal class JajaninView(context: Context) : View(context) {
             slideX = 0f
         }
         bounds.clear()
+        // Layar yang tidak memanggil drawFloatingNav otomatis tidak punya dock.
+        navSpec = null
+        navBadgeIndex = -1
+        navBadgeCount = 0
+        // Aksesibilitas: hanya layar penjual yang mengikuti fontScale sistem.
+        // Pengali dibatasi agar layout berbasis kanvas tetap stabil di semua
+        // ukuran layar; buyer/developer tidak tersentuh.
+        kit.textScale = if (isSellerScreen()) sellerTextScale() else 1f
         when (screen) {
+            // --- Fondasi: splash, onboarding, autentikasi ---
             Screen.SPLASH -> drawSplash(canvas, 390f, height / s)
             Screen.ONBOARD -> drawOnboard(canvas, 390f, height / s)
             Screen.WELCOME -> drawWelcome(canvas, 390f, height / s)
             Screen.ROLE -> drawRole(canvas, 390f, height / s)
             Screen.LOGIN -> drawLogin(canvas, 390f, height / s)
+
+            // --- Pembeli (buyer) ---
             Screen.HOME -> drawHome(canvas, 390f, height / s)
             Screen.EXPLORE -> drawExplore(canvas, 390f, height / s)
             Screen.DETAIL -> drawProductDetail(canvas, 390f, height / s)
@@ -365,16 +469,47 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.ORDERS -> drawOrders(canvas, 390f, height / s)
             Screen.PROFILE -> drawProfile(canvas, 390f, height / s)
             Screen.EXP_HISTORY -> drawExpHistory(canvas, 390f, height / s)
+
+            // --- Penjual (seller) ---
+            Screen.ADMIN -> drawAdminDashboard(canvas, 390f, height / s)
+            Screen.ADMIN_DETAIL -> drawAdminDetail(canvas, 390f, height / s)
+            Screen.PRODUCT_FORM -> drawProductForm(canvas, 390f, height / s)
+
+            // --- Developer ---
+            Screen.DEV -> drawDeveloper(canvas, 390f, height / s)
+
+            // --- Notifikasi & informasi (semua peran) ---
             Screen.NOTIF -> drawNotif(canvas, 390f, height / s)
             Screen.HELP -> drawHelp(canvas, 390f, height / s)
             Screen.ABOUT -> drawAbout(canvas, 390f, height / s)
             Screen.INFO -> drawInfoPage(canvas, 390f, height / s)
-            Screen.ADMIN -> drawAdminDashboard(canvas, 390f, height / s)
-            Screen.ADMIN_DETAIL -> drawAdminDetail(canvas, 390f, height / s)
-            Screen.PRODUCT_FORM -> drawProductForm(canvas, 390f, height / s)
-            Screen.DEV -> drawDeveloper(canvas, 390f, height / s)
         }
         canvas.restore()
+        val spec = navSpec?.copy(badgeIndex = navBadgeIndex, badgeCount = navBadgeCount)
+        if (spec != lastPresentedNavSpec) {
+            lastPresentedNavSpec = spec
+            navPresenter?.invoke(spec)
+        }
+        // Dock kaca perlu menangkap ulang konten kanvas setiap kali kanvas
+        // berubah (scroll/animasi/ganti layar). Host merender lensa on-demand
+        // agar tidak ada shader yang berjalan terus saat layar diam.
+        navContentInvalidator?.invoke()
+    }
+
+    /** Layar yang memakai tipografi penjual (termasuk profil & notifikasi seller). */
+    private fun isSellerScreen(): Boolean =
+        screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
+            (screen == Screen.PROFILE && isSellerProfile) ||
+            (screen == Screen.NOTIF && myRole == "seller")
+
+    /**
+     * Dukungan font scaling Android untuk kanvas penjual. Perubahan dibatasi
+     * 1.0–1.18 agar teks lebih besar tetap muat di kartu yang sudah dihitung;
+     * semua teks penjual juga memakai ellipsis berbasis lebar, bukan `take(n)`.
+     */
+    private fun sellerTextScale(): Float {
+        val fontScale = resources.configuration.fontScale
+        return (1f + (fontScale - 1f) * 0.5f).coerceIn(1f, 1.18f)
     }
 
     /**
@@ -445,6 +580,7 @@ internal class JajaninView(context: Context) : View(context) {
                 if (moved) return true
                 val hit = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key ?: return true
                 when {
+                    // --- Fondasi: onboarding, pilihan role, autentikasi ---
                     hit == "welcome" -> go(Screen.ROLE)
                     hit == "obSkip" || hit == "obStart" -> activity()?.finishOnboarding()
                     hit == "obNext" -> {
@@ -469,6 +605,7 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "passwordField" -> activity()?.showAuthForm(true)
                     hit == "emailLogin" -> activity()?.showAuthForm(false)
                     hit == "toggleAuth" -> activity()?.showAuthForm(false, signup = true)
+                    // --- Pembeli (buyer): pencarian, katalog, keranjang, checkout ---
                     hit == "search" -> activity()?.showSearchForm()
                     hit == "cartCheckout" -> {
                         if (cart.isEmpty()) {
@@ -503,6 +640,7 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "placeOrder" -> if (!placingOrder) activity()?.placeCartOrder()
                     hit == "paid" -> activity()?.submitPaymentProof()
                     hit.startsWith("myOrderPaid:") -> activity()?.submitPaymentProofFor(hit.substringAfter(':'))
+                    // --- Profil, EXP, dan pengaturan warung ---
                     hit == "profilePhone" -> activity()?.showPhoneEditor()
                     hit == "expHistory" -> activity()?.openExpHistory()
                     hit == "expMore" -> activity()?.loadMoreExp()
@@ -511,88 +649,13 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "profileStallName" -> activity()?.showStallNameEdit()
                     hit == "qrisPick" -> activity()?.pickQrisImage()
                     hit == "qrisUrl" -> activity()?.showQrisUrlForm()
-                    hit.startsWith("tab:") -> {
-                        navAnimAt = SystemClock.uptimeMillis()
-                        // Arah geser mengikuti urutan tab (kiri/kanan).
-                        val tabOrder = listOf("Home", "Explore", "Orders", "Profile")
-                        val nextTab = hit.removePrefix("tab:")
-                        val beforeTabScreen = screen
-                        val beforeTabScroll = scroll
-                        val beforeTabKey = "$screen:$tab"
-                        val tabDir = when {
-                            tabOrder.indexOf(nextTab) > tabOrder.indexOf(tab) -> 1f
-                            tabOrder.indexOf(nextTab) < tabOrder.indexOf(tab) -> -1f
-                            else -> 0f
-                        }
-                        when (nextTab) {
-                            "Home" -> {
-                                isSellerProfile = false
-                                if (myRole == "seller") activity()?.backToSellerHome()
-                                else {
-                                    tab = "Home"
-                                    if (screen != Screen.HOME) go(Screen.HOME)
-                                    activity()?.refreshProducts()
-                                    activity()?.refreshOrderingStatus()
-                                }
-                            }
-                            "Explore" -> {
-                                tab = "Explore"
-                                isSellerProfile = false
-                                if (screen != Screen.EXPLORE) go(Screen.EXPLORE)
-                                activity()?.refreshProducts()
-                            }
-                            "Orders" -> { tab = "Orders"; go(Screen.ORDERS); activity()?.refreshMyOrders() }
-                            "Profile" -> {
-                                tab = "Profile"
-                                isSellerProfile = false
-                                if (SupabaseRepository.hasSession()) go(Screen.PROFILE)
-                                else {
-                                    android.widget.Toast.makeText(context, "Masuk dulu untuk membuka profil.", android.widget.Toast.LENGTH_SHORT).show()
-                                    activity()?.showAuthForm(false)
-                                }
-                            }
-                        }
-                        // go() selalu menggeser dari kanan; timpa dengan arah
-                        // tab yang benar bila layar memang berpindah.
-                        if (tabDir != 0f && screen != beforeTabScreen) beginSlide(tabDir)
-                        // Pertahankan posisi scroll tiap tab.
-                        if (screen != beforeTabScreen) {
-                            pageScroll[beforeTabKey] = beforeTabScroll
-                            scroll = pageScroll["$screen:$tab"] ?: scroll
-                        }
-                        invalidate()
-                    }
+                    hit.startsWith("tab:") -> selectBuyerTab(hit.removePrefix("tab:"))
+                    // --- Sesi bersama ---
                     hit == "logout" -> activity()?.logout()
                     hit == "devBell" -> activity()?.openNotif()
+                    // --- Penjual (seller): dashboard, pesanan, produk ---
                     hit == "adminRefresh" -> activity()?.refreshAdminOrders()
-                    hit.startsWith("stab:") -> {
-                        val beforeStabScreen = screen
-                        val beforeStabScroll = scroll
-                        when (hit.removePrefix("stab:")) {
-                            "Dashboard" -> go(Screen.ADMIN)
-                            "Pesanan" -> {
-                                pendingScrollToOrders = true
-                                go(Screen.ADMIN)
-                            }
-                            "Produk" -> activity()?.showProductForm()
-                            "Notifikasi" -> activity()?.openNotif()
-                            "Profil" -> {
-                                isSellerProfile = true
-                                if (SupabaseRepository.hasSession()) {
-                                    go(Screen.PROFILE)
-                                    activity()?.refreshSellerSettings()
-                                } else {
-                                    android.widget.Toast.makeText(context, "Masuk dulu untuk membuka profil.", android.widget.Toast.LENGTH_SHORT).show()
-                                    activity()?.showAuthForm(false)
-                                }
-                            }
-                        }
-                        if (screen != beforeStabScreen) {
-                            pageScroll["s:$beforeStabScreen"] = beforeStabScroll
-                            scroll = pageScroll["s:$screen"] ?: scroll
-                        }
-                        invalidate()
-                    }
+                    hit.startsWith("stab:") -> selectSellerTab(hit.removePrefix("stab:"))
                     hit.startsWith("productEdit:") -> activity()?.showProductEditForm(hit.substringAfter(':'))
                     hit.startsWith("productDelete:") -> activity()?.confirmDeleteProduct(hit.substringAfter(':'))
                     hit == "adminBell" -> activity()?.openNotif()
@@ -649,6 +712,10 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "pfDesc" -> activity()?.showProductTextField("deskripsi")
                     hit == "pfIngredients" -> activity()?.showProductTextField("bahan")
                     hit == "pfCategory" -> activity()?.showProductCategoryPicker()
+                    hit.startsWith("pfCat:") -> {
+                        productCategory = hit.substringAfter(':')
+                        invalidate()
+                    }
                     hit == "pfImage" -> activity()?.pickProductImage()
                     hit == "pfAvailable" -> activity()?.toggleProductFormAvailable()
                     hit == "pfSave" -> activity()?.saveProductForm()
@@ -675,7 +742,10 @@ internal class JajaninView(context: Context) : View(context) {
                         go(Screen.ADMIN_DETAIL)
                         activity()?.loadAdminOrderDetail(orderId)
                     }
+                    // --- Pengaturan bersama ---
                     hit == "theme" -> activity()?.showThemePicker()
+
+                    // --- Developer / super admin ---
                     hit == "devSearch" -> activity()?.showDevSearch()
                     hit == "devReset" -> activity()?.confirmDailyReset()
                     hit == "devLogout" -> activity()?.logout()
