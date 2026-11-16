@@ -486,12 +486,12 @@ class MainActivity : Activity() {
 
     internal fun themePrefs() = getSharedPreferences(PREFS_THEME, MODE_PRIVATE)
 
-    /** Mode tema tersimpan: "light" | "dark" | "system" (default light). */
+    /** Mode tema tersimpan: "light" | "dark" | "system" (default dark). */
     internal fun themeMode(): String {
         val stored = themePrefs().getString(PREF_THEME_MODE, null)
         if (stored == "light" || stored == "dark" || stored == "system") return stored
-        // Migrasi dari saklar lama.
-        return if (themePrefs().getBoolean(PREF_DARK_THEME, false)) "dark" else "light"
+        // Migrasi dari saklar lama (default dark untuk instalasi baru).
+        return if (themePrefs().contains(PREF_DARK_THEME) && !themePrefs().getBoolean(PREF_DARK_THEME, true)) "light" else "dark"
     }
 
     internal fun systemInDark(): Boolean =
@@ -518,7 +518,7 @@ class MainActivity : Activity() {
 
     /** Dialog pilih tema bertema (Terang/Gelap/Sistem); tersimpan permanen. */
     fun showThemePicker() {
-        val options = listOf("Terang", "Gelap", "Ikuti sistem")
+        val options = listOf("Terang", "Gelap (Recommended)", "Ikuti sistem")
         val checked = when (themeMode()) {
             "dark" -> 1
             "system" -> 2

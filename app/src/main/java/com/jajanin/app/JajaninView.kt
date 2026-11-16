@@ -249,7 +249,7 @@ internal class JajaninView(context: Context) : View(context) {
     // Tema aplikasi (dibaca dari SharedPreferences saat MainActivity.onCreate).
     internal var darkMode = false
     // Label mode tema aktif untuk baris Profil ("Terang"/"Gelap"/"Sistem").
-    internal var themeLabel = "Terang"
+    internal var themeLabel = "Gelap"
     // Offset geser halaman saat ini (untuk chrome yang stabil: header/nav
     // menggambar dengan counter-translate sehingga tetap diam).
     internal var slideX = 0f
