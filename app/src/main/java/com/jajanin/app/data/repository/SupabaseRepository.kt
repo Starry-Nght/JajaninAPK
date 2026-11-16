@@ -164,8 +164,8 @@ object SupabaseRepository {
     @Serializable
     private data class SellerInvitedRow(@SerialName("seller_invited") val invited: Boolean = false)
 
-    /** Nama asli pemilik session dari tabel profiles (null/blank bila belum diisi). */
-    suspend fun myDisplayName(): String? {
+    /** Nama asli + tag NIS mentah pemilik session dari tabel profiles (null/blank bila belum diisi). */
+    suspend fun myRawDisplayName(): String? {
         val uid = currentUid() ?: return null
         return runCatching {
             client.postgrest.from("profiles")
@@ -177,15 +177,40 @@ object SupabaseRepository {
         }.getOrNull()
     }
 
+    /** Nama asli bersih pemilik session (tanpa tag [NIS:...]). */
+    suspend fun myDisplayName(): String? =
+        myRawDisplayName()?.let { extractCleanName(it) }?.takeIf { it.isNotBlank() }
+
+    /** NIS pemilik session yang tersimpan pada profil. */
+    suspend fun myNis(): String? =
+        myRawDisplayName()?.let { extractNis(it) }?.takeIf { it.isNotBlank() }
+
     /**
-     * Menyimpan nama asli milik sendiri (validasi 3-50 karakter di server).
-     * Dipakai form daftar + dialog wajib-isi untuk akun lama yang belum punya nama.
+     * Menyimpan nama asli (beserta NIS bila ada) milik sendiri (validasi 3-50 karakter di server).
      */
-    suspend fun setMyName(name: String) {
-        val params = mapOf("p_name" to kotlinx.serialization.json.JsonPrimitive(name.trim()))
-        // RPC mengembalikan satu objek jsonb telanjang (bukan array), jadi
-        // tidak di-decode: gagal = exception, sukses = lanjut.
+    suspend fun setMyName(name: String, nis: String = "") {
+        val packed = if (nis.isNotBlank()) packNameAndNis(name, nis) else name.trim()
+        val params = mapOf("p_name" to kotlinx.serialization.json.JsonPrimitive(packed))
         client.postgrest.rpc("set_my_name", params)
+    }
+
+    private val NIS_TAG_REGEX = Regex("\\s*\\[NIS:\\s*([0-9]+)\\]\\s*$")
+
+    fun extractCleanName(raw: String): String =
+        raw.trim().replace(NIS_TAG_REGEX, "").trim()
+
+    fun extractNis(raw: String): String =
+        NIS_TAG_REGEX.find(raw.trim())?.groupValues?.getOrNull(1)?.trim().orEmpty()
+
+    fun normalizeNis(raw: String): String? {
+        val digits = raw.filter(Char::isDigit)
+        return if (digits.length in 4..15) digits else null
+    }
+
+    fun packNameAndNis(name: String, nis: String): String {
+        val cleanName = extractCleanName(name).take(30)
+        val cleanNis = nis.filter(Char::isDigit).take(12)
+        return if (cleanNis.isNotBlank()) "$cleanName [NIS:$cleanNis]" else cleanName
     }
 
     /**

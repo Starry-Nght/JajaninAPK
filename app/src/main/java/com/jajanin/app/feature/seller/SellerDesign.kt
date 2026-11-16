@@ -13,23 +13,24 @@ internal object SellerTokens {
     const val RIGHT = 370f
     const val WIDTH = 350f
 
-    const val CONTENT_TOP = 92f
-    const val SECTION_GAP = 26f
-    const val ROW_GAP = 12f
+    const val CONTENT_TOP = 76f
+    const val SECTION_GAP = 22f
+    const val ROW_GAP = 10f
 
-    const val FIELD_H = 48f
-    const val CONTROL_H = 38f
+    const val FIELD_H = 46f
+    const val CONTROL_H = 36f
     const val TOUCH_MIN = 44f
 
-    const val RADIUS_SURFACE = 16f
-    const val RADIUS_CONTROL = 12f
-    const val RADIUS_PILL = 11f
+    // Crisp architectural corner radii (non-AI, editorial feel)
+    const val RADIUS_SURFACE = 8f
+    const val RADIUS_CONTROL = 7f
+    const val RADIUS_PILL = 5f
 
-    const val T_EYEBROW = 10.5f
+    const val T_EYEBROW = 10f
     const val T_LABEL = 10.5f
     const val T_BODY = 13f
-    const val T_TITLE = 14f
-    const val T_METRIC = 18f
+    const val T_TITLE = 14.5f
+    const val T_METRIC = 19f
 }
 
 internal fun JajaninView.sellerSection(
@@ -39,7 +40,7 @@ internal fun JajaninView.sellerSection(
     trailing: String? = null,
     trailingColor: Int = kit.muted,
 ) {
-    kit.text(c, title, SellerTokens.PAD + 2f, baseline, SellerTokens.T_TITLE, kit.ink, true)
+    kit.text(c, title.uppercase(), SellerTokens.PAD, baseline, SellerTokens.T_EYEBROW, kit.muted, true)
     if (!trailing.isNullOrBlank()) {
         kit.text(
             c,
@@ -53,12 +54,13 @@ internal fun JajaninView.sellerSection(
     }
 }
 
+/** Clean flat surface with 1f hairline border (no heavy blurry drop-shadows). */
 internal fun JajaninView.sellerSurface(c: Canvas, r: RectF, radius: Float = SellerTokens.RADIUS_SURFACE) {
-    if (r.bottom < 80f || r.top > 2000f) return
-    kit.card(c, r, radius)
+    if (r.bottom < 60f || r.top > 2000f) return
+    kit.rounded(c, r, kit.card, radius, kit.border)
 }
 
-internal fun JajaninView.sellerDivider(c: Canvas, y: Float, left: Float = 34f, right: Float = 356f) {
+internal fun JajaninView.sellerDivider(c: Canvas, y: Float, left: Float = 20f, right: Float = 370f) {
     kit.line(c, left, y, right, y, kit.divider)
 }
 
@@ -73,29 +75,29 @@ internal fun JajaninView.sellerPill(
     centerY: Float,
     background: Int,
     foreground: Int,
-    height: Float = 24f,
-    size: Float = 10f,
+    height: Float = 21f,
+    size: Float = 9.5f,
 ): RectF {
-    val width = maxOf(34f, kit.measure(label, size, true) + 20f)
+    val width = maxOf(34f, kit.measure(label, size, true) + 16f)
     val r = RectF(right - width, centerY - height / 2f, right, centerY + height / 2f)
-    kit.rounded(c, r, background, height / 2f)
+    kit.rounded(c, r, background, SellerTokens.RADIUS_PILL)
     kit.centerText(c, label, r, size, foreground, true)
     return r
 }
 
 internal fun JajaninView.sellerChevron(c: Canvas, x: Float, centerY: Float, color: Int = kit.muted) {
-    drawIcon(c, "chevronRight", x, centerY, 15f, color)
+    drawIcon(c, "chevronRight", x, centerY, 14f, color)
 }
 
 internal fun JajaninView.sellerHeader(c: Canvas, title: String) {
     c.save()
     c.translate(-slideX, 0f)
-    kit.rect(c, -100f, 0f, 490f, 64f, kit.bg)
-    drawIcon(c, "chevronLeft", 28f, 42f, 18f, kit.ink)
-    kit.textEllipsized(c, title, 52f, 46f, 300f, 18f, kit.ink, true)
-    kit.line(c, SellerTokens.PAD, 64f, SellerTokens.RIGHT, 64f, kit.divider)
+    kit.rect(c, -100f, 0f, 490f, 60f, kit.bg)
+    drawIcon(c, "chevronLeft", 28f, 32f, 18f, kit.ink)
+    kit.textEllipsized(c, title, 50f, 37f, 300f, 18f, kit.ink, true)
+    kit.line(c, SellerTokens.PAD, 60f, SellerTokens.RIGHT, 60f, kit.divider)
     c.restore()
-    bounds["headerBack"] = RectF(12f, 18f, 54f, 64f)
+    bounds["headerBack"] = RectF(12f, 10f, 56f, 60f)
 }
 
 internal data class SellerSettingRow(
@@ -131,8 +133,8 @@ internal fun JajaninView.sellerSettingsGroup(
             )
             if (!row.subtitle.isNullOrBlank()) {
                 kit.textEllipsized(
-                    c, row.subtitle, 34f, rowTop + 43f, 224f,
-                    SellerTokens.T_EYEBROW, kit.muted,
+                    c, row.subtitle, 34f, rowTop + 42f, 224f,
+                    11f, kit.muted,
                 )
             }
             val centerY = rowTop + rowH / 2f
@@ -142,7 +144,7 @@ internal fun JajaninView.sellerSettingsGroup(
                     c, row.badge, rightEdge, centerY,
                     row.badgeColor?.let { withSoft(it) } ?: kit.tint,
                     row.badgeColor ?: kit.blue,
-                    height = 22f, size = 9.5f,
+                    height = 20f, size = 9.5f,
                 )
             } else if (!row.value.isNullOrBlank()) {
                 kit.textRight(
@@ -150,11 +152,11 @@ internal fun JajaninView.sellerSettingsGroup(
                     11.5f, row.valueColor ?: kit.muted, true,
                 )
             }
-            if (row.chevron) sellerChevron(c, 350f, centerY)
-            press(c, row.key, RectF(rowRect.left + 4f, rowRect.top + 2f, rowRect.right - 4f, rowRect.bottom - 2f), 0f)
+            if (row.chevron) sellerChevron(c, 352f, centerY)
+            press(c, row.key, RectF(rowRect.left + 2f, rowRect.top + 2f, rowRect.right - 2f, rowRect.bottom - 2f), SellerTokens.RADIUS_SURFACE)
             if (index < rows.size - 1) sellerDivider(c, rowTop + rowH, 34f, 356f)
         }
-        bounds.putVisible(row.key, rowRect, topLimit = 86f, bottomLimit = bottomLimit)
+        bounds.putVisible(row.key, rowRect, topLimit = 60f, bottomLimit = bottomLimit)
     }
     return bottom
 }
@@ -177,8 +179,8 @@ internal fun JajaninView.sellerFormField(
     width: Float = SellerTokens.WIDTH,
     height: Float = SellerTokens.FIELD_H,
 ): Float {
-    kit.text(c, label, x + 2f, top + 10f, SellerTokens.T_LABEL, kit.muted, true)
-    val field = RectF(x, top + 18f, x + width, top + 18f + height)
+    kit.text(c, label, x, top + 10f, SellerTokens.T_LABEL, kit.muted, true)
+    val field = RectF(x, top + 16f, x + width, top + 16f + height)
     val filled = value.isNotBlank()
     kit.rounded(
         c,
@@ -193,23 +195,23 @@ internal fun JajaninView.sellerFormField(
         x + 14f,
         field.centerY() + 4.5f,
         width - 28f,
-        14f,
+        13.5f,
         if (filled) kit.ink else kit.muted,
         filled,
     )
-    press(c, key, field, 0f)
+    press(c, key, field, SellerTokens.RADIUS_CONTROL)
     bounds[key] = RectF(field)
-    return top + 18f + height + 12f
+    return top + 16f + height + 12f
 }
 
 internal fun JajaninView.sellerSwitch(c: Canvas, on: Boolean, right: Float, centerY: Float) {
-    val track = RectF(right - 44f, centerY - 13f, right, centerY + 13f)
-    kit.rounded(c, track, if (on) kit.success else kit.border, 13f)
-    val knobCx = if (on) track.right - 13f else track.left + 13f
+    val track = RectF(right - 42f, centerY - 12f, right, centerY + 12f)
+    kit.rounded(c, track, if (on) kit.blue else kit.border, 12f)
+    val knobCx = if (on) track.right - 12f else track.left + 12f
     kit.rounded(
         c,
-        RectF(knobCx - 9f, centerY - 9f, knobCx + 9f, centerY + 9f),
+        RectF(knobCx - 8.5f, centerY - 8.5f, knobCx + 8.5f, centerY + 8.5f),
         Color.WHITE,
-        9f,
+        8.5f,
     )
 }

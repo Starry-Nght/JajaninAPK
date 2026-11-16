@@ -1,190 +1,194 @@
 [
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_bg_option.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/bg_option.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xxhdpi/ic_launcher.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/layout_dialog_product.xml.flat",
-        "source": "com.jajanin.app-main-25:/layout/dialog_product.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-hdpi_ic_launcher_foreground.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-hdpi/ic_launcher_foreground.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xxhdpi_ic_launcher_foreground.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xxhdpi/ic_launcher_foreground.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_bg_dialog_dark.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/bg_dialog_dark.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_box.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_box.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_home.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/home.jpg"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-hdpi_ic_launcher_foreground.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-hdpi/ic_launcher_foreground.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xxxhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_bg_button.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/bg_button.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xxhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xxxhdpi/ic_launcher_round.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xhdpi_ic_launcher_foreground.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xhdpi/ic_launcher_foreground.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_bg_dialog.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/bg_dialog.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/layout_dialog_location.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/layout/dialog_location.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xxhdpi_ic_launcher_round.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xxhdpi/ic_launcher_round.png"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/mipmap-hdpi_ic_launcher.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-hdpi/ic_launcher.png"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_explore.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_explore.xml"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_home.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/home.jpg"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xxxhdpi_ic_launcher_foreground.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xxxhdpi/ic_launcher_foreground.png"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xhdpi_ic_launcher_foreground.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xhdpi/ic_launcher_foreground.png"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/drawable_bg_error.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/bg_error.xml"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_grid.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_grid.xml"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/mipmap-anydpi-v26_ic_launcher.xml.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-anydpi-v26/ic_launcher.xml"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xhdpi_ic_launcher_round.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xhdpi/ic_launcher_round.png"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_orders.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_orders.xml"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_welcome.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/welcome.jpg"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/layout_dialog_search.xml.flat",
-        "source": "com.jajanin.app-main-25:/layout/dialog_search.xml"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/mipmap-hdpi_ic_launcher_round.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-hdpi/ic_launcher_round.png"
-    },
-    {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_bell.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_bell.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/layout_dialog_product.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/layout/dialog_product.xml"
     },
     {
         "merged": "com.jajanin.app-debug-23:/layout_dialog_auth.xml.flat",
         "source": "com.jajanin.app-main-25:/layout/dialog_auth.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-mdpi_ic_launcher_round.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-mdpi/ic_launcher_round.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xxhdpi_ic_launcher_foreground.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xxhdpi/ic_launcher_foreground.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-mdpi_ic_launcher_foreground.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-mdpi/ic_launcher_foreground.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_box.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_box.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xhdpi_ic_launcher.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xhdpi/ic_launcher.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_ready.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/ready.jpg"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_profile.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/profile.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_explore.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_explore.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-mdpi_ic_launcher.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-mdpi/ic_launcher.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/layout_dialog_auth.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/layout/dialog_auth.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_role.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/role.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_stat_orders.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_stat_orders.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xxhdpi_ic_launcher.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xxhdpi/ic_launcher.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_bghome.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/bghome.jpg"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_orders.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/orders.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_bg_field.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/bg_field.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_detail.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/detail.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-hdpi/ic_launcher.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_home.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_home.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-hdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_stat_orders.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_stat_orders.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_checkout.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/checkout.jpg"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/layout_dialog_location.xml.flat",
-        "source": "com.jajanin.app-main-25:/layout/dialog_location.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_detail.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/detail.jpg"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_bghome.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/bghome.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-mdpi_ic_launcher_foreground.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-mdpi/ic_launcher_foreground.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_ready.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/ready.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_grid.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_grid.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_checkout.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/checkout.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_receipt.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_receipt.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable-nodpi_qris.jpg.flat",
-        "source": "com.jajanin.app-main-25:/drawable-nodpi/qris.jpg"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xhdpi/ic_launcher.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_bg_field_dark.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/bg_field_dark.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_profile.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/profile.jpg"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_bg_field.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/bg_field.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-mdpi/ic_launcher.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_bg_dialog_dark.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/bg_dialog_dark.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_bg_error.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/bg_error.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-xxxhdpi_ic_launcher.png.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-xxxhdpi/ic_launcher.png"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
-        "source": "com.jajanin.app-main-25:/mipmap-anydpi-v26/ic_launcher_round.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_home.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_home.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_receipt.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_receipt.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_bg_option.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/bg_option.xml"
     },
     {
-        "merged": "com.jajanin.app-debug-23:/drawable_ic_nav_profile.xml.flat",
-        "source": "com.jajanin.app-main-25:/drawable/ic_nav_profile.xml"
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_orders.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_orders.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_bg_button.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/bg_button.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_bg_field_dark.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/bg_field_dark.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_welcome.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/welcome.jpg"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_role.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/role.jpg"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_qris.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/qris.jpg"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xxxhdpi_ic_launcher_foreground.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xxxhdpi/ic_launcher_foreground.png"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_profile.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_profile.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable-nodpi_orders.jpg.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable-nodpi/orders.jpg"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_bg_dialog.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/bg_dialog.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-mdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/drawable_ic_nav_bell.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/drawable/ic_nav_bell.xml"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-debug-23:/layout_dialog_search.xml.flat",
+        "source": "/home/aths/.gradle/daemon/9.3.0/com.jajanin.app-main-25:/layout/dialog_search.xml"
     }
 ]

@@ -26,6 +26,20 @@ internal const val GLASS_R = 24f
 /** Batas atas nav melayang dari bawah layar; konten scroll memakai ini. */
 internal const val GLASS_TOP_OFFSET = GLASS_BOTTOM + GLASS_H // 82f
 
+// Geometri dock penjual. Tinggi host menampung dock + plus yang melayang di
+// atasnya; konten penjual memakai HERO_TOP_OFFSET agar tidak tertutup.
+internal const val HERO_HEIGHT = 100f
+internal const val HERO_BOTTOM = 12f
+internal const val HERO_DOCK_H = 60f
+internal const val HERO_DOCK_H_EXPANDED = 66f
+internal const val HERO_DOCK_MARGIN = 16f
+internal const val HERO_DOCK_MARGIN_EXPANDED = 9f
+internal const val HERO_PLUS_D = 54f
+internal const val HERO_PLUS_D_EXPANDED = 60f
+internal const val HERO_TOP_OFFSET = HERO_BOTTOM + HERO_HEIGHT // 112f
+
+internal enum class NavVariant { STANDARD, HERO }
+
 internal data class FloatNavItem(
     val label: String,
     val icon: String,
@@ -45,6 +59,7 @@ internal data class NavSpec(
     val active: String,
     val badgeIndex: Int = -1,
     val badgeCount: Int = 0,
+    val variant: NavVariant = NavVariant.STANDARD,
 )
 
 /**
@@ -60,8 +75,9 @@ internal fun JajaninView.drawFloatingNav(
     items: List<FloatNavItem>,
     active: String,
     prefix: String,
+    variant: NavVariant = NavVariant.STANDARD,
 ) {
-    navSpec = NavSpec(prefix, items, active)
+    navSpec = NavSpec(prefix, items, active, variant = variant)
 }
 
 internal fun JajaninView.drawBottomNav(c: Canvas, w: Float, h: Float, active: String) {

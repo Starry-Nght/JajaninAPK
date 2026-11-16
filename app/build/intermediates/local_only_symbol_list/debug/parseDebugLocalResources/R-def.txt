@@ -31,6 +31,7 @@ id authAction
 id authEmail
 id authError
 id authName
+id authNis
 id authPassword
 id authPhone
 id authProgress

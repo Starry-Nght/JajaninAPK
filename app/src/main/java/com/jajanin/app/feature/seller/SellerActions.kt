@@ -106,7 +106,8 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productPrice = existing.priceIdr.toString()
         ui.productStock = existing.stock?.toString().orEmpty()
         ui.productImageUrl = existing.imageUrl.orEmpty()
-        ui.productIngredients = existing.ingredients
+        ui.productIngredients = existing.cleanIngredients
+        ui.productRoom = existing.pickupRoom.ifBlank { ui.myStallRoom }
         ui.productAvailable = existing.available
     } else {
         ui.productEditId = null
@@ -117,6 +118,7 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productStock = ""
         ui.productImageUrl = ""
         ui.productIngredients = ""
+        ui.productRoom = ui.myStallRoom
         ui.productAvailable = true
     }
     ui.productSaving = false
@@ -132,6 +134,7 @@ internal fun MainActivity.showProductTextField(field: String) {
         "stok" -> arrayOf("Stok", "Kosongkan = tanpa batas", ui.productStock, "1", "5", "0")
         "deskripsi" -> arrayOf("Deskripsi", "Singkat saja", ui.productDescription, "0", "200", "1")
         "bahan" -> arrayOf("Bahan", "Opsional", ui.productIngredients, "0", "120", "1")
+        "ruangan" -> arrayOf("Ambil di Ruangan", "cth. Ruang XII RPL 1 / Kantin Utama", ui.productRoom, "0", "45", "0")
         else -> arrayOf("Nama produk", "cth. Nasi goreng", ui.productName, "0", "60", "0")
     }
     val title = spec[0]
@@ -160,6 +163,7 @@ internal fun MainActivity.showProductTextField(field: String) {
                 "stok" -> ui.productStock = value.filter(Char::isDigit)
                 "deskripsi" -> ui.productDescription = value
                 "bahan" -> ui.productIngredients = value
+                "ruangan" -> ui.productRoom = value
                 else -> ui.productName = value
             }
             ui.productError = ""
@@ -201,6 +205,7 @@ internal fun MainActivity.saveProductForm() {
     val stockText = ui.productStock.trim()
     ui.productError = when {
         ui.productName.isBlank() -> "Nama produk wajib diisi."
+        ui.productRoom.isBlank() -> "Ruangan pengambilan (Ambil di ruangan) wajib diisi."
         priceValue == null || priceValue <= 0 -> "Harga wajib angka lebih dari Rp 0."
         priceValue > 999_999_999 -> "Harga terlalu besar."
         stockText.isNotBlank() && (stockText.toIntOrNull() == null || stockText.toInt() < 0) ->
@@ -372,9 +377,10 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
     authScope.launch {
         try {
             val imageUrl = ui.productImageUrl.takeIf { it.startsWith("https://") }
+            val packedIngredients = com.jajanin.app.data.model.packRoomAndIngredients(ui.productRoom, ui.productIngredients)
             val draft = ProductDraft(
                 ui.productName, ui.productDescription, ui.productCategory,
-                price, imageUrl, stock, ui.productIngredients, ui.productAvailable,
+                price, imageUrl, stock, packedIngredients, ui.productAvailable,
             )
             val editingId = ui.productEditId
             if (editingId == null) {
@@ -382,6 +388,11 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
             } else {
                 OrderRepository.updateProduct(editingId, draft)
                 ui.productEditId = null
+            }
+            val cleanRoom = ui.productRoom.trim()
+            if (cleanRoom.isNotBlank()) {
+                ui.myStallRoom = cleanRoom
+                ui.myStallId?.let { OrderRepository.updateStallLocation(it, cleanRoom) }
             }
             dialog?.dismiss()
             ui.productSaving = false
@@ -496,13 +507,26 @@ internal fun MainActivity.rejectOrderPayment(orderId: String) {
     }
 }
 
-/** Muat pengaturan warung penjual (nama + QRIS) untuk layar profil. */
+/** Muat pengaturan warung penjual (nama toko, nama asli, NIS, nomor telepon, ruangan, + QRIS) untuk layar profil. */
 internal fun MainActivity.refreshSellerSettings() {
     authScope.launch {
         val stall = runCatching { OrderRepository.fetchMyStall() }.getOrNull()
         ui.myStallId = stall?.id
         ui.myStallName = stall?.name.orEmpty()
+        ui.myStallRoom = stall?.location?.takeIf { it != "Kantin" }.orEmpty()
         ui.myStallQris = stall?.qrisImageUrl.orEmpty()
+        val rawName = runCatching { SupabaseRepository.myRawDisplayName() }.getOrNull().orEmpty()
+        val cleanName = SupabaseRepository.extractCleanName(rawName)
+        val nis = SupabaseRepository.extractNis(rawName)
+        if (cleanName.isNotBlank()) ui.myDisplayName = cleanName
+        if (nis.isNotBlank()) ui.myNis = nis
+        val phone = runCatching { PhoneRepository.myPhone() }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: stall?.sellerPhone.orEmpty()
+        if (phone.isNotBlank()) ui.myPhone = phone
+        if (stall != null && (ui.myDisplayName.isNotBlank() || ui.myPhone.isNotBlank())) {
+            val ownerWithNis = if (ui.myNis.isNotBlank()) "${ui.myDisplayName} (NIS: ${ui.myNis})" else ui.myDisplayName
+            OrderRepository.syncStallContactMetadata(stall.id, ownerWithNis, ui.myPhone)
+        }
         ui.invalidate()
     }
 }
@@ -710,61 +734,99 @@ internal fun MainActivity.isDefaultStallName(name: String): Boolean {
  * Bila warung belum ada / nama masih default, tampilkan dialog wajib
  * isi; bila sudah ada nama proper, langsung [onReady].
  */
+/**
+ * Pastikan penjual punya:
+ * 1) Nama asli pemilik akun + NIS wajib (profiles.display_name)
+ * 2) Nama toko/warung (stalls.name)
+ * 3) Nomor telepon aktif (wajib bagi penjual)
+ * sebelum dashboard dibuka.
+ */
 internal fun MainActivity.ensureSellerStallName(onReady: () -> Unit) {
     authScope.launch {
+        val rawName = runCatching { SupabaseRepository.myRawDisplayName() }.getOrNull()?.trim().orEmpty()
+        val cleanName = SupabaseRepository.extractCleanName(rawName)
+        val nis = SupabaseRepository.extractNis(rawName)
+        if (cleanName.isNotBlank()) ui.myDisplayName = cleanName
+        if (nis.isNotBlank()) ui.myNis = nis
+        if (ui.myDisplayName.length < 3 || ui.myNis.isBlank()) {
+            showDisplayNameDialog { ensureSellerStallName(onReady) }
+            return@launch
+        }
+
         val stall = runCatching { OrderRepository.fetchMyStall() }.getOrNull()
         val current = stall?.name?.trim().orEmpty()
-        if (stall != null && !isDefaultStallName(current)) {
-            ui.myStallId = stall.id
-            ui.myStallName = current
-            ui.myStallQris = stall.qrisImageUrl.orEmpty()
+        if (stall == null || isDefaultStallName(current)) {
+            showStallNameDialog(prefill = if (isDefaultStallName(current)) "" else current) {
+                ensureSellerStallName(onReady)
+            }
+            return@launch
+        }
+
+        ui.myStallId = stall.id
+        ui.myStallName = current
+        ui.myStallRoom = stall.location.takeIf { it != "Kantin" }.orEmpty()
+        ui.myStallQris = stall.qrisImageUrl.orEmpty()
+
+        val phone = runCatching { PhoneRepository.myPhone() }.getOrNull()?.trim()?.takeIf { it.isNotBlank() }
+            ?: stall.sellerPhone
+        if (phone.isNotBlank()) {
+            ui.myPhone = phone
+            val ownerWithNis = if (ui.myNis.isNotBlank()) "${ui.myDisplayName} (NIS: ${ui.myNis})" else ui.myDisplayName
+            OrderRepository.syncStallContactMetadata(stall.id, ownerWithNis, phone)
             ui.invalidate()
             onReady()
             return@launch
         }
-        showStallNameDialog(prefill = if (isDefaultStallName(current)) "" else current) { onReady() }
+
+        showSellerMandatoryPhoneDialog(stall.id) { onReady() }
     }
 }
 
 /**
- * Dialog wajib isi nama asli; dipakai akun lama yang belum punya nama.
- * Tidak bisa dilewat: tombol Batal = keluar dari akun.
+ * Dialog wajib isi nomor telepon penjual; tidak bisa dilewat tanpa disimpan.
  */
-internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
+internal fun MainActivity.showSellerMandatoryPhoneDialog(stallId: String, onSaved: () -> Unit) {
     val self = this
     val container = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(48, 24, 48, 0)
     }
     val input = EditText(this).apply {
-        hint = "cth. Budi Santoso"
+        hint = "cth. 0812xxxxxxx"
+        inputType = android.text.InputType.TYPE_CLASS_PHONE
         setSingleLine(true)
-        inputType = android.text.InputType.TYPE_CLASS_TEXT or
-            android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME
+        setText(ui.myPhone)
     }
     container.addView(input)
-    val dialog = android.app.AlertDialog.Builder(this).setTitle("Siapa namamu?")
-        .setMessage("Mulai sekarang setiap akun wajib memakai nama asli. Isi dulu sebelum masuk aplikasi.")
+    val dialog = android.app.AlertDialog.Builder(this)
+        .setTitle("Nomor Telepon Penjual (Wajib)")
+        .setMessage("Penjual wajib mencantumkan nomor telepon/WA aktif agar tampil di detail pesanan pembeli untuk koordinasi pengambilan.")
         .setView(container)
         .setPositiveButton("Simpan", null)
-        .setNegativeButton("Batal") { _, _ -> doLogout() }
+        .setNegativeButton("Batal") { _, _ ->
+            ui.myRole = "buyer"
+            ui.showHome()
+            refreshProducts()
+        }
         .show()
     dialog.setCancelable(false)
     dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-        val value = input.text.toString().trim()
-        if (value.length < 3) {
-            Toast.makeText(this, "Nama asli minimal 3 karakter.", Toast.LENGTH_SHORT).show()
+        val raw = input.text.toString().trim()
+        val norm = PhoneRepository.normalizePhone(raw)
+        if (norm == null) {
+            Toast.makeText(this, "Nomor telepon tidak valid. Gunakan 08... atau +62...", Toast.LENGTH_SHORT).show()
             return@setOnClickListener
         }
         val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
         saveBtn.isEnabled = false
         authScope.launch {
             try {
-                SupabaseRepository.setMyName(value)
-                ui.myDisplayName = value
+                val savedPhone = runCatching { PhoneRepository.setMyPhone(raw) }.getOrDefault(norm)
+                ui.myPhone = savedPhone
+                OrderRepository.syncStallContactMetadata(stallId, ui.myDisplayName, savedPhone)
                 ui.invalidate()
                 dialog.dismiss()
-                Toast.makeText(self, "Halo, $value!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(self, "Nomor telepon penjual disimpan.", Toast.LENGTH_SHORT).show()
                 onSaved()
             } catch (error: Throwable) {
                 saveBtn.isEnabled = true
@@ -773,6 +835,193 @@ internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
         }
     }
     input.requestFocus()
+}
+
+/** Dialog ubah nama asli & NIS pemilik akun dari halaman Profil (Buyer & Seller). */
+internal fun MainActivity.showRealNameEdit() {
+    val self = this
+    val container = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 24, 48, 0)
+    }
+    val inputName = EditText(this).apply {
+        hint = "Nama Lengkap Asli (wajib)"
+        setSingleLine(true)
+        setText(ui.myDisplayName)
+        selectAll()
+    }
+    val inputNis = EditText(this).apply {
+        hint = "NIS / Nomor Induk Siswa (wajib)"
+        setSingleLine(true)
+        inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        setText(ui.myNis)
+    }
+    container.addView(inputName)
+    container.addView(inputNis)
+    val dialog = android.app.AlertDialog.Builder(this).setTitle("Nama Asli & NIS (Wajib)")
+        .setMessage("Setiap pembeli dan penjual wajib menggunakan nama lengkap asli serta NIS yang valid.")
+        .setView(container)
+        .setPositiveButton("Simpan", null)
+        .setNegativeButton("Batal", null)
+        .show()
+    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val value = inputName.text.toString().trim()
+        val rawNis = inputNis.text.toString().trim()
+        val normNis = SupabaseRepository.normalizeNis(rawNis)
+        if (value.length < 3) {
+            Toast.makeText(this, "Nama asli minimal 3 karakter.", Toast.LENGTH_SHORT).show()
+            return@setOnClickListener
+        }
+        if (normNis == null) {
+            Toast.makeText(this, "NIS wajib diisi dengan angka yang valid (min. 4 digit).", Toast.LENGTH_SHORT).show()
+            return@setOnClickListener
+        }
+        val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+        saveBtn.isEnabled = false
+        authScope.launch {
+            try {
+                SupabaseRepository.setMyName(value, normNis)
+                ui.myDisplayName = value
+                ui.myNis = normNis
+                val ownerWithNis = "$value (NIS: $normNis)"
+                ui.myStallId?.let { OrderRepository.syncStallContactMetadata(it, ownerWithNis, ui.myPhone) }
+                ui.invalidate()
+                dialog.dismiss()
+                Toast.makeText(self, "Nama asli & NIS diperbarui.", Toast.LENGTH_SHORT).show()
+            } catch (error: Throwable) {
+                saveBtn.isEnabled = true
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    inputName.requestFocus()
+}
+
+/** Dialog ubah ruangan pengambilan default warung dari halaman Profil seller. */
+internal fun MainActivity.showStallRoomEdit() {
+    val self = this
+    val container = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 24, 48, 0)
+    }
+    val input = EditText(this).apply {
+        hint = "cth. Ruang XII RPL 1 / Kantin Utama"
+        setSingleLine(true)
+        setText(ui.myStallRoom)
+        selectAll()
+    }
+    container.addView(input)
+    val dialog = android.app.AlertDialog.Builder(this).setTitle("Ambil di Ruangan")
+        .setMessage("Ruangan/kelas tempat pembeli mengambil pesanan warungmu.")
+        .setView(container)
+        .setPositiveButton("Simpan", null)
+        .setNegativeButton("Batal", null)
+        .show()
+    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val value = input.text.toString().trim()
+        if (value.isBlank()) {
+            Toast.makeText(this, "Nama ruangan tidak boleh kosong.", Toast.LENGTH_SHORT).show()
+            return@setOnClickListener
+        }
+        val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+        saveBtn.isEnabled = false
+        authScope.launch {
+            try {
+                val stallId = ui.myStallId ?: OrderRepository.sellerStallId()
+                if (stallId != null) {
+                    OrderRepository.updateStallLocation(stallId, value)
+                }
+                ui.myStallRoom = value
+                ui.invalidate()
+                dialog.dismiss()
+                Toast.makeText(self, "Ruangan ambil disimpan: $value", Toast.LENGTH_SHORT).show()
+            } catch (error: Throwable) {
+                saveBtn.isEnabled = true
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    input.requestFocus()
+}
+
+internal fun MainActivity.copyPhoneToClipboard(phone: String) {
+    val clean = if (phone.startsWith("+62")) "0" + phone.removePrefix("+62") else phone
+    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+    cm?.setPrimaryClip(android.content.ClipData.newPlainText("Nomor Telepon Penjual", clean))
+    Toast.makeText(this, "Nomor disalin: $clean", Toast.LENGTH_SHORT).show()
+}
+
+internal fun MainActivity.openDialer(phone: String) {
+    runCatching {
+        val clean = phone.filter { it.isDigit() || it == '+' }
+        startActivity(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:$clean")))
+    }.onFailure {
+        Toast.makeText(this, "Tidak dapat membuka aplikasi telepon.", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/**
+ * Dialog wajib isi nama asli & NIS; dipakai akun yang belum melengkapi Nama Asli / NIS.
+ * Tidak bisa dilewat: tombol Batal = keluar dari akun.
+ */
+internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
+    val self = this
+    val container = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 24, 48, 0)
+    }
+    val inputName = EditText(this).apply {
+        hint = "Nama Lengkap Asli (cth. Budi Santoso)"
+        setSingleLine(true)
+        inputType = android.text.InputType.TYPE_CLASS_TEXT or
+            android.text.InputType.TYPE_TEXT_VARIATION_PERSON_NAME
+        setText(ui.myDisplayName)
+    }
+    val inputNis = EditText(this).apply {
+        hint = "NIS / Nomor Induk Siswa (wajib)"
+        setSingleLine(true)
+        inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        setText(ui.myNis)
+    }
+    container.addView(inputName)
+    container.addView(inputNis)
+    val dialog = android.app.AlertDialog.Builder(this).setTitle("Lengkapi Nama Asli & NIS")
+        .setMessage("Setiap akun Pembeli & Penjual wajib mengisi Nama Lengkap Asli serta NIS sebelum menggunakan aplikasi.")
+        .setView(container)
+        .setPositiveButton("Simpan", null)
+        .setNegativeButton("Keluar Akun") { _, _ -> doLogout() }
+        .show()
+    dialog.setCancelable(false)
+    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        val value = inputName.text.toString().trim()
+        val rawNis = inputNis.text.toString().trim()
+        val normNis = SupabaseRepository.normalizeNis(rawNis)
+        if (value.length < 3) {
+            Toast.makeText(this, "Nama asli minimal 3 karakter.", Toast.LENGTH_SHORT).show()
+            return@setOnClickListener
+        }
+        if (normNis == null) {
+            Toast.makeText(this, "NIS wajib diisi dengan angka yang valid (min. 4 digit).", Toast.LENGTH_SHORT).show()
+            return@setOnClickListener
+        }
+        val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+        saveBtn.isEnabled = false
+        authScope.launch {
+            try {
+                SupabaseRepository.setMyName(value, normNis)
+                ui.myDisplayName = value
+                ui.myNis = normNis
+                ui.invalidate()
+                dialog.dismiss()
+                Toast.makeText(self, "Halo, $value (NIS: $normNis)!", Toast.LENGTH_SHORT).show()
+                onSaved()
+            } catch (error: Throwable) {
+                saveBtn.isEnabled = true
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    if (ui.myDisplayName.length < 3) inputName.requestFocus() else inputNis.requestFocus()
 }
 
 /**

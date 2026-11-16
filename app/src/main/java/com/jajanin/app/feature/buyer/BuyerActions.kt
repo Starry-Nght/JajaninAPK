@@ -107,42 +107,9 @@ internal fun MainActivity.startMyOrdersUpdates() {
 }
 
 internal fun MainActivity.refreshMyExp() {
-    val self = this
-    if (!SupabaseRepository.hasSession()) {
-        ui.myExp = 0
-        ui.lastExpBalance = -1
-        ui.lastExpLevel = 0
-        ui.invalidate()
-        return
-    }
-    expJob?.cancel()
-    ui.myExpLoading = true
-    expJob = authScope.launch {
-        val balance = runCatching { ExpRepository.myBalance() }.getOrNull()
-        ui.myExpLoading = false
-        if (balance == null) {
-            ui.invalidate()
-            return@launch
-        }
-        val prevBal = ui.lastExpBalance
-        val prevLvl = ui.lastExpLevel
-        ui.myExp = balance
-        val newLvl = expLevel(balance)
-        if (prevBal >= 0 && balance > prevBal) {
-            val gained = balance - prevBal
-            if (prevLvl > 0 && newLvl > prevLvl) {
-                Toast.makeText(self, "+$gained EXP! Kamu naik ke Level $newLvl!", Toast.LENGTH_LONG).show()
-                if (ui.motionEnabled()) {
-                    ui.expPulseAt = android.os.SystemClock.uptimeMillis()
-                }
-            } else if (gained > 0) {
-                Toast.makeText(self, "+$gained EXP!", Toast.LENGTH_SHORT).show()
-            }
-        }
-        ui.lastExpBalance = balance
-        ui.lastExpLevel = newLvl
-        ui.invalidate()
-    }
+    // EXP feature removed on buyer per user request
+    ui.myExp = 0
+    ui.myExpLoading = false
 }
 
 /** Buka layar riwayat EXP (halaman pertama). */
@@ -206,6 +173,22 @@ internal fun MainActivity.refreshProducts() {
         try {
             ui.products = OrderRepository.fetchAvailableProducts()
             ui.productsError = null
+            val remoteTop = OrderRepository.fetchTopSelling3Days()
+            val merged = HashMap(remoteTop)
+            ui.myOrders.forEach { o ->
+                if (o.status != STATUS_CANCELLED) {
+                    o.items.forEach { item ->
+                        item.menuItemId?.takeIf { it.isNotBlank() }?.let { id ->
+                            merged[id] = maxOf(merged[id] ?: 0, item.quantity)
+                        }
+                        val nameKey = item.itemName.trim().lowercase()
+                        if (nameKey.isNotBlank()) {
+                            merged[nameKey] = maxOf(merged[nameKey] ?: 0, item.quantity)
+                        }
+                    }
+                }
+            }
+            ui.topSelling3d = merged
         } catch (error: Throwable) {
             ui.productsError = SupabaseRepository.errorMessage(error)
         } finally {
@@ -213,6 +196,31 @@ internal fun MainActivity.refreshProducts() {
             ui.invalidate()
         }
     }
+}
+
+internal fun MainActivity.loadFavorites() {
+    val raw = appPrefs().getStringSet("buyer_favorite_ids", emptySet()) ?: emptySet()
+    ui.favoriteIds.clear()
+    ui.favoriteIds.addAll(raw)
+}
+
+internal fun MainActivity.toggleFavorite(productId: String) {
+    if (productId.isBlank()) return
+    val added = if (ui.favoriteIds.contains(productId)) {
+        ui.favoriteIds.remove(productId)
+        false
+    } else {
+        ui.favoriteIds.add(productId)
+        true
+    }
+    appPrefs().edit().putStringSet("buyer_favorite_ids", HashSet(ui.favoriteIds)).apply()
+    val name = ui.products.firstOrNull { it.id == productId }?.name ?: "Menu"
+    Toast.makeText(
+        this,
+        if (added) "$name disimpan ke Favorit" else "$name dihapus dari Favorit",
+        Toast.LENGTH_SHORT
+    ).show()
+    ui.invalidate()
 }
 
 internal fun MainActivity.addProductToOrder() {
@@ -424,6 +432,7 @@ internal fun MainActivity.placeCartOrder() {
             ui.cartStallId = null
             ui.cartStallQris = null
             ui.lastOrderId = placed.id
+            ui.selectedBuyerOrderId = placed.id
             ui.lastOrderPickup = placed.pickupCode
             ui.lastOrderTotal = placed.totalIdr
             ui.lastOrderMethod = placed.paymentMethod
@@ -534,7 +543,12 @@ internal fun MainActivity.showPhoneEditor(onSaved: (() -> Unit)? = null) {
                 saveBtn.isEnabled = false
                 authScope.launch {
                     try {
-                        ui.myPhone = PhoneRepository.setMyPhone(raw)
+                        val saved = runCatching { PhoneRepository.setMyPhone(raw) }
+                            .getOrElse { PhoneRepository.normalizePhone(raw) ?: raw }
+                        ui.myPhone = saved
+                        ui.myStallId?.let { stallId ->
+                            OrderRepository.syncStallContactMetadata(stallId, ui.myDisplayName, saved)
+                        }
                         ui.invalidate()
                         dialog.dismiss()
                         Toast.makeText(self, "Nomor HP disimpan.", Toast.LENGTH_SHORT).show()

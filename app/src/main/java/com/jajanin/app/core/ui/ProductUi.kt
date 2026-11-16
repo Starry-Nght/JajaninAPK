@@ -2,27 +2,56 @@ package com.jajanin.app.core.ui
 
 import com.jajanin.app.feature.seller.*
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.data.model.ProductRow
 
-/** Thumbnail produk bersama (Buyer & Seller): gambar URL atau placeholder "J". */
+private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+private val imageClipPath = Path()
+private val srcRect = Rect()
+
+/**
+ * Menggambar bitmap dengan proporsi asli (Center-Crop / ContentScale.Crop)
+ * sehingga foto menu tidak pernah gepeng atau ketarik (stretched).
+ */
+internal fun drawBitmapCenterCrop(c: Canvas, bitmap: Bitmap, rect: RectF, radius: Float) {
+    val bw = bitmap.width
+    val bh = bitmap.height
+    val rw = rect.width()
+    val rh = rect.height()
+    if (bw <= 0 || bh <= 0 || rw <= 0f || rh <= 0f) return
+
+    val scale = maxOf(rw / bw.toFloat(), rh / bh.toFloat())
+    val sw = rw / scale
+    val sh = rh / scale
+    val left = ((bw - sw) * 0.5f).toInt().coerceAtLeast(0)
+    val top = ((bh - sh) * 0.5f).toInt().coerceAtLeast(0)
+    val right = (left + sw.toInt()).coerceAtMost(bw)
+    val bottom = (top + sh.toInt()).coerceAtMost(bh)
+    srcRect.set(left, top, right, bottom)
+
+    imageClipPath.reset()
+    imageClipPath.addRoundRect(rect, radius, radius, Path.Direction.CW)
+    val save = c.save()
+    c.clipPath(imageClipPath)
+    c.drawBitmap(bitmap, srcRect, rect, imagePaint)
+    c.restoreToCount(save)
+}
+
+/** Thumbnail produk bersama (Buyer & Seller): gambar URL center-crop atau placeholder "J". */
 internal fun JajaninView.drawProductImage(c: Canvas, product: ProductRow, rect: RectF, radius: Float) {
     val url = product.imageUrl?.takeIf { it.startsWith("https://") }
     val bitmap = url?.let { ProductImageCache.images[it] }
     if (bitmap == null) {
         kit.rounded(c, rect, kit.tint, radius)
-        kit.centerText(c, "J", rect, 28f, kit.blue, true)
+        kit.centerText(c, "J", rect, 22f, kit.blue, true)
         if (url != null) activity()?.loadProductImage(url)
         return
     }
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    val path = Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) }
-    val save = c.save()
-    c.clipPath(path)
-    c.drawBitmap(bitmap, null, rect, paint)
-    c.restoreToCount(save)
+    drawBitmapCenterCrop(c, bitmap, rect, radius)
 }

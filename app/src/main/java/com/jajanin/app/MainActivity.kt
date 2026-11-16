@@ -149,6 +149,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.setFlags(1024, 1024)
         ui = JajaninView(this)
+        loadFavorites()
         ui.setDarkMode(resolveTheme())
         ui.themeLabel = themeModeLabel()
         // Kanvas tetap menjadi konten utama; dock Liquid Glass asli hidup
@@ -211,11 +212,14 @@ class MainActivity : Activity() {
     internal suspend fun routeSignedInUser() {
         val role = SupabaseRepository.currentRole()
         refreshMyStatus()
-        // Nama asli wajib untuk pembeli/penjual: akun lama yang belum punya
-        // nama tidak bisa lewat sebelum mengisi (daftar baru sudah isi di form).
-        val displayName = SupabaseRepository.myDisplayName().orEmpty()
+        // Nama asli DAN NIS wajib untuk pembeli maupun penjual: akun yang belum punya
+        // nama asli atau NIS tidak bisa masuk sebelum melengkapinya.
+        val rawDisplay = SupabaseRepository.myRawDisplayName().orEmpty()
+        val displayName = SupabaseRepository.extractCleanName(rawDisplay)
+        val nis = SupabaseRepository.extractNis(rawDisplay)
         ui.myDisplayName = displayName
-        if ((role == "buyer" || role == "seller") && displayName.isBlank()) {
+        ui.myNis = nis
+        if ((role == "buyer" || role == "seller") && (displayName.length < 3 || nis.isBlank())) {
             showDisplayNameDialog { authScope.launch { routeSignedInUser() } }
             return
         }
@@ -603,6 +607,7 @@ class MainActivity : Activity() {
                 ui.isSellerProfile = false
                 ui.myRole = null
                 ui.myDisplayName = ""
+                ui.myNis = ""
                 ui.selectedRole = "buyer"
                 ui.myOrders = emptyList()
                 ui.myOrdersError = null
@@ -646,6 +651,7 @@ class MainActivity : Activity() {
         private val title = dialog.findViewById<TextView>(R.id.authTitle)
         private val subtitle = dialog.findViewById<TextView>(R.id.authSubtitle)
         private val name = dialog.findViewById<EditText>(R.id.authName)
+        private val nis = dialog.findViewById<EditText>(R.id.authNis)
         private val phone = dialog.findViewById<EditText>(R.id.authPhone)
         private val email = dialog.findViewById<EditText>(R.id.authEmail)
         private val password = dialog.findViewById<EditText>(R.id.authPassword)
@@ -665,9 +671,16 @@ class MainActivity : Activity() {
         init {
             email.imeOptions = EditorInfo.IME_ACTION_NEXT
             name.imeOptions = EditorInfo.IME_ACTION_NEXT
+            nis.imeOptions = EditorInfo.IME_ACTION_NEXT
             name.setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                    email.requestFocus()
+                    nis.requestFocus()
+                    true
+                } else false
+            }
+            nis.setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_NEXT) {
+                    phone.requestFocus()
                     true
                 } else false
             }
@@ -725,6 +738,7 @@ class MainActivity : Activity() {
             title.text = if (signup) "Buat akun" else "Masuk dengan email"
             subtitle.text = if (signup) "Daftar untuk mulai jajan di kampus." else "Lanjutkan jajan favoritmu di kampus."
             name.visibility = if (signup) View.VISIBLE else View.GONE
+            nis.visibility = if (signup) View.VISIBLE else View.GONE
             phone.visibility = if (signup) View.VISIBLE else View.GONE
             // Jarak atas email menyesuaikan: tanpa kolom nama, email yang paling atas.
             (email.layoutParams as ViewGroup.MarginLayoutParams).topMargin =
@@ -743,6 +757,7 @@ class MainActivity : Activity() {
             action.isEnabled = !value
             toggle.isEnabled = !value
             name.isEnabled = !value
+            nis.isEnabled = !value
             phone.isEnabled = !value
             email.isEnabled = !value
             password.isEnabled = !value
@@ -760,11 +775,17 @@ class MainActivity : Activity() {
             if (busy) return
             error.visibility = View.GONE
             val nameValue = name.text.toString().trim()
+            val nisValue = nis.text.toString().trim()
             val phoneValue = phone.text.toString().trim()
             val emailValue = email.text.toString().trim()
             val passwordValue = password.text.toString()
             if (signup && nameValue.length < 3) {
                 fail("Isi nama aslimu dulu (minimal 3 karakter)")
+                return
+            }
+            val normNis = SupabaseRepository.normalizeNis(nisValue)
+            if (signup && normNis == null) {
+                fail("NIS (Nomor Induk Siswa) wajib diisi (minimal 4 angka)")
                 return
             }
             if (signup && PhoneRepository.normalizePhone(phoneValue) == null) {
@@ -783,12 +804,12 @@ class MainActivity : Activity() {
             authScope.launch {
                 try {
                     if (signup) {
-                        if (SupabaseRepository.register(emailValue, passwordValue, nameValue) == RegisterResult.LOGGED_IN) {
-                            // Nama dikirim via metadata saat daftar; pastikan tersimpan
-                            // (mis. trigger belum jalan) sebelum masuk.
-                            runCatching { SupabaseRepository.setMyName(nameValue) }
-                            ui.myDisplayName = SupabaseRepository.myDisplayName() ?: nameValue
-                            // Nomor HP wajib: simpan dinormalisasi server.
+                        val validNis = normNis ?: ""
+                        val packedName = SupabaseRepository.packNameAndNis(nameValue, validNis)
+                        if (SupabaseRepository.register(emailValue, passwordValue, packedName) == RegisterResult.LOGGED_IN) {
+                            runCatching { SupabaseRepository.setMyName(nameValue, validNis) }
+                            ui.myDisplayName = SupabaseRepository.extractCleanName(nameValue)
+                            ui.myNis = validNis
                             runCatching { ui.myPhone = PhoneRepository.setMyPhone(phoneValue) }
                             dialog.dismiss()
                             routeSignedInUser()

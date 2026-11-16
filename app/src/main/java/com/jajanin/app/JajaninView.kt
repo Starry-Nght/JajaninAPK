@@ -18,6 +18,7 @@ import com.jajanin.app.core.constants.STATUS_PROCESSING_LEGACY
 import com.jajanin.app.core.constants.STATUS_READY
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.DrawKit
+import com.jajanin.app.core.ui.HERO_TOP_OFFSET
 import com.jajanin.app.core.ui.NavSpec
 import com.jajanin.app.core.ui.drawAbout
 import com.jajanin.app.core.ui.drawHelp
@@ -77,6 +78,8 @@ internal class JajaninView(context: Context) : View(context) {
 
     internal var products: List<ProductRow> = emptyList()
     internal var sellerProducts: List<ProductRow> = emptyList()
+    internal var favoriteIds = linkedSetOf<String>()
+    internal var topSelling3d: Map<String, Int> = emptyMap()
     internal var selectedProduct: ProductRow? = null
     internal val selected: MenuItem
         get() = selectedProduct?.let { MenuItem(it.name, "Kantin Jajanin", formatRupiah(it.priceIdr), "-", 0, it.category) }
@@ -92,6 +95,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var adminLoading = false
     internal var adminError: String? = null
     internal var adminFilter = "Semua"
+    internal var sellerTab = "Dashboard"
     internal var adminDetailOrder: AdminOrder? = null
     internal var adminDetailId: String? = null
     internal var adminDetailLoading = false
@@ -113,6 +117,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productImageUploading = false
     internal var productStock = ""
     internal var productIngredients = ""
+    internal var productRoom = ""
     internal var productAvailable = true
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
@@ -124,6 +129,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myObserver: OrderObserver? = null
     internal var myRole: String? = null
     internal var myDisplayName: String = ""
+    internal var myNis: String = ""
     internal var savedProductId: String? = null
     internal var isSellerProfile = false
     // --- Buyer checkout state (multi-item cart, satu warung per order) ---
@@ -139,6 +145,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var lastOrderTotal: Int = 0
     internal var lastOrderMethod: String = "cash"
     internal var lastOrderStatus: String = "pending"
+    internal var selectedBuyerOrderId: String? = null
     internal var qrisOrderId: String? = null
     internal var qrisAmount: Int = 0
     internal var qrisImageUrl: String? = null
@@ -146,6 +153,7 @@ internal class JajaninView(context: Context) : View(context) {
     // --- Seller settings state ---
     internal var myStallId: String? = null
     internal var myStallName: String = ""
+    internal var myStallRoom: String = ""
     internal var myStallQris: String = ""
     internal var cart = linkedMapOf<String, Int>()
     // --- Developer dashboard state ---
@@ -365,32 +373,55 @@ internal class JajaninView(context: Context) : View(context) {
         invalidate()
     }
 
-    /** Logika tab penjual (dulu hidup di dalam onTouchEvent). */
+    /** Logika tab penjual dengan halaman Dashboard & Pesanan terpisah + transisi geser. */
     internal fun selectSellerTab(label: String) {
-        val beforeStabScreen = screen
-        val beforeStabScroll = scroll
+        val tabOrder = listOf("Dashboard", "Pesanan", "Produk", "Notifikasi", "Profil")
+        val currentLabel = when {
+            screen == Screen.ADMIN -> sellerTab
+            screen == Screen.PRODUCT_FORM -> "Produk"
+            screen == Screen.NOTIF -> "Notifikasi"
+            screen == Screen.PROFILE && isSellerProfile -> "Profil"
+            else -> sellerTab
+        }
+        val tabDir = when {
+            tabOrder.indexOf(label) > tabOrder.indexOf(currentLabel) -> 1f
+            tabOrder.indexOf(label) < tabOrder.indexOf(currentLabel) -> -1f
+            else -> 0f
+        }
+        val beforeKey = "s:$screen:$currentLabel"
+        pageScroll[beforeKey] = scroll
+
         when (label) {
-            "Dashboard" -> go(Screen.ADMIN)
+            "Dashboard" -> {
+                sellerTab = "Dashboard"
+                if (screen != Screen.ADMIN) go(Screen.ADMIN)
+                scroll = pageScroll["s:${Screen.ADMIN}:Dashboard"] ?: 0f
+                if (tabDir != 0f) beginSlide(tabDir)
+                activity()?.refreshAdminOrders()
+            }
             "Pesanan" -> {
-                pendingScrollToOrders = true
-                go(Screen.ADMIN)
+                sellerTab = "Pesanan"
+                if (screen != Screen.ADMIN) go(Screen.ADMIN)
+                scroll = pageScroll["s:${Screen.ADMIN}:Pesanan"] ?: 0f
+                if (tabDir != 0f) beginSlide(tabDir)
+                activity()?.refreshAdminOrders()
             }
             "Produk" -> activity()?.showProductForm()
-            "Notifikasi" -> activity()?.openNotif()
+            "Notifikasi" -> {
+                activity()?.openNotif()
+                if (tabDir != 0f) beginSlide(tabDir)
+            }
             "Profil" -> {
                 isSellerProfile = true
                 if (SupabaseRepository.hasSession()) {
                     go(Screen.PROFILE)
+                    if (tabDir != 0f) beginSlide(tabDir)
                     activity()?.refreshSellerSettings()
                 } else {
                     android.widget.Toast.makeText(context, "Masuk dulu untuk membuka profil.", android.widget.Toast.LENGTH_SHORT).show()
                     activity()?.showAuthForm(false)
                 }
             }
-        }
-        if (screen != beforeStabScreen) {
-            pageScroll["s:$beforeStabScreen"] = beforeStabScroll
-            scroll = pageScroll["s:$screen"] ?: scroll
         }
         invalidate()
     }
@@ -496,6 +527,8 @@ internal class JajaninView(context: Context) : View(context) {
         navContentInvalidator?.invoke()
     }
 
+    private fun navScrollPad(): Float = 82f
+
     /** Layar yang memakai tipografi penjual (termasuk profil & notifikasi seller). */
     private fun isSellerScreen(): Boolean =
         screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
@@ -558,7 +591,7 @@ internal class JajaninView(context: Context) : View(context) {
                         pressedKey = null
                         invalidate()
                     }
-                    val maxScroll = (contentHeight - height / s + 78f).coerceAtLeast(0f)
+                    val maxScroll = (contentHeight - height / s + navScrollPad()).coerceAtLeast(0f)
                     scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
                     previousY = y
                     invalidate()
@@ -607,6 +640,9 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "toggleAuth" -> activity()?.showAuthForm(false, signup = true)
                     // --- Pembeli (buyer): pencarian, katalog, keranjang, checkout ---
                     hit == "search" -> activity()?.showSearchForm()
+                    hit == "clearSearch" -> applyQuery("")
+                    hit == "homeProfile" -> selectBuyerTab("Profile")
+                    hit.startsWith("fav:") -> activity()?.toggleFavorite(hit.substringAfter(':'))
                     hit == "cartCheckout" -> {
                         if (cart.isEmpty()) {
                             android.widget.Toast.makeText(context, "Keranjang masih kosong.", android.widget.Toast.LENGTH_SHORT).show()
@@ -640,8 +676,16 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "placeOrder" -> if (!placingOrder) activity()?.placeCartOrder()
                     hit == "paid" -> activity()?.submitPaymentProof()
                     hit.startsWith("myOrderPaid:") -> activity()?.submitPaymentProofFor(hit.substringAfter(':'))
+                    hit.startsWith("buyerOrder:") -> {
+                        selectedBuyerOrderId = hit.substringAfter(':')
+                        go(Screen.READY)
+                    }
                     // --- Profil, EXP, dan pengaturan warung ---
                     hit == "profilePhone" -> activity()?.showPhoneEditor()
+                    hit == "profileRealName" || hit == "profileNis" -> activity()?.showRealNameEdit()
+                    hit == "profileStallRoom" -> activity()?.showStallRoomEdit()
+                    hit.startsWith("copyPhone:") -> activity()?.copyPhoneToClipboard(hit.substringAfter(':'))
+                    hit.startsWith("dialPhone:") -> activity()?.openDialer(hit.substringAfter(':'))
                     hit == "expHistory" -> activity()?.openExpHistory()
                     hit == "expMore" -> activity()?.loadMoreExp()
                     hit == "expRetry" -> activity()?.loadExpPage()
@@ -671,6 +715,13 @@ internal class JajaninView(context: Context) : View(context) {
                         }
                     }
                     hit.startsWith("adminFilter:") -> { adminFilter = hit.substringAfter(':'); scroll = 0f; invalidate() }
+                    hit.startsWith("sellerPipeline:") -> {
+                        adminFilter = hit.substringAfter(':')
+                        sellerTab = "Pesanan"
+                        scroll = 0f
+                        beginSlide(1f)
+                        invalidate()
+                    }
                     hit.startsWith("adminOrder:") || hit.startsWith("adminNotifOrder:") -> {
                         val orderId = hit.substringAfter(':')
                         adminDetailOrder = adminOrders.firstOrNull { it.id == orderId }
@@ -711,6 +762,12 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "pfStock" -> activity()?.showProductTextField("stok")
                     hit == "pfDesc" -> activity()?.showProductTextField("deskripsi")
                     hit == "pfIngredients" -> activity()?.showProductTextField("bahan")
+                    hit == "pfRoom" -> activity()?.showProductTextField("ruangan")
+                    hit.startsWith("pfRoomChip:") -> {
+                        productRoom = hit.substringAfter(':')
+                        productError = ""
+                        invalidate()
+                    }
                     hit == "pfCategory" -> activity()?.showProductCategoryPicker()
                     hit.startsWith("pfCat:") -> {
                         productCategory = hit.substringAfter(':')

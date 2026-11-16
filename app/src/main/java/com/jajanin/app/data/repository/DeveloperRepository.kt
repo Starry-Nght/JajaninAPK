@@ -32,9 +32,16 @@ internal data class DevProfileRow(
 internal data class DevStallRow(
     val id: String,
     val name: String,
+    val location: String = "",
+    val description: String = "",
     @SerialName("is_open") val isOpen: Boolean = true,
     @SerialName("owner_id") val ownerId: String? = null,
-)
+) {
+    val sellerPhone: String
+        get() = Regex("HP:\\s*([+0-9]+)").find(description)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+    val ownerRealName: String
+        get() = Regex("Pemilik:\\s*([^|]+)").find(description)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+}
 
 @Serializable
 internal data class DevWarningRow(
@@ -200,7 +207,7 @@ internal object DeveloperRepository {
             }.decodeList<DevProfileRow>()
         val stalls = runCatching {
             client.postgrest.from("stalls")
-                .select(Columns.list("id", "name", "is_open", "owner_id")) { limit(200) }
+                .select(Columns.list("id", "name", "location", "description", "is_open", "owner_id")) { limit(200) }
                 .decodeList<DevStallRow>()
                 .filter { it.ownerId != null }
                 .associateBy { it.ownerId!! }
@@ -223,9 +230,14 @@ internal object DeveloperRepository {
 
         return profiles.map { p ->
             val stall = stalls[p.id]
+            val resolvedRealName = p.displayName?.takeIf { it.isNotBlank() }
+                ?: stall?.ownerRealName?.takeIf { it.isNotBlank() }
+                ?: (p.email?.substringBefore('@') ?: "Tanpa Nama")
+            val resolvedPhone = phones[p.id]?.takeIf { it.isNotBlank() }
+                ?: stall?.sellerPhone.orEmpty()
             DevUser(
                 id = p.id,
-                displayName = p.displayName?.takeIf { it.isNotBlank() } ?: (p.email?.substringBefore('@') ?: "Tanpa Nama"),
+                displayName = resolvedRealName,
                 email = p.email ?: "-",
                 role = p.role,
                 accountStatus = p.accountStatus,
@@ -235,7 +247,7 @@ internal object DeveloperRepository {
                 stallName = stall?.name,
                 stallOpen = stall?.isOpen,
                 stallId = stall?.id,
-                phone = phones[p.id].orEmpty(),
+                phone = resolvedPhone,
             )
         }
     }

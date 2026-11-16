@@ -384,7 +384,11 @@ private fun JajaninView.drawDevUsers(c: Canvas, w: Float, h: Float, off: Float, 
 
     val rows = devUsers.filter { u ->
         (!sellersOnly || u.role == "seller") &&
-            (devQuery.isBlank() || u.displayName.contains(devQuery.trim(), true) || u.email.contains(devQuery.trim(), true) || u.phone.contains(devQuery.trim())) &&
+            (devQuery.isBlank() ||
+                u.displayName.contains(devQuery.trim(), true) ||
+                u.stallName.orEmpty().contains(devQuery.trim(), true) ||
+                u.email.contains(devQuery.trim(), true) ||
+                u.phone.contains(devQuery.trim())) &&
             when (devUserFilter) {
                 "Buyer" -> u.role == "buyer"
                 "Seller" -> u.role == "seller"
@@ -418,9 +422,14 @@ private fun JajaninView.drawDevUsers(c: Canvas, w: Float, h: Float, off: Float, 
         val (roleBg, roleFg) = roleBadgeColors(selected.role)
         drawAvatar(c, kit, selected.displayName, 42f, y + 36f, 20f, roleFg)
 
-        // Name & Identity
-        kit.text(c, selected.displayName.take(22), 70f, y + 26f, 15f, kit.ink, true)
-        val subEmail = selected.email.take(30) + if (selected.phone.isNotBlank()) " · ${selected.phone}" else ""
+        // Name & Identity (Seller shows Real Name + Store Name clearly for Developer)
+        val inspectorTitle = if (selected.role == "seller" && !selected.stallName.isNullOrBlank()) {
+            "${selected.displayName} · ${selected.stallName}"
+        } else {
+            selected.displayName
+        }
+        kit.textEllipsized(c, inspectorTitle, 70f, y + 26f, 258f, 14f, kit.ink, true)
+        val subEmail = selected.email.take(28) + if (selected.phone.isNotBlank()) " · ${selected.phone}" else ""
         kit.text(c, subEmail, 70f, y + 42f, 10f, kit.muted)
 
         // Role & Account Status Badges
@@ -527,10 +536,15 @@ private fun JajaninView.drawDevUsers(c: Canvas, w: Float, h: Float, off: Float, 
                 val statusDotColor = if (isSuspended) Color.rgb(239, 68, 68) else Color.rgb(16, 185, 129)
                 c.drawCircle(54f, y + 46f, 4f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = statusDotColor })
 
-                // Details
-                kit.text(c, u.displayName.take(20), 68f, y + 26f, 13.5f, kit.ink, true)
+                // Details (For sellers: show both Real Name & Store Name)
+                val primaryTitle = if (u.role == "seller" && !u.stallName.isNullOrBlank()) {
+                    "${u.displayName}  ·  Toko: ${u.stallName}"
+                } else {
+                    u.displayName
+                }
+                kit.textEllipsized(c, primaryTitle, 68f, y + 26f, 224f, 13f, kit.ink, true)
                 val subline = "${u.email.take(24)}${if (u.phone.isNotBlank()) " · ${u.phone}" else ""}"
-                kit.text(c, subline, 68f, y + 43f, 10f, kit.muted)
+                kit.textEllipsized(c, subline, 68f, y + 43f, 224f, 10f, kit.muted)
                 val roleCaption = "${u.role.uppercase()} · ${u.accountStatus.uppercase()}"
                 kit.text(c, roleCaption, 68f, y + 57f, 8.5f, kit.muted)
 

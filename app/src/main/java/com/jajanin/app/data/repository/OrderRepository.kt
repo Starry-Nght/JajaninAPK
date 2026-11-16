@@ -60,7 +60,7 @@ internal data class ProfileRow(
     val email: String? = null,
 )
 
-/** Model siap-tampil untuk layar admin: nama pembeli dan jam sudah diresolvisi saat fetch. */
+/** Model siap-tampil untuk layar admin & pembeli: nama pembeli, jam, ruangan ambil, dan kontak penjual sudah diresolusi saat fetch. */
 internal data class AdminOrder(
     val id: String,
     val userId: String,
@@ -74,6 +74,10 @@ internal data class AdminOrder(
     val paymentMethod: String? = null,
     val paymentStatus: String = "unpaid",
     val buyerPhone: String = "",
+    val pickupRoom: String = "",
+    val sellerPhone: String = "",
+    val sellerStoreName: String = "",
+    val sellerOwnerName: String = "",
 ) {
     val itemCount: Int
         get() = items.sumOf { it.quantity }
@@ -114,7 +118,23 @@ internal data class PlacedOrder(
 internal data class StallInfo(
     val id: String,
     val name: String,
+    val location: String = "",
+    val description: String = "",
+    @SerialName("owner_id") val ownerId: String? = null,
     @SerialName("qris_image_url") val qrisImageUrl: String? = null,
+) {
+    val sellerPhone: String
+        get() = Regex("HP:\\s*([+0-9]+)").find(description)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+
+    val ownerRealName: String
+        get() = Regex("Pemilik:\\s*([^|]+)").find(description)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+}
+
+@Serializable
+private data class MenuRoomLookupRow(
+    val id: String,
+    @SerialName("stall_id") val stallId: String,
+    val ingredients: String = "",
 )
 
 /** Hasil probe stall_availability: antrean aktif warung (maksimal 10). */
@@ -477,27 +497,61 @@ internal object OrderRepository {
         }
     }
 
-    /** Info publik satu warung (nama + QR QRIS) untuk layar bayar pembeli. */
+    /** Info publik satu warung (nama, ruangan ambil, kontak penjual, & QRIS) untuk layar pembeli. */
     suspend fun fetchStall(stallId: String): StallInfo? = runCatching {
         client.postgrest.from("stalls")
-            .select(Columns.raw("id,name,qris_image_url")) {
+            .select(Columns.raw("id,name,location,description,owner_id,qris_image_url")) {
                 filter { eq("id", stallId) }
                 limit(1)
             }
             .decodeSingleOrNull<StallInfo>()
     }.getOrNull()
 
-    /** Warung milik penjual ini beserta QRIS-nya (untuk pengaturan). */
+    /** Warung milik penjual ini beserta ruangan ambil, kontak, & QRIS-nya. */
     suspend fun fetchMyStall(): StallInfo? {
         val uid = SupabaseRepository.currentUid() ?: return null
         return runCatching {
             client.postgrest.from("stalls")
-                .select(Columns.raw("id,name,qris_image_url")) {
+                .select(Columns.raw("id,name,location,description,owner_id,qris_image_url")) {
                     filter { eq("owner_id", uid) }
                     limit(1)
                 }
                 .decodeSingleOrNull<StallInfo>()
         }.getOrNull()
+    }
+
+    /** Simpan ruangan pengambilan ("Ambil di ruangan") pada warung penjual. */
+    suspend fun updateStallLocation(stallId: String, location: String) {
+        val clean = location.trim()
+        if (clean.isBlank()) return
+        val patch = buildJsonObject { put("location", clean) }
+        runCatching {
+            client.postgrest.from("stalls").update(patch) {
+                select(Columns.raw("id"))
+                filter { eq("id", stallId) }
+            }
+        }
+    }
+
+    /** Sinkronkan nama asli pemilik + nomor telepon penjual ke metadata warung agar dapat dibaca di detail pesanan pembeli. */
+    suspend fun syncStallContactMetadata(stallId: String, ownerName: String, phone: String) {
+        val cleanOwner = ownerName.trim().replace("|", " ")
+        val cleanPhone = phone.trim()
+        val desc = buildString {
+            if (cleanOwner.isNotBlank()) append("Pemilik: $cleanOwner")
+            if (cleanPhone.isNotBlank()) {
+                if (isNotEmpty()) append(" | ")
+                append("HP: $cleanPhone")
+            }
+        }
+        if (desc.isBlank()) return
+        val patch = buildJsonObject { put("description", desc) }
+        runCatching {
+            client.postgrest.from("stalls").update(patch) {
+                select(Columns.raw("id"))
+                filter { eq("id", stallId) }
+            }
+        }
     }
 
     /** Penjual menyimpan URL gambar QRIS warungnya sendiri. */
@@ -596,7 +650,33 @@ internal object OrderRepository {
 
     private suspend fun hydrate(rows: List<OrderRow>): List<AdminOrder> {
         val buyerNames = resolveBuyerNames(rows)
+        val menuIds = rows.flatMap { it.items }.mapNotNull { it.menuItemId?.takeIf(String::isNotBlank) }.distinct()
+        val menuLookup = if (menuIds.isEmpty()) emptyMap() else runCatching {
+            client.postgrest.from("menu_items")
+                .select(Columns.raw("id,stall_id,ingredients")) {
+                    filter { isIn("id", menuIds.map { id -> "\"$id\"" }) }
+                }
+                .decodeList<MenuRoomLookupRow>()
+                .associateBy { it.id }
+        }.getOrDefault(emptyMap())
+
+        val stallIds = menuLookup.values.map { it.stallId }.distinct()
+        val stallLookup = if (stallIds.isEmpty()) emptyMap() else runCatching {
+            client.postgrest.from("stalls")
+                .select(Columns.raw("id,name,location,description,owner_id,qris_image_url")) {
+                    filter { isIn("id", stallIds.map { id -> "\"$id\"" }) }
+                }
+                .decodeList<StallInfo>()
+                .associateBy { it.id }
+        }.getOrDefault(emptyMap())
+
         return rows.map { row ->
+            val firstMenuId = row.items.firstNotNullOfOrNull { it.menuItemId?.takeIf(String::isNotBlank) }
+            val menuRow = firstMenuId?.let { menuLookup[it] }
+            val stall = menuRow?.let { stallLookup[it.stallId] }
+            val itemRoom = menuRow?.let { com.jajanin.app.data.model.extractRoomTag(it.ingredients) }.orEmpty()
+            val resolvedRoom = itemRoom.ifBlank { stall?.location?.takeIf { it != "Kantin" }.orEmpty() }
+
             AdminOrder(
                 id = row.id,
                 userId = row.userId,
@@ -609,6 +689,10 @@ internal object OrderRepository {
                 timeLabel = formatOrderTime(row.createdAt),
                 paymentMethod = row.paymentMethod,
                 paymentStatus = row.paymentStatus,
+                pickupRoom = resolvedRoom,
+                sellerPhone = stall?.sellerPhone.orEmpty(),
+                sellerStoreName = stall?.name.orEmpty(),
+                sellerOwnerName = stall?.ownerRealName.orEmpty(),
             )
         }
     }
@@ -624,6 +708,49 @@ internal object OrderRepository {
             }
             .decodeList<OrderRow>()
         return hydrate(rows)
+    }
+
+    /**
+     * Hitung jumlah pembelian per menu dalam 3 hari terakhir (72 jam).
+     * Mengembalikan peta key (menu_item_id & nama lowercase) -> total quantity.
+     */
+    suspend fun fetchTopSelling3Days(): Map<String, Int> = runCatching {
+        val sinceIso = daysAgoIso(3)
+        val rows = client.postgrest.from("orders")
+            .select(orderColumns) {
+                filter {
+                    gte("created_at", sinceIso)
+                    neq("status", STATUS_CANCELLED)
+                }
+                order("created_at", Order.DESCENDING)
+                limit(120)
+            }
+            .decodeList<OrderRow>()
+
+        val counts = HashMap<String, Int>()
+        rows.forEach { order ->
+            order.items.forEach { item ->
+                val qty = item.quantity.coerceAtLeast(1)
+                item.menuItemId?.takeIf { it.isNotBlank() }?.let { id ->
+                    counts[id] = (counts[id] ?: 0) + qty
+                }
+                val nameKey = item.itemName.trim().lowercase()
+                if (nameKey.isNotBlank()) {
+                    counts[nameKey] = (counts[nameKey] ?: 0) + qty
+                }
+            }
+        }
+        counts
+    }.getOrDefault(emptyMap())
+
+    private fun daysAgoIso(days: Int): String {
+        val cal = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, -days)
+        }
+        val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        return format.format(cal.time)
     }
 
     private suspend fun resolveBuyerNames(rows: List<OrderRow>): Map<String, String> {

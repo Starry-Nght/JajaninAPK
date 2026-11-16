@@ -240,6 +240,38 @@ internal fun drawIcon(c: Canvas, name: String, cx: Float, cy: Float, size: Float
             c.drawLine(x(8.5f), y(6f), x(11.5f), y(6f), iconStroke)
             c.drawCircle(x(10f), y(13.8f), 0.8f * u, iconFill)
         }
+        "heart" -> {
+            iconPath.reset()
+            iconPath.moveTo(x(10f), y(16.2f))
+            iconPath.cubicTo(x(4f), y(12.2f), x(3f), y(7.2f), x(6.2f), y(5.2f))
+            iconPath.cubicTo(x(8.1f), y(4.1f), x(10f), y(5.8f), x(10f), y(7.2f))
+            iconPath.cubicTo(x(10f), y(5.8f), x(11.9f), y(4.1f), x(13.8f), y(5.2f))
+            iconPath.cubicTo(x(17f), y(7.2f), x(16f), y(12.2f), x(10f), y(16.2f))
+            iconPath.close()
+            c.drawPath(iconPath, iconStroke)
+        }
+        "heartFill" -> {
+            iconPath.reset()
+            iconPath.moveTo(x(10f), y(16.2f))
+            iconPath.cubicTo(x(4f), y(12.2f), x(3f), y(7.2f), x(6.2f), y(5.2f))
+            iconPath.cubicTo(x(8.1f), y(4.1f), x(10f), y(5.8f), x(10f), y(7.2f))
+            iconPath.cubicTo(x(10f), y(5.8f), x(11.9f), y(4.1f), x(13.8f), y(5.2f))
+            iconPath.cubicTo(x(17f), y(7.2f), x(16f), y(12.2f), x(10f), y(16.2f))
+            iconPath.close()
+            c.drawPath(iconPath, iconFill)
+        }
+        "flame" -> {
+            iconPath.reset()
+            iconPath.moveTo(x(10.5f), y(3.2f))
+            iconPath.cubicTo(x(13.5f), y(6.5f), x(15.8f), y(9.2f), x(15.2f), y(12.8f))
+            iconPath.cubicTo(x(14.6f), y(15.6f), x(12.4f), y(17f), x(10f), y(17f))
+            iconPath.cubicTo(x(7.4f), y(17f), x(5f), y(15f), x(5f), y(12f))
+            iconPath.cubicTo(x(5f), y(9.5f), x(6.8f), y(7.6f), x(8.2f), y(6.4f))
+            iconPath.cubicTo(x(7.8f), y(8.4f), x(9f), y(9.2f), x(9.6f), y(8f))
+            iconPath.cubicTo(x(10.2f), y(6.5f), x(10.5f), y(4.8f), x(10.5f), y(3.2f))
+            iconPath.close()
+            c.drawPath(iconPath, iconFill)
+        }
         else -> Unit
     }
 }

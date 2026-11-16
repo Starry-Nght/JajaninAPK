@@ -2,6 +2,8 @@ package com.jajanin.app.feature.seller.orders
 
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
+import android.graphics.Paint
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.constants.STATUS_CANCELLED
@@ -17,9 +19,15 @@ import com.jajanin.app.core.ui.statusLabel
 import com.jajanin.app.core.ui.statusNextAction
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.feature.seller.SellerTokens
-import com.jajanin.app.feature.seller.sellerPill
 import com.jajanin.app.feature.seller.sellerHeader
+import com.jajanin.app.feature.seller.sellerPill
 import com.jajanin.app.feature.seller.sellerSurface
+
+private val dashedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = 1.2f
+    pathEffect = DashPathEffect(floatArrayOf(10f, 7f), 0f)
+}
 
 internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
     c.drawColor(kit.bg)
@@ -33,9 +41,9 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
         }
         order == null && adminDetailError != null -> {
             kit.centerText(c, adminDetailError ?: "Gagal memuat pesanan.", RectF(24f, 280f, 366f, 350f), 13f, kit.danger)
-            val retry = RectF(120f, 372f, 270f, 418f)
-            kit.centerText(c, "Muat ulang", retry, 12f, kit.blue, true)
-            kit.line(c, 150f, 414f, 240f, 414f, kit.blue)
+            val retry = RectF(125f, 368f, 265f, 410f)
+            kit.rounded(c, retry, kit.blue, 8f)
+            kit.centerText(c, "Muat ulang", retry, 12.5f, Color.WHITE, true)
             bounds["adminRetry"] = RectF(retry)
             contentHeight = 0f
         }
@@ -44,47 +52,48 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             contentHeight = 0f
         }
         else -> {
+            val bodySave = c.save()
+            c.clipRect(0f, 60f, w, h - 68f)
+
+            var y = 76f + off
+
             if (adminDetailError != null) {
-                val errorCard = RectF(20f, 96f + off, 370f, 136f + off)
-                kit.rounded(c, errorCard, kit.card, SellerTokens.RADIUS_CONTROL, kit.dangerBorder)
+                val errorCard = RectF(20f, y, 370f, y + 38f)
+                kit.rounded(c, errorCard, kit.card, 7f, kit.dangerBorder)
                 kit.textEllipsized(
-                    c, adminDetailError ?: "", 34f, 120f + off,
-                    322f, 11f, kit.danger, true,
+                    c, adminDetailError ?: "", 32f, y + 23f,
+                    326f, 11f, kit.danger, true,
                 )
+                y += 48f
             }
-            val top = if (adminDetailError != null) 152f else 100f
-            val card1 = RectF(SellerTokens.PAD, top + off, SellerTokens.RIGHT, top + 154f + off)
-            sellerSurface(c, card1)
-            kit.text(c, "KODE AMBIL", 34f, top + 26f + off, 9.5f, kit.muted, true)
-            kit.text(c, order.pickupCode, 34f, top + 60f + off, 28f, kit.blue, true)
+
+            // 1. Open Editorial Buyer & Pickup Code Header (No heavy box)
+            kit.text(c, "KODE AMBIL", 20f, y + 12f, 10f, kit.muted, true)
+            kit.text(c, "#${order.pickupCode}", 20f, y + 46f, 32f, kit.blue, true)
 
             val (label, _) = statusLabel(order.status)
             sellerPill(
-                c, label, 356f, top + 42f + off,
+                c, label, 370f, y + 28f,
                 statusSoft(order.status), statusColor(order.status),
-                height = 24f, size = 9.5f,
+                height = 22f, size = 9.5f,
             )
-            kit.textEllipsized(c, order.buyerName, 34f, top + 88f + off, 248f, 14f, kit.ink, true)
-            val phone = order.buyerPhone.takeIf { it.isNotBlank() }
-            if (phone != null) {
-                kit.text(c, "HP", 34f, top + 108f + off, 9.5f, kit.muted, true)
-                kit.textEllipsized(c, displayPhone(phone), 56f, top + 108f + off, 300f, 11.5f, kit.ink, true)
-            } else {
-                kit.textEllipsized(c, "Nomor HP pembeli belum diisi", 34f, top + 108f + off, 300f, 10.5f, kit.muted)
-            }
-            val payment = "Bayar via ${order.paymentMethod?.takeIf { it.isNotBlank() } ?: "QRIS"}"
-            val paymentW = kit.measure(payment, 10.5f)
-            kit.textEllipsized(
-                c, "Masuk ${order.timeLabel} · ${order.itemCount} item",
-                34f, top + 130f + off,
-                SellerTokens.RIGHT - 34f - paymentW - 24f, 10.5f, kit.muted,
-            )
-            kit.textRight(c, payment, 356f, top + 130f + off, paymentW + 20f, 10.5f, kit.muted)
 
-            // --- Alur status ---
-            kit.text(c, "Alur status", 24f, top + 178f + off, 12f, kit.ink, true)
-            val trackTop = top + 190f + off
-            val stepLabels = listOf("Baru", "Konfirmasi", "Siapkan", "Siap", "Selesai")
+            kit.textEllipsized(c, order.buyerName, 20f, y + 70f, 250f, 15f, kit.ink, true)
+            val phone = order.buyerPhone.takeIf { it.isNotBlank() }
+            val phoneLine = if (phone != null) "HP: ${displayPhone(phone)}" else "Nomor HP belum diisi"
+            kit.textEllipsized(
+                c,
+                "$phoneLine  ·  Masuk ${order.timeLabel}",
+                20f,
+                y + 89f,
+                340f,
+                11.5f,
+                kit.muted
+            )
+            y += 104f
+
+            // 2. Horizontal 5-Step Status Track
+            val stepLabels = listOf("Baru", "Diterima", "Siapkan", "Siap", "Selesai")
             val stage = when (order.status.lowercase()) {
                 STATUS_PENDING -> 0
                 STATUS_CONFIRMED -> 1
@@ -93,129 +102,145 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 STATUS_COMPLETED -> 4
                 else -> -1
             }
-            val segW = (356f - 34f) / stepLabels.size
-            val trackY = trackTop + 26f
-            kit.line(c, 34f, trackY, 356f, trackY, kit.divider)
-            if (stage >= 0) {
-                kit.rect(c, 34f, trackY - 1f, 34f + segW * (stage + 1), trackY + 1f, kit.blue)
+            val segW = (350f) / stepLabels.size
+            val trackY = y + 12f
+            val firstCx = 20f + segW / 2f
+            val lastCx = 370f - segW / 2f
+            kit.line(c, firstCx, trackY, lastCx, trackY, kit.divider)
+            if (stage > 0) {
+                kit.rect(c, firstCx, trackY - 1f, 20f + segW * stage + segW / 2f, trackY + 1f, kit.blue)
             }
             stepLabels.forEachIndexed { index, stepLabel ->
-                val cx = 34f + segW * index + segW / 2f
+                val cx = 20f + segW * index + segW / 2f
                 val done = stage >= 0 && index <= stage
+                val current = index == stage
+                val r = if (current) 5.5f else 4f
                 if (done) {
-                    kit.rounded(c, RectF(cx - 6f, trackY - 6f, cx + 6f, trackY + 6f), kit.blue, 6f)
+                    kit.rounded(c, RectF(cx - r, trackY - r, cx + r, trackY + r), kit.blue, r)
                 } else {
-                    kit.rounded(c, RectF(cx - 6f, trackY - 6f, cx + 6f, trackY + 6f), kit.card, 6f, kit.border)
+                    kit.rounded(c, RectF(cx - r, trackY - r, cx + r, trackY + r), kit.card, r, kit.border)
                 }
                 kit.centerText(
                     c, stepLabel,
-                    RectF(cx - segW / 2f, trackTop, cx + segW / 2f, trackTop + 20f),
-                    9f, if (done) kit.blue else kit.muted, done,
+                    RectF(cx - segW / 2f, y + 22f, cx + segW / 2f, y + 38f),
+                    9.5f, if (current) kit.blue else if (done) kit.ink else kit.muted, current || done,
                 )
             }
+            y += 52f
 
-            // --- Item pesanan ---
-            kit.text(c, "Item pesanan", 24f, top + 246f + off, 15f, kit.ink, true)
-            val itemsTop = top + 260f
-            val card2Bottom = itemsTop + order.items.size * 38f + 16f
-            sellerSurface(c, RectF(SellerTokens.PAD, itemsTop + off, SellerTokens.RIGHT, card2Bottom + off))
+            // 3. Unified Receipt Surface (Items + Dashed Line + Total in one clean 8f surface)
+            val itemsH = if (order.items.isEmpty()) 36f else order.items.size * 34f
+            val receiptTop = y
+            val receiptBottom = receiptTop + 34f + itemsH + 52f
+            sellerSurface(c, RectF(SellerTokens.PAD, receiptTop, SellerTokens.RIGHT, receiptBottom))
+
+            kit.text(c, "RINCIAN PESANAN (${order.itemCount} ITEM)", 34f, receiptTop + 23f, 10f, kit.muted, true)
+
+            var iy = receiptTop + 34f
             if (order.items.isEmpty()) {
-                kit.centerText(
-                    c, "Tidak ada rincian item.",
-                    RectF(32f, itemsTop + off, 358f, card2Bottom + off), 12f, kit.muted,
-                )
-            }
-            order.items.forEachIndexed { index, item ->
-                val iy = itemsTop + 14f + index * 38f + off
-                val subtotal = formatRupiah(item.unitPriceIdr * item.quantity)
-                val subtotalW = kit.measure(subtotal, 12f, true)
-                kit.textEllipsized(
-                    c, "${item.quantity}× ${item.itemName}", 34f, iy + 22f,
-                    164f, 12f, kit.ink, true,
-                )
-                kit.textEllipsized(
-                    c, formatRupiah(item.unitPriceIdr), 206f, iy + 22f,
-                    76f, 10f, kit.muted,
-                )
-                kit.textRight(c, subtotal, 356f, iy + 22f, subtotalW + 16f, 12f, kit.ink, true)
-                if (index < order.items.size - 1) kit.line(c, 34f, iy + 34f, 356f, iy + 34f)
+                kit.text(c, "Tidak ada rincian item.", 34f, iy + 20f, 12f, kit.muted)
+            } else {
+                order.items.forEachIndexed { index, item ->
+                    val subtotal = formatRupiah(item.unitPriceIdr * item.quantity)
+                    val subtotalW = kit.measure(subtotal, 12.5f, true)
+                    kit.textEllipsized(
+                        c, "${item.quantity}×  ${item.itemName}", 34f, iy + 21f,
+                        180f, 12.5f, kit.ink, true,
+                    )
+                    kit.textEllipsized(
+                        c, "@${formatRupiah(item.unitPriceIdr)}", 216f, iy + 21f,
+                        66f, 10.5f, kit.muted,
+                    )
+                    kit.textRight(c, subtotal, 356f, iy + 21f, subtotalW + 16f, 12.5f, kit.ink, true)
+                    if (index < order.items.size - 1) {
+                        kit.line(c, 34f, iy + 32f, 356f, iy + 32f, kit.divider)
+                    }
+                    iy += 34f
+                }
             }
 
-            val totalTop = card2Bottom + 12f
-            sellerSurface(c, RectF(SellerTokens.PAD, totalTop + off, SellerTokens.RIGHT, totalTop + 54f + off))
-            kit.text(c, "Total", 34f, totalTop + 32f + off, 13f, kit.muted, true)
-            val totalText = formatRupiah(order.totalIdr)
-            kit.textRight(c, totalText, 356f, totalTop + 33f + off, 200f, 16f, kit.ink, true)
+            val dashY = receiptBottom - 46f
+            dashedPaint.color = kit.divider
+            c.drawLine(28f, dashY, 362f, dashY, dashedPaint)
 
-            // Kartu pembayaran: hanya penjual yang boleh menandai lunas / verifikasi / tolak.
-            val payTop = totalTop + 66f + 12f
+            kit.text(c, "Total Pembayaran", 34f, receiptBottom - 18f, 13f, kit.ink, true)
+            kit.textRight(c, formatRupiah(order.totalIdr), 356f, receiptBottom - 17f, 180f, 16f, kit.blue, true)
+
+            y = receiptBottom + 14f
+
+            // 4. Payment Verification Strip (Radius 8f)
             val isCash = order.paymentMethod == "cash"
             val needsAction = (isCash && order.paymentStatus == "unpaid") ||
                 (!isCash && order.paymentStatus == "waiting_verification")
-            val payH = if (needsAction) 108f else 72f
-            sellerSurface(c, RectF(SellerTokens.PAD, payTop + off, SellerTokens.RIGHT, payTop + payH + off))
+            val payH = if (needsAction) 98f else 62f
+            val payCard = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + payH)
+            sellerSurface(c, payCard)
+
             kit.textEllipsized(
-                c, if (isCash) "Tunai · bayar saat ambil" else "QRIS",
-                34f, payTop + 28f + off, 230f, 13f, kit.ink, true,
+                c, if (isCash) "Pembayaran Tunai" else "Pembayaran QRIS",
+                34f, y + 25f, 220f, 13f, kit.ink, true,
             )
             val payLabel = paymentLabelFor(order.paymentStatus)
             sellerPill(
-                c, payLabel, 356f, payTop + 28f + off,
+                c, payLabel, 356f, y + 21f,
                 paymentSoft(order.paymentStatus), paymentColor(order.paymentStatus),
-                height = 24f, size = 9.5f,
+                height = 20f, size = 9.5f,
             )
+
             if (isCash && order.paymentStatus == "unpaid") {
                 kit.textEllipsized(
-                    c, "Tandai lunas setelah pembeli membayar.",
-                    34f, payTop + 50f + off, 300f, 10f, kit.muted,
+                    c, "Tandai lunas setelah pembeli menyerahkan uang tunai.",
+                    34f, y + 44f, 310f, 10.5f, kit.muted,
                 )
-                val paid = RectF(34f, payTop + 60f + off, 220f, payTop + 96f + off)
-                kit.centerText(c, "Tandai sudah dibayar", paid, 11f, kit.success, true)
-                kit.line(c, 54f, payTop + 92f + off, 200f, payTop + 92f + off, kit.success)
-                press(c, "payPaid:${order.id}", paid, 0f)
-                bounds.putVisible("payPaid:${order.id}", paid)
+                val paidBtn = RectF(34f, y + 54f, 356f, y + 86f)
+                kit.rounded(c, paidBtn, kit.successSoft, 6f, kit.success)
+                kit.centerText(c, "Tandai Sudah Dibayar Lunas", paidBtn, 11.5f, kit.success, true)
+                press(c, "payPaid:${order.id}", paidBtn, 6f)
+                bounds.putVisible("payPaid:${order.id}", paidBtn, topLimit = 60f, bottomLimit = h - 68f)
             } else if (!isCash && order.paymentStatus == "waiting_verification") {
                 kit.textEllipsized(
-                    c, "Pembeli mengaku sudah membayar. Verifikasi dulu.",
-                    34f, payTop + 50f + off, 300f, 10f, kit.muted,
+                    c, "Pembeli konfirmasi sudah bayar QRIS. Cek mutasi lalu verifikasi.",
+                    34f, y + 44f, 316f, 10.5f, kit.muted,
                 )
-                val verify = RectF(34f, payTop + 60f + off, 196f, payTop + 96f + off)
-                kit.centerText(c, "Verifikasi lunas", verify, 11f, kit.success, true)
-                kit.line(c, 54f, payTop + 92f + off, 176f, payTop + 92f + off, kit.success)
-                press(c, "payPaid:${order.id}", verify, 0f)
-                bounds.putVisible("payPaid:${order.id}", verify)
-                val reject = RectF(204f, payTop + 60f + off, 330f, payTop + 96f + off)
-                kit.centerText(c, "Tolak bukti", reject, 11f, kit.danger, true)
-                kit.line(c, 224f, payTop + 92f + off, 310f, payTop + 92f + off, kit.danger)
-                press(c, "payReject:${order.id}", reject, 0f)
-                bounds.putVisible("payReject:${order.id}", reject)
+                val verifyBtn = RectF(34f, y + 54f, 226f, y + 86f)
+                kit.rounded(c, verifyBtn, kit.success, 6f)
+                kit.centerText(c, "Verifikasi Lunas", verifyBtn, 11.5f, Color.WHITE, true)
+                press(c, "payPaid:${order.id}", verifyBtn, 6f)
+                bounds.putVisible("payPaid:${order.id}", verifyBtn, topLimit = 60f, bottomLimit = h - 68f)
+
+                val rejectBtn = RectF(234f, y + 54f, 356f, y + 86f)
+                kit.rounded(c, rejectBtn, kit.card, 6f, kit.dangerBorder)
+                kit.centerText(c, "Tolak Bukti", rejectBtn, 11.5f, kit.danger, true)
+                press(c, "payReject:${order.id}", rejectBtn, 6f)
+                bounds.putVisible("payReject:${order.id}", rejectBtn, topLimit = 60f, bottomLimit = h - 68f)
             } else {
                 val hint = when (order.paymentStatus) {
-                    "paid" -> "Sudah lunas, tercatat sistem."
-                    "rejected" -> "Bukti ditolak — pembeli bisa kirim ulang."
-                    else -> "Menunggu pembayaran pembeli."
+                    "paid" -> "Pembayaran telah diverifikasi lunas."
+                    "rejected" -> "Bukti ditolak — menunggu pembeli konfirmasi ulang."
+                    else -> "Menunggu konfirmasi pembayaran dari pembeli."
                 }
-                kit.textEllipsized(c, hint, 34f, payTop + 50f + off, 300f, 10f, kit.muted)
+                kit.textEllipsized(c, hint, 34f, y + 46f, 310f, 10.5f, kit.muted)
             }
-            contentHeight = payTop + payH + 12f
+
+            c.restoreToCount(bodySave)
+            contentHeight = (y - off) + payH + 24f
         }
     }
 
-    // Aksi status tetap di bawah layar. Nav sengaja tidak digambar di layar
-    // detail agar tombol utama tidak tertimpa dock.
+    // Sticky Bottom Order Status Action (Radius 8f)
     val next = statusNextAction(order?.status ?: "")
     if (next != null) {
-        val cta = RectF(20f, h - 60f, w - 20f, h - 8f)
-        kit.rounded(c, cta, kit.blue, 14f)
-        kit.centerText(c, next.first, cta, 14f, Color.WHITE, true)
-        press(c, "adminSet:${next.second}", cta, 0f)
+        val cta = RectF(20f, h - 58f, w - 20f, h - 10f)
+        kit.rounded(c, cta, kit.blue, 8f)
+        kit.centerText(c, "${next.first} →", cta, 14f, Color.WHITE, true)
+        press(c, "adminSet:${next.second}", cta, 8f)
         bounds["adminSet:${next.second}"] = RectF(cta)
     } else if (order != null) {
         val terminal = order.status.lowercase() == STATUS_CANCELLED
-        val statusCard = RectF(20f, h - 60f, w - 20f, h - 8f)
-        kit.rounded(c, statusCard, kit.card, 14f, if (terminal) kit.dangerBorder else kit.border)
+        val statusCard = RectF(20f, h - 58f, w - 20f, h - 10f)
+        kit.rounded(c, statusCard, kit.card, 8f, if (terminal) kit.dangerBorder else kit.border)
         kit.centerText(
-            c, if (terminal) "Pesanan dibatalkan" else "Pesanan selesai",
+            c, if (terminal) "Pesanan Dibatalkan" else "Pesanan Selesai",
             statusCard, 13f, if (terminal) kit.danger else kit.success, true,
         )
     }

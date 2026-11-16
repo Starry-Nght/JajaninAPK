@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
@@ -36,6 +37,7 @@ internal class LiquidGlassNavHost(
     private val content: JajaninView,
 ) {
     private val bar = JajaninGlassTabBar(context)
+    private val hero = SellerHeroDock(context)
     private val badge = TextView(context)
 
     private val density = context.resources.displayMetrics.density
@@ -43,9 +45,20 @@ internal class LiquidGlassNavHost(
     private var bottomInset = 0
     private var lastModeKey: String? = null
     private var lastSelected = -1
+    private var lastHeroModeKey: String? = null
+    private var lastHeroSelected = -1
     private var lastSpec: NavSpec? = null
     private var syncing = false
     private var barHeight = 0
+    private var heroHeight = 0
+    private var heroVisible = false
+    private var heroFailedModeKey: String? = null
+    private var heroFallbackPosted = false
+
+    private companion object {
+        private const val TAG = "JajaninNav"
+        private const val HERO_READY_TIMEOUT_MS = 350L
+    }
 
     init {
         root.clipChildren = false
@@ -55,6 +68,18 @@ internal class LiquidGlassNavHost(
         configureBar()
         root.addView(
             bar,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM,
+            ),
+        )
+
+        hero.visibility = View.GONE
+        hero.setBackdropSource(content)
+        hero.selectedTintColor = heroSelectionTint()
+        root.addView(
+            hero,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -81,6 +106,13 @@ internal class LiquidGlassNavHost(
                 }
             }
         }
+        hero.onTabSelected = { index ->
+            val spec = lastSpec
+            val item = spec?.items?.getOrNull(index)
+            if (spec != null && item != null) {
+                content.selectNavTab(spec.prefix, item.label)
+            }
+        }
         // Render ditunda satu frame: setTabs/selectedIndex memanggil
         // requestLayout dan tidak boleh dijalankan di tengah onDraw kanvas.
         content.navPresenter = { spec -> bar.post { render(spec) } }
@@ -90,11 +122,16 @@ internal class LiquidGlassNavHost(
         // Backdrop Jajanin hanya berubah saat kanvas digambar ulang (scroll,
         // animasi, ganti layar), jadi render on-demand sudah cukup di semua API
         // dan menghindari shader lensa berjalan terus saat layar diam.
-        content.navContentInvalidator = { bar.refreshBackdrop() }
+        content.navContentInvalidator = {
+            bar.refreshBackdrop()
+            hero.refreshBackdrop()
+        }
         content.themeChangedListener = {
             root.setBackgroundColor(content.kit.bg)
             bar.selectedTintColor = brandSelectionTint()
+            hero.selectedTintColor = heroSelectionTint()
             bar.refreshBackdrop()
+            hero.refreshBackdrop()
         }
 
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -110,38 +147,32 @@ internal class LiquidGlassNavHost(
     private fun configureBar() {
         bar.apply {
             visibility = View.GONE
-            // Dock sedikit lebih tinggi dari bar bawaan; padding bawah lebih
-            // besar agar label tidak menempel ke gesture bar dan droplet tetap
-            // di tengah. Setiap tab tetap memenuhi tinggi dock (target sentuh).
             setPadding(dp(4), dp(6), dp(4), dp(8))
-            // Backdrop = halaman kanvas JajaninView yang berada tepat di
-            // belakang dock. Ini mempertahankan GPU pipeline di API 31+.
-            backdropSource = content
-            // Backdrop hanya berubah saat kanvas menggambar ulang; host
-            // memicu invalidate dari navContentInvalidator. Jadi jangan
-            // menjalankan shader lensa terus-menerus saat layar diam.
+            setLensBackdropSource(content)
             enableDynamicBackground = false
-            material = GlassMaterial.REGULAR
+            material = GlassMaterial.CLEAR
+            // Minimalkan blur agar permukaan seperti kaca kristal basah (bukan frosted buram),
+            // dan naikkan refraksi + bevel + chromatic dispersion di resolusi penuh.
+            enableBackdropBlur = true
+            blurAmount = 0.006f
             cornerRadius = GLASS_R * content.resources.displayMetrics.widthPixels / 390f
             adaptiveLensScale = true
-            bevelWidth = dpF(16f)
-            refractionHeight = dpF(12f)
-            refractionFalloff = 2f
-            edgeSoftness = dpF(0.75f)
-            dispersionStrength = 0.12f
+            bevelWidth = dpF(28f)
+            refractionHeight = dpF(26f)
+            refractionFalloff = 1.65f
+            edgeSoftness = dpF(0.55f)
+            dispersionStrength = 0.24f
             enableChromaticDispersion = true
             enableChromaticAberration = false
             enableEdgeHighlight = true
+            edgeHighlightOpacity = 155f
             enableSensorHighlight = true
-            enableAdaptiveTint = true
-            // Nuansa biru Jajanin yang tipis; ikon terpilih memakai brand blue.
-            glassTint = 0x240063D6
+            enableAdaptiveTint = false
+            // Tint sangat bening supaya refraksi kaca di belakang terlihat jelas.
+            glassTint = 0x100066FF
             selectedTintColor = brandSelectionTint()
-            blurAmount = 0.045f
-            saturation = 120f
-            // Optimasi perangkat mid-range: turunkan resolusi backdrop dan
-            // matikan statistik frame yang hanya berguna saat profiling.
-            downsampleScale = 3
+            saturation = 142f
+            downsampleScale = 1
             collectFrameStats = false
             blurMethod = BlurMethod.SMART
             enablePressEffect = false
@@ -177,11 +208,49 @@ internal class LiquidGlassNavHost(
         lastSpec = spec
         if (spec == null) {
             bar.visibility = View.GONE
+            hero.visibility = View.GONE
+            heroVisible = false
             badge.visibility = View.GONE
             lastModeKey = null
             lastSelected = -1
+            lastHeroModeKey = null
+            lastHeroSelected = -1
+            heroFailedModeKey = null
             return
         }
+
+        val heroModeKey = spec.prefix + "|" + spec.items.joinToString("|") { it.label }
+        val useHero = spec.variant == NavVariant.HERO &&
+            spec.items.size >= 5 &&
+            heroFailedModeKey != heroModeKey
+        if (useHero) {
+            bar.visibility = View.GONE
+            badge.visibility = View.GONE
+            heroVisible = true
+
+            if (heroModeKey != lastHeroModeKey) {
+                hero.setTabs(spec.items.map { SellerHeroDock.TabItem(it.label, iconFor(it.label)) })
+                lastHeroModeKey = heroModeKey
+                lastHeroSelected = -1
+                scheduleHeroFallback(spec, heroModeKey)
+            }
+            if (hero.visibility != View.VISIBLE) hero.visibility = View.VISIBLE
+
+            val selected = spec.items.indexOfFirst { it.label == spec.active }
+                .let { if (it >= 0) it else 0 }
+            if (selected != lastHeroSelected) {
+                hero.selectedIndex = selected
+                lastHeroSelected = selected
+            }
+            hero.badgeCount = if (spec.badgeIndex == 3) spec.badgeCount else 0
+            layoutBar()
+            return
+        }
+
+        heroVisible = false
+        hero.visibility = View.GONE
+        lastHeroModeKey = null
+        lastHeroSelected = -1
 
         val modeKey = spec.prefix + "|" + spec.items.joinToString("|") { it.label }
         if (modeKey != lastModeKey) {
@@ -205,6 +274,26 @@ internal class LiquidGlassNavHost(
         renderBadge(spec)
     }
 
+    /**
+     * Safety net: if the hero dock never receives real bounds, the seller
+     * would otherwise have no navigation at all. Fall back to the proven
+     * standard glass bar for the same tab specification.
+     */
+    private fun scheduleHeroFallback(spec: NavSpec, modeKey: String) {
+        if (heroFallbackPosted) return
+        heroFallbackPosted = true
+        hero.postDelayed({
+            heroFallbackPosted = false
+            if (!heroVisible || lastHeroModeKey != modeKey) return@postDelayed
+            if (hero.isReady()) return@postDelayed
+            Log.w(TAG, "Hero dock not laid out ($modeKey); using standard seller bar")
+            heroFailedModeKey = modeKey
+            hero.visibility = View.GONE
+            heroVisible = false
+            render(lastSpec ?: spec)
+        }, HERO_READY_TIMEOUT_MS)
+    }
+
     private fun renderBadge(spec: NavSpec) {
         val count = spec.badgeCount
         if (spec.badgeIndex !in spec.items.indices || count <= 0) {
@@ -217,7 +306,7 @@ internal class LiquidGlassNavHost(
     }
 
     private fun positionBadge(spec: NavSpec?) {
-        if (spec == null || badge.visibility != View.VISIBLE) return
+        if (heroVisible || spec == null || badge.visibility != View.VISIBLE) return
         if (root.width <= 0 || root.height <= 0) return
         val scale = root.width / 390f
         val barLeft = GLASS_MARGIN * scale
@@ -241,6 +330,24 @@ internal class LiquidGlassNavHost(
     private fun layoutBar() {
         if (root.width <= 0) return
         val scale = root.width / 390f
+        if (heroVisible) {
+            val heroHeightPx = (HERO_HEIGHT * scale).toInt().coerceAtLeast(dp(88))
+            if (heroHeightPx != heroHeight) {
+                heroHeight = heroHeightPx
+                val lp = hero.layoutParams as FrameLayout.LayoutParams
+                lp.height = heroHeightPx
+                hero.layoutParams = lp
+            }
+            val lp = hero.layoutParams as FrameLayout.LayoutParams
+            val bottom = (HERO_BOTTOM * scale).toInt()
+            if (lp.leftMargin != 0 || lp.rightMargin != 0 || lp.bottomMargin != bottom) {
+                lp.leftMargin = 0
+                lp.rightMargin = 0
+                lp.bottomMargin = bottom
+                hero.layoutParams = lp
+            }
+            return
+        }
         val height = (GLASS_H * scale).toInt().coerceAtLeast(dp(56))
         if (height != barHeight) {
             barHeight = height
@@ -278,6 +385,9 @@ internal class LiquidGlassNavHost(
 
     private fun brandSelectionTint(): Int =
         if (content.darkMode) 0xFF5096FF.toInt() else 0xFF0063D6.toInt()
+
+    private fun heroSelectionTint(): Int =
+        if (content.darkMode) 0xFF7BD4FF.toInt() else 0xFF56C2FF.toInt()
 
     private fun iconFor(label: String): Drawable? {
         val res = when (label) {
