@@ -168,6 +168,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var devOrders: List<AdminOrder> = emptyList()
     internal var devOrdersLoading = false
     internal var devExpandedOrderId: String? = null
+    internal var devOrderExpandAt: Long = 0L
     internal var devWarnings: List<DevWarningRow> = emptyList()
     internal var devWarningsLoading = false
     internal var devAnnouncements: List<DevAnnouncementRow> = emptyList()
@@ -231,9 +232,13 @@ internal class JajaninView(context: Context) : View(context) {
     private var tab = "Home"
     // Posisi scroll per halaman tab agar tidak reset saat pindah tab.
     private val pageScroll = HashMap<String, Float>()
+    private var touchStartX = 0f
     private var touchStartY = 0f
     private var previousY = 0f
+    private var touchDownAt = 0L
     private var moved = false
+    private var swipeMode = 0 // 0 = undecided, 1 = vertical scroll, 2 = horizontal tab swipe
+    private var swipeDragX = 0f
 
     // Dikonsumsi drawBottomNav di BottomNav.kt: tab yang ditekan + waktu mulai animasi indikator.
     internal var pressedTab: String? = null
@@ -256,6 +261,7 @@ internal class JajaninView(context: Context) : View(context) {
     // Transisi geser antar halaman: arah (+1 dari kanan, -1 dari kiri, 0 mati)
     // + waktu mulai. Digambar di onDraw selama ~240ms, lalu berhenti sendiri.
     private var pageSlideDir = 0f
+    private var pageSlideOffset = 0f
     private var pageSlideAt = 0L
 
     /** Hormati preferensi reduced-motion Android: matikan animasi bila skala 0. */
@@ -270,11 +276,70 @@ internal class JajaninView(context: Context) : View(context) {
     internal fun beginSlide(dir: Float) {
         if (dir == 0f || !motionEnabled()) {
             pageSlideDir = 0f
+            pageSlideOffset = 0f
             return
         }
         pageSlideDir = dir
+        pageSlideOffset = dir * 56f
         pageSlideAt = SystemClock.uptimeMillis()
         invalidate()
+    }
+
+    /** Memantulkan halaman kembali ke posisi semula jika geser horizontal belum melewati ambang batas. */
+    private fun snapSlideBack(fromOffset: Float) {
+        if (abs(fromOffset) < 1f || !motionEnabled()) {
+            pageSlideDir = 0f
+            pageSlideOffset = 0f
+            slideX = 0f
+            invalidate()
+            return
+        }
+        pageSlideDir = if (fromOffset > 0f) 1f else -1f
+        pageSlideOffset = fromOffset
+        pageSlideAt = SystemClock.uptimeMillis()
+        invalidate()
+    }
+
+    private fun swipeableTabSpec(): Pair<String, List<String>>? = when {
+        navSpec?.prefix == "tab:" -> "tab:" to listOf("Home", "Explore", "Orders", "Profile")
+        navSpec?.prefix == "stab:" -> "stab:" to listOf("Dashboard", "Pesanan", "Notifikasi", "Profil")
+        navSpec?.prefix == "dtab:" -> "dtab:" to listOf("Overview", "Users", "Sellers", "Orders", "Warn", "Info")
+        else -> null
+    }
+
+    private fun canSwipeHorizontal(): Boolean =
+        screen == Screen.ONBOARD || swipeableTabSpec() != null
+
+    private fun currentHorizontalBounds(): Pair<Int, Int>? {
+        if (screen == Screen.ONBOARD) return onboardPage to (onboardCount - 1)
+        val (prefix, order) = swipeableTabSpec() ?: return null
+        val currentLabel = when (prefix) {
+            "stab:" -> when (screen) {
+                Screen.NOTIF -> "Notifikasi"
+                Screen.PROFILE -> if (isSellerProfile) "Profil" else sellerTab
+                else -> sellerTab
+            }
+            "dtab:" -> devTab
+            else -> navSpec?.active ?: tab
+        }
+        val idx = order.indexOf(currentLabel)
+        return if (idx >= 0) idx to (order.size - 1) else null
+    }
+
+    private fun stepHorizontalPage(delta: Int): Boolean {
+        if (screen == Screen.ONBOARD) {
+            val next = (onboardPage + delta).coerceIn(0, onboardCount - 1)
+            if (next == onboardPage) return false
+            onboardPage = next
+            beginSlide(if (delta > 0) 1f else -1f)
+            return true
+        }
+        val (prefix, order) = swipeableTabSpec() ?: return false
+        val (idx, maxIdx) = currentHorizontalBounds() ?: return false
+        val next = (idx + delta).coerceIn(0, maxIdx)
+        if (next == idx) return false
+        selectNavTab(prefix, order[next])
+        return true
     }
 
     /** Dibaca host dock kaca untuk menyelaraskan latar belakang & warna aksen. */
@@ -318,7 +383,30 @@ internal class JajaninView(context: Context) : View(context) {
      * kontrak lama: "tab:" = pembeli, "stab:" = penjual.
      */
     internal fun selectNavTab(prefix: String, label: String) {
-        if (prefix == "stab:") selectSellerTab(label) else selectBuyerTab(label)
+        when (prefix) {
+            "stab:" -> selectSellerTab(label)
+            "dtab:" -> selectDevTab(label)
+            else -> selectBuyerTab(label)
+        }
+    }
+
+    internal fun selectDevTab(nextTab: String) {
+        val tabOrder = listOf("Overview", "Users", "Sellers", "Orders", "Warn", "Info")
+        val dir = when {
+            tabOrder.indexOf(nextTab) > tabOrder.indexOf(devTab) -> 1f
+            tabOrder.indexOf(nextTab) < tabOrder.indexOf(devTab) -> -1f
+            else -> 0f
+        }
+        pageScroll["d:$devTab"] = scroll
+        devTab = nextTab
+        devSelectedUserId = null
+        devExpandedOrderId = null
+        if (nextTab == "Sellers" && (devUserFilter == "Buyer" || devUserFilter == "Seller")) {
+            devUserFilter = "Semua"
+        }
+        scroll = pageScroll["d:$nextTab"] ?: 0f
+        if (dir != 0f) beginSlide(dir)
+        invalidate()
     }
 
     /** Logika tab pembeli (dulu hidup di dalam onTouchEvent). */
@@ -456,17 +544,20 @@ internal class JajaninView(context: Context) : View(context) {
         val s = width / 390f
         canvas.save()
         canvas.scale(s, s)
-        // Geser halaman masuk (decelerate, ~240ms). Hit area dihitung tanpa
-        // offset sehingga tap selama animasi singkat tetap akurat.
-        if (pageSlideDir != 0f) {
+        // Geser halaman interaktif dengan jari atau animasi decelerate (~240ms).
+        if (swipeMode == 2 && abs(swipeDragX) > 0.5f) {
+            slideX = swipeDragX
+            canvas.translate(slideX, 0f)
+        } else if (pageSlideDir != 0f) {
             val elapsed = android.os.SystemClock.uptimeMillis() - pageSlideAt
             if (elapsed >= PAGE_SLIDE_MS) {
                 pageSlideDir = 0f
+                pageSlideOffset = 0f
                 slideX = 0f
             } else {
                 val t = elapsed / PAGE_SLIDE_MS.toFloat()
                 val eased = 1f - (1f - t) * (1f - t)
-                slideX = (1f - eased) * pageSlideDir * 56f
+                slideX = (1f - eased) * pageSlideOffset
                 canvas.translate(slideX, 0f)
                 postInvalidateOnAnimation()
             }
@@ -568,9 +659,13 @@ internal class JajaninView(context: Context) : View(context) {
         val s = width / 390f
         val x = event.x / s
         val y = event.y / s
-        when (event.action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                touchStartY = y; previousY = y; moved = false
+                touchStartX = x; touchStartY = y; previousY = y
+                touchDownAt = SystemClock.uptimeMillis()
+                moved = false
+                swipeMode = 0
+                swipeDragX = 0f
                 // Sama seperti dispatch di ACTION_UP (terbalik) supaya highlight
                 // menunjuk kontrol yang benar saat area tumpang tindih.
                 val hitKey = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key
@@ -584,24 +679,49 @@ internal class JajaninView(context: Context) : View(context) {
                     screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
                     screen == Screen.DEV || screen == Screen.CHECKOUT || screen == Screen.NOTIF ||
                     screen == Screen.EXP_HISTORY || screen == Screen.PROFILE
-                if (scrollable && !adminNotifOpen && abs(y - touchStartY) > 6f) {
-                    moved = true
-                    if (pressedTab != null || pressedKey != null) {
+                val touchInPinnedHeader = touchStartY <= 68f
+                val dx = x - touchStartX
+                val dy = y - touchStartY
+                if (swipeMode == 0 && !adminNotifOpen && !touchInPinnedHeader) {
+                    if (abs(dx) > 12f && abs(dx) > abs(dy) * 1.25f && canSwipeHorizontal()) {
+                        swipeMode = 2
+                        moved = true
+                    } else if (scrollable && abs(dy) > 12f) {
+                        swipeMode = 1
+                        moved = true
+                    }
+                    if (swipeMode != 0 && (pressedTab != null || pressedKey != null)) {
                         pressedTab = null
                         pressedKey = null
                         invalidate()
                     }
-                    val maxScroll = (contentHeight - height / s + navScrollPad()).coerceAtLeast(0f)
-                    scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
-                    previousY = y
-                    invalidate()
+                }
+                when (swipeMode) {
+                    2 -> {
+                        val range = currentHorizontalBounds()
+                        val atLeftEdge = range != null && range.first == 0 && dx > 0f
+                        val atRightEdge = range != null && range.first == range.second && dx < 0f
+                        val factor = if (atLeftEdge || atRightEdge) 0.24f else 0.72f
+                        swipeDragX = (dx * factor).coerceIn(-160f, 160f)
+                        invalidate()
+                    }
+                    1 -> {
+                        val maxScroll = (contentHeight - height / s + navScrollPad()).coerceAtLeast(0f)
+                        scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
+                        previousY = y
+                        invalidate()
+                    }
                 }
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                val wasHorizontal = swipeMode == 2
+                val offset = swipeDragX
+                swipeMode = 0
+                swipeDragX = 0f
                 pressedTab = null
                 pressedKey = null
-                invalidate()
+                if (wasHorizontal) snapSlideBack(offset) else invalidate()
                 return true
             }
             MotionEvent.ACTION_UP -> {
@@ -610,6 +730,18 @@ internal class JajaninView(context: Context) : View(context) {
                     pressedKey = null
                     invalidate()
                 }
+                if (swipeMode == 2) {
+                    val drag = swipeDragX
+                    val elapsed = SystemClock.uptimeMillis() - touchDownAt
+                    swipeMode = 0
+                    swipeDragX = 0f
+                    val passed = abs(drag) >= 48f || (elapsed < 260L && abs(drag) >= 22f)
+                    val switched = if (passed) stepHorizontalPage(if (drag < 0f) 1 else -1) else false
+                    if (!switched) snapSlideBack(drag)
+                    return true
+                }
+                swipeMode = 0
+                swipeDragX = 0f
                 if (moved) return true
                 val hit = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key ?: return true
                 when {
@@ -637,13 +769,14 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "emailField" -> activity()?.showAuthForm(false)
                     hit == "passwordField" -> activity()?.showAuthForm(true)
                     hit == "emailLogin" -> activity()?.showAuthForm(false)
+                    hit == "forgotPassword" -> activity()?.showForgotPasswordDialog()
                     hit == "toggleAuth" -> activity()?.showAuthForm(false, signup = true)
                     // --- Pembeli (buyer): pencarian, katalog, keranjang, checkout ---
                     hit == "search" -> activity()?.showSearchForm()
                     hit == "clearSearch" -> applyQuery("")
                     hit == "homeProfile" -> selectBuyerTab("Profile")
                     hit.startsWith("fav:") -> activity()?.toggleFavorite(hit.substringAfter(':'))
-                    hit == "cartCheckout" -> {
+                    hit == "cartCheckout" || hit == "cartCheckoutBar" -> {
                         if (cart.isEmpty()) {
                             android.widget.Toast.makeText(context, "Keranjang masih kosong.", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
@@ -807,11 +940,18 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "devReset" -> activity()?.confirmDailyReset()
                     hit == "devLogout" -> activity()?.logout()
                     hit == "devRefresh" -> activity()?.refreshDeveloper()
+                    hit == "devBell" -> activity()?.openNotif()
+                    hit == "devTheme" -> activity()?.showThemePicker()
                     hit == "devUserClose" -> { devSelectedUserId = null; invalidate() }
                     hit == "devWarnNew" -> activity()?.showWarnPicker()
                     hit == "devAnnNew" -> activity()?.showAnnouncementForm()
-                    hit.startsWith("devTab:") -> { devTab = hit.substringAfter(':'); scroll = 0f; invalidate() }
-                    hit.startsWith("devFilter:") -> { devUserFilter = hit.substringAfter(':'); scroll = 0f; invalidate() }
+                    hit.startsWith("devTab:") -> selectDevTab(hit.substringAfter(':'))
+                    hit.startsWith("devFilter:") -> {
+                        devUserFilter = hit.substringAfter(':')
+                        devSelectedUserId = null
+                        scroll = 0f
+                        invalidate()
+                    }
                     hit.startsWith("devUser:") -> {
                         val id = hit.substringAfter(':')
                         devSelectedUserId = if (devSelectedUserId == id) null else id
@@ -828,7 +968,9 @@ internal class JajaninView(context: Context) : View(context) {
                     }
                     hit.startsWith("devOrder:") -> {
                         val id = hit.substringAfter(':')
-                        devExpandedOrderId = if (devExpandedOrderId == id) null else id
+                        val opening = devExpandedOrderId != id
+                        devExpandedOrderId = if (opening) id else null
+                        devOrderExpandAt = if (opening && motionEnabled()) android.os.SystemClock.uptimeMillis() else 0L
                         invalidate()
                     }
                     hit == "plus" -> {

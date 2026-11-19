@@ -5,9 +5,11 @@ import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.exceptions.HttpRequestException
 import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.gotrue.Auth
+import io.github.jan.supabase.gotrue.OtpType
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.exception.AuthRestException
 import io.github.jan.supabase.gotrue.exception.AuthWeakPasswordException
+import io.github.jan.supabase.gotrue.handleDeeplinks
 import io.github.jan.supabase.gotrue.providers.builtin.Email
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
@@ -248,6 +250,44 @@ object SupabaseRepository {
         }
     }
 
+    /** Kirim email pemulihan kata sandi (berisi link deep-link + token/OTP recovery). */
+    suspend fun sendPasswordReset(email: String) {
+        check(configured) { NOT_CONFIGURED }
+        client.auth.resetPasswordForEmail(
+            email = email.trim(),
+            redirectUrl = AUTH_REDIRECT_URL
+        )
+    }
+
+    /** Verifikasi kode OTP recovery dari email lalu langsung perbarui kata sandi baru. */
+    suspend fun verifyRecoveryOtpAndSetPassword(email: String, token: String, newPassword: String) {
+        check(configured) { NOT_CONFIGURED }
+        client.auth.verifyEmailOtp(
+            type = OtpType.Email.RECOVERY,
+            email = email.trim(),
+            token = token.trim()
+        )
+        client.auth.updateUser {
+            password = newPassword
+        }
+    }
+
+    /** Perbarui kata sandi akun yang sudah memiliki session recovery aktif. */
+    suspend fun updatePassword(newPassword: String) {
+        check(configured) { NOT_CONFIGURED }
+        client.auth.updateUser {
+            password = newPassword
+        }
+    }
+
+    /** Impor session dari Intent deep-link (PKCE / Implicit) untuk login & recovery link. */
+    fun importDeepLinkSession(intent: android.content.Intent, onSessionReady: () -> Unit) {
+        if (!configured) return
+        client.handleDeeplinks(intent) {
+            onSessionReady()
+        }
+    }
+
     /**
      * Mengakhiri sesi. Memakai scope LOCAL sehingga session langsung dibersihkan
      * di perangkat walau sedang offline.
@@ -290,6 +330,12 @@ object SupabaseRepository {
 
             has("rate_limit", "too many request", "over email send") ->
                 "Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi."
+
+            has("otp_expired", "token has expired", "invalid otp", "otp_disabled") ->
+                "Kode/tautan reset salah atau sudah kedaluwarsa. Minta kode baru."
+
+            has("same_password", "different from the old password") ->
+                "Kata sandi baru harus berbeda dari kata sandi sebelumnya."
 
             throwable is HttpRequestException || throwable is IOException ||
                 has("unable to resolve host", "failed to connect", "connection reset", "connection refused", "timed out") ->

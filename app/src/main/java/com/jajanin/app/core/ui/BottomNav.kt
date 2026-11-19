@@ -22,7 +22,7 @@ import com.jajanin.app.JajaninView
 internal const val GLASS_MARGIN = 16f
 internal const val GLASS_BOTTOM = 14f
 internal const val GLASS_H = 68f
-internal const val GLASS_R = 24f
+internal const val GLASS_R = 34f
 /** Batas atas nav melayang dari bawah layar; konten scroll memakai ini. */
 internal const val GLASS_TOP_OFFSET = GLASS_BOTTOM + GLASS_H // 82f
 

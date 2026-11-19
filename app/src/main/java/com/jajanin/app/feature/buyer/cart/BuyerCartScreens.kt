@@ -64,7 +64,6 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         kit.centerText(c, "Keranjang kosong.", RectF(24f, 280f, 366f, 340f), 14f, kit.muted)
         kit.centerText(c, "Kembali dan pilih menu dulu.", RectF(24f, 310f, 366f, 360f), 12f, kit.muted)
         contentHeight = 0f
-        drawBottomNav(c, w, h, "Orders")
         return
     }
     kit.text(c, cartStallName.take(30), 22f, 112f + off, 18f, kit.ink, true)
@@ -96,14 +95,19 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     }
 
     kit.text(c, "Metode pembayaran", 22f, y + 26f, 15f, kit.ink, true)
-    // QRIS hanya ditawarkan bila warung sudah pasang (null = belum dicek).
+    // QRIS hanya ditawarkan bila warung sudah benar-benar memasang gambar QRIS.
     val stallQris = cartStallQris
-    val qrisOffered = stallQris == null || stallQris.isNotBlank()
+    val qrisOffered = !stallQris.isNullOrBlank()
     val cashBox = if (qrisOffered) RectF(18f, y + 38f, 190f, y + 96f) else RectF(18f, y + 38f, 372f, y + 96f)
     val cashOn = checkoutPayment == "cash" || !qrisOffered
     kit.rounded(c, cashBox, kit.card, 13f, if (cashOn) kit.blue else kit.border)
     kit.text(c, "Tunai", 34f, y + 63f, 13f, kit.ink, true)
-    kit.text(c, if (qrisOffered) "Bayar saat ambil" else "Bayar saat ambil · satu-satunya metode", 34f, y + 83f, 10f, kit.muted)
+    val cashSub = when {
+        stallQris == null -> "Bayar saat ambil · memeriksa QRIS warung..."
+        qrisOffered -> "Bayar saat ambil"
+        else -> "Bayar saat ambil · toko belum pasang QRIS"
+    }
+    kit.text(c, cashSub, 34f, y + 83f, 10f, kit.muted)
     if (cashOn) kit.centerText(c, "●", RectF(cashBox.right - 32f, y + 56f, cashBox.right - 8f, y + 80f), 13f, kit.blue, true)
     bounds["payMethod:cash"] = RectF(cashBox)
     if (qrisOffered) {
@@ -133,7 +137,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     contentHeight = totalY + 206f
     if (currentScreen == Screen.CHECKOUT) postInvalidateDelayed(1000)
 
-    val cta = RectF(20f, h - 88f - 56f, 370f, h - 88f)
+    val cta = RectF(20f, h - 72f, 370f, h - 18f)
     if (orderingBlocked) {
         // Blackout WIB (status dari server): tombol checkout nonaktif + alasan jelas.
         val blockedLines = ArrayList((orderingBlockMessage ?: "Pesanan sementara ditutup.").chunked(38))
@@ -164,10 +168,10 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         kit.rounded(c, cta, kit.muted, 14f)
         kit.centerText(c, "Membuat pesanan...", cta, 14f, Color.WHITE, true)
     } else {
-        kit.button(c, if (checkoutPayment == "cash") "Buat pesanan · bayar tunai" else "Buat pesanan · bayar QRIS", cta)
+        val activeMethod = if (qrisOffered && checkoutPayment == "qris") "qris" else "cash"
+        kit.button(c, if (activeMethod == "cash") "Buat pesanan · bayar tunai" else "Buat pesanan · bayar QRIS", cta)
         bounds["pay"] = RectF(cta)
     }
-    drawBottomNav(c, w, h, "Orders")
 }
 
 internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {

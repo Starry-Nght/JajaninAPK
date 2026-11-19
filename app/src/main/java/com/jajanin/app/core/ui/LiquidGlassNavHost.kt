@@ -99,6 +99,7 @@ internal class LiquidGlassNavHost(
 
         bar.onTabSelected = { index ->
             if (!syncing) {
+                lastSelected = index
                 val spec = lastSpec
                 val item = spec?.items?.getOrNull(index)
                 if (spec != null && item != null) {
@@ -147,7 +148,7 @@ internal class LiquidGlassNavHost(
     private fun configureBar() {
         bar.apply {
             visibility = View.GONE
-            setPadding(dp(4), dp(6), dp(4), dp(8))
+            setPadding(dp(6), dp(5), dp(6), dp(5))
             setLensBackdropSource(content)
             enableDynamicBackground = false
             material = GlassMaterial.CLEAR
@@ -355,7 +356,7 @@ internal class LiquidGlassNavHost(
             lp.height = height
             bar.layoutParams = lp
         }
-        bar.cornerRadius = GLASS_R * scale
+        bar.cornerRadius = height / 2f
         val lp = bar.layoutParams as FrameLayout.LayoutParams
         val side = (GLASS_MARGIN * scale).toInt()
         val bottom = (GLASS_BOTTOM * scale).toInt()
@@ -395,10 +396,10 @@ internal class LiquidGlassNavHost(
             "Explore" -> R.drawable.ic_nav_explore
             "Orders" -> R.drawable.ic_nav_orders
             "Pesanan" -> R.drawable.ic_nav_receipt
-            "Profile", "Profil" -> R.drawable.ic_nav_profile
-            "Dashboard" -> R.drawable.ic_nav_grid
-            "Produk" -> R.drawable.ic_nav_box
-            "Notifikasi" -> R.drawable.ic_nav_bell
+            "Profile", "Profil", "Users" -> R.drawable.ic_nav_profile
+            "Dashboard", "Overview" -> R.drawable.ic_nav_grid
+            "Produk", "Sellers" -> R.drawable.ic_nav_box
+            "Notifikasi", "Warn", "Info" -> R.drawable.ic_nav_bell
             else -> return null
         }
         return context.getDrawable(res)

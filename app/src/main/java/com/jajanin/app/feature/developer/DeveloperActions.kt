@@ -123,6 +123,8 @@ internal fun MainActivity.refreshDeveloper() {
             ui.devAnnouncements = DeveloperRepository.fetchAnnouncements()
             ui.devInvites = DeveloperRepository.fetchPendingInvites()
             ui.devError = null
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
         } catch (error: Throwable) {
             ui.devError = SupabaseRepository.errorMessage(error)
         } finally {

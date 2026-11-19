@@ -333,8 +333,9 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
             true
         )
         kit.textRight(c, "Checkout →", 356f, floatBar.centerY() + 4.5f, 100f, 13f, Color.WHITE, true)
+        press(c, "cartCheckoutBar", floatBar, 10f)
         c.restore()
-        bounds["cartCheckout"] = floatBar
+        bounds["cartCheckoutBar"] = floatBar
     }
 
     // 8. Flat Architectural Top Header (No dark floating box)
@@ -367,6 +368,7 @@ private fun JajaninView.drawCleanTopHeader(c: Canvas, cartCount: Int) {
         kit.rounded(c, cartBtn, kit.card, 7f, kit.border)
         kit.centerText(c, cartLabel, cartBtn, 11.5f, kit.ink, true)
     }
+    press(c, "cartCheckout", cartBtn, 7f)
     bounds["cartCheckout"] = cartBtn
 
     // Right 2: Bell / Inbox Icon

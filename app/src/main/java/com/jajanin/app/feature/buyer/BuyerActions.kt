@@ -62,10 +62,13 @@ import com.jajanin.app.feature.buyer.exp.expNextAt
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import com.jajanin.app.R
 
@@ -83,9 +86,11 @@ internal fun MainActivity.refreshMyOrders() {
     ui.invalidate()
     myOrdersJob = authScope.launch {
         try {
-            ui.myOrders = OrderRepository.fetchMyOrders()
+            ui.myOrders = withTimeout(12_000L) { OrderRepository.fetchMyOrders() }
             ui.myOrdersError = null
             refreshMyExp()
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (error: Throwable) {
             ui.myOrdersError = SupabaseRepository.errorMessage(error)
         } finally {
@@ -267,6 +272,12 @@ internal fun MainActivity.setCartQty(productId: String, qty: Int) {
 }
 
 internal fun MainActivity.setCheckoutPayment(method: String) {
+    if (method == "qris" && ui.cartStallQris.isNullOrBlank()) {
+        Toast.makeText(this, "Toko ini belum memasang QRIS. Silakan bayar Tunai.", Toast.LENGTH_SHORT).show()
+        ui.checkoutPayment = "cash"
+        ui.invalidate()
+        return
+    }
     ui.checkoutPayment = if (method == "cash") "cash" else "qris"
     ui.invalidate()
 }
@@ -286,6 +297,14 @@ internal fun MainActivity.openCheckout() {
         showAuthForm(false)
         return
     }
+    // Pastikan cartStallId selalu terisi dari item keranjang.
+    if (ui.cartStallId.isNullOrBlank()) {
+        val firstPid = ui.cart.keys.firstOrNull()
+        ui.cartStallId = firstPid?.let { pid ->
+            ui.products.firstOrNull { it.id == pid }?.stallId
+                ?: ui.sellerProducts.firstOrNull { it.id == pid }?.stallId
+        }
+    }
     // Nomor HP wajib sebelum memesan (akun lama yang belum punya).
     if (ui.myPhone.isBlank()) {
         authScope.launch {
@@ -295,20 +314,28 @@ internal fun MainActivity.openCheckout() {
         }
         return
     }
+    ui.placingOrder = false
+    ui.checkoutPayment = "cash"
+    ui.cartStallQris = null
     ui.go(Screen.CHECKOUT)
     refreshOrderingStatus()
     refreshStallAvailability()
-    ui.cartStallQris = null
     authScope.launch {
-        val stallId = ui.cartStallId ?: return@launch
-        runCatching { OrderRepository.fetchStall(stallId) }
-            .onSuccess { stall ->
-                ui.cartStallName = stall?.name ?: "Kantin Jajanin"
-                ui.cartStallQris = stall?.qrisImageUrl.orEmpty()
-                // Warung belum pasang QRIS = tunai saja, opsi QRIS disembunyikan.
-                if (ui.cartStallQris.isNullOrBlank()) ui.checkoutPayment = "cash"
-                ui.invalidate()
-            }
+        val stallId = ui.cartStallId
+        if (stallId.isNullOrBlank()) {
+            ui.cartStallQris = ""
+            ui.checkoutPayment = "cash"
+            ui.invalidate()
+            return@launch
+        }
+        val stall = withTimeoutOrNull(8_000L) {
+            runCatching { OrderRepository.fetchStall(stallId) }.getOrNull()
+        }
+        ui.cartStallName = stall?.name ?: "Kantin Jajanin"
+        ui.cartStallQris = stall?.qrisImageUrl?.trim().orEmpty()
+        // Warung belum pasang QRIS = tunai saja, opsi QRIS disembunyikan.
+        if (ui.cartStallQris.isNullOrBlank()) ui.checkoutPayment = "cash"
+        ui.invalidate()
     }
 }
 
@@ -384,10 +411,11 @@ internal fun MainActivity.refreshStallAvailability() {
  * tidak dipercaya untuk penegakan — hanya untuk tampilan.
  */
 internal fun MainActivity.applyServerTime(serverTime: String) {
+    val clean = serverTime.replace('T', ' ').take(19)
     val parsed = runCatching {
         java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).apply {
             timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
-        }.parse(serverTime.take(19))?.time
+        }.parse(clean)?.time
     }.getOrNull() ?: return
     ui.serverBaseMillis = parsed
     ui.serverBaseElapsed = android.os.SystemClock.elapsedRealtime()
@@ -400,6 +428,7 @@ internal fun MainActivity.applyServerTime(serverTime: String) {
  */
 internal fun MainActivity.placeCartOrder() {
     val self = this
+    if (ui.placingOrder) return
     if (ui.cart.isEmpty()) {
         Toast.makeText(this, "Keranjang masih kosong.", Toast.LENGTH_SHORT).show()
         return
@@ -419,15 +448,34 @@ internal fun MainActivity.placeCartOrder() {
         return
     }
     val lines = ui.cart.entries.map { it.key to it.value }
-    // Pengaman balapan: QRIS dicabut penjual setelah checkout dibuka = tunai.
-    val method = if (ui.checkoutPayment == "qris" && ui.cartStallQris?.isBlank() == true) "cash" else ui.checkoutPayment
-    ui.checkoutPayment = method
+    val requestedMethod = ui.checkoutPayment
+    if (requestedMethod == "qris" && ui.cartStallQris.isNullOrBlank() && ui.cartStallQris != null) {
+        ui.checkoutPayment = "cash"
+        ui.invalidate()
+        Toast.makeText(this, "Toko belum memasang QRIS. Silakan bayar Tunai.", Toast.LENGTH_SHORT).show()
+        return
+    }
     ui.placingOrder = true
     ui.invalidate()
     authScope.launch {
         try {
-            val placed = OrderRepository.placeOrder(lines, method)
             val stallId = ui.cartStallId
+            var verifiedQris = ui.cartStallQris
+            if (requestedMethod == "qris" && verifiedQris == null && !stallId.isNullOrBlank()) {
+                val stall = withTimeoutOrNull(6_000L) {
+                    runCatching { OrderRepository.fetchStall(stallId) }.getOrNull()
+                }
+                verifiedQris = stall?.qrisImageUrl?.trim().orEmpty()
+                ui.cartStallQris = verifiedQris
+            }
+            if (requestedMethod == "qris" && verifiedQris.isNullOrBlank()) {
+                ui.checkoutPayment = "cash"
+                Toast.makeText(self, "Toko ini belum memasang kode QRIS. Silakan pilih Tunai.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val method = if (requestedMethod == "qris") "qris" else "cash"
+            ui.checkoutPayment = method
+            val placed = withTimeout(12_000L) { OrderRepository.placeOrder(lines, method) }
             ui.cart.clear()
             ui.cartStallId = null
             ui.cartStallQris = null
@@ -446,6 +494,8 @@ internal fun MainActivity.placeCartOrder() {
                 ui.go(Screen.READY)
                 Toast.makeText(self, "Pesanan dibuat. Bayar tunai saat ambil.", Toast.LENGTH_LONG).show()
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
             Toast.makeText(self, msg, Toast.LENGTH_LONG).show()

@@ -147,6 +147,21 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/authForgot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginTop="8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:paddingStart="6dp"
+        android:paddingEnd="2dp"
+        android:text="Lupa kata sandi?"
+        android:textColor="#0063D6"
+        android:textSize="12.5sp"
+        android:textStyle="bold" />
+
+    <TextView
         android:id="@+id/authError"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

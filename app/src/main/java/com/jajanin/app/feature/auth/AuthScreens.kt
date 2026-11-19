@@ -46,11 +46,15 @@ internal fun JajaninView.drawLogin(c: Canvas, w: Float, h: Float) {
     authField(c, "emailField", "Email", "nama@kampus.ac.id", 202f)
     authField(c, "passwordField", "Kata sandi", "Minimal 6 karakter", 280f)
 
-    val submit = RectF(24f, 366f, 366f, 420f)
+    val forgot = RectF(216f, 344f, 366f, 372f)
+    kit.textRight(c, "Lupa kata sandi?", forgot.right, forgot.centerY() + 4f, 140f, 12.5f, kit.blue, true)
+    bounds["forgotPassword"] = RectF(forgot)
+
+    val submit = RectF(24f, 382f, 366f, 436f)
     kit.button(c, "Masuk dengan email", submit)
     bounds["emailLogin"] = RectF(submit)
 
-    val toggle = RectF(24f, 448f, 366f, 486f)
+    val toggle = RectF(24f, 456f, 366f, 494f)
     kit.centerText(c, "Belum punya akun?  Daftar", toggle, 13f, kit.blue, true)
     bounds["toggleAuth"] = RectF(toggle)
 

@@ -216,8 +216,9 @@ internal fun JajaninView.drawOrders(c: Canvas, w: Float, h: Float) {
             contentHeight = 0f
         }
         myOrdersError != null && orders.isEmpty() -> {
-            kit.centerText(c, "Gagal memuat pesanan.", RectF(24f, 240f, 366f, 290f), 13f, kit.danger)
-            val retry = RectF(125f, 304f, 265f, 346f)
+            kit.centerText(c, "Gagal memuat pesanan.", RectF(24f, 232f, 366f, 270f), 13.5f, kit.danger, true)
+            kit.centerText(c, (myOrdersError ?: "").take(52), RectF(24f, 268f, 366f, 296f), 11f, kit.muted)
+            val retry = RectF(125f, 308f, 265f, 350f)
             kit.rounded(c, retry, kit.blue, 8f)
             kit.centerText(c, "Muat ulang", retry, 13f, Color.WHITE, true)
             bounds["myOrdersRetry"] = RectF(retry)

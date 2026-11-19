@@ -76,6 +76,7 @@ class MainActivity : Activity() {
     internal fun isDarkMode(): Boolean = ui.darkMode
     internal val authScope = CoroutineScope(Dispatchers.Main)
     internal var authForm: AuthForm? = null
+    internal var pendingPasswordRecovery = false
     internal var adminObserver: OrderObserver? = null
     internal var adminRefreshJob: Job? = null
     internal var adminStatusBusy = false
@@ -193,8 +194,11 @@ class MainActivity : Activity() {
      */
     internal fun restoreSessionIfNeeded() {
         authScope.launch {
-            if (SupabaseRepository.restoreSession()) routeSignedInUser()
-            else if (!isOnboarded()) ui.showOnboard()
+            if (SupabaseRepository.restoreSession()) {
+                if (pendingPasswordRecovery) showSetNewPasswordDialog() else routeSignedInUser()
+            } else if (pendingPasswordRecovery) {
+                // Deep link recovery sedang memproses sesi lewat importDeepLinkSession.
+            } else if (!isOnboarded()) ui.showOnboard()
             else ui.showWelcome()
         }
     }
@@ -400,13 +404,236 @@ class MainActivity : Activity() {
     }
 
     internal fun handleAuthLink(authIntent: Intent?) {
-        if (authIntent?.data?.scheme != "jajanin") return
-        authScope.launch {
-            if (SupabaseRepository.hasSession()) {
-                routeSignedInUser()
-                Toast.makeText(this@MainActivity, "Berhasil masuk", Toast.LENGTH_SHORT).show()
-            } else Toast.makeText(this@MainActivity, "Tautan diterima. Coba masuk kembali.", Toast.LENGTH_LONG).show()
+        val data = authIntent?.data ?: return
+        if (data.scheme != "jajanin") return
+        val isRecoveryLink = pendingPasswordRecovery ||
+            data.toString().contains("type=recovery", ignoreCase = true) ||
+            data.fragment?.contains("type=recovery", ignoreCase = true) == true
+        if (isRecoveryLink) pendingPasswordRecovery = true
+
+        SupabaseRepository.importDeepLinkSession(authIntent) {
+            authScope.launch {
+                if (pendingPasswordRecovery) {
+                    showSetNewPasswordDialog()
+                } else if (SupabaseRepository.hasSession()) {
+                    routeSignedInUser()
+                    Toast.makeText(this@MainActivity, "Berhasil masuk", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
+    }
+
+    /**
+     * Alur Lupa Kata Sandi (2 jalur otomatis):
+     * - Jalur 1: Kirim email reset dari Supabase Auth (berisi link `jajanin://auth-callback` + OTP).
+     *   Jika user menekan link di email, app terbuka kembali & langsung minta kata sandi baru.
+     * - Jalur 2: Jika email berisi kode verifikasi/OTP (6 digit), user bisa langsung masukkan
+     *   kode + kata sandi baru di dalam dialog tanpa keluar aplikasi.
+     */
+    fun showForgotPasswordDialog(prefillEmail: String = "") {
+        val self = this
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 8)
+        }
+        val emailInput = EditText(this).apply {
+            hint = "Email akun terdaftar"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            setSingleLine(true)
+            if (prefillEmail.isNotBlank()) setText(prefillEmail.trim())
+        }
+        val otpInput = EditText(this).apply {
+            hint = "Kode OTP dari email (6-8 digit)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            visibility = View.GONE
+        }
+        val newPassInput = EditText(this).apply {
+            hint = "Kata sandi baru (minimal 6 karakter)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+            visibility = View.GONE
+        }
+        val confirmPassInput = EditText(this).apply {
+            hint = "Ulangi kata sandi baru"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+            visibility = View.GONE
+        }
+        val hintText = TextView(this).apply {
+            text = "Kami akan mengirim tautan & kode reset kata sandi ke emailmu."
+            textSize = 12.5f
+            setPadding(0, 14, 0, 8)
+        }
+        val toggleOtpLink = TextView(this).apply {
+            text = "Sudah punya kode OTP reset?"
+            textSize = 12.5f
+            setTextColor(Color.rgb(0, 99, 214))
+            setPadding(0, 12, 0, 4)
+        }
+        root.addView(emailInput)
+        root.addView(otpInput)
+        root.addView(newPassInput)
+        root.addView(confirmPassInput)
+        root.addView(hintText)
+        root.addView(toggleOtpLink)
+
+        var otpMode = false
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Lupa Kata Sandi")
+            .setView(root)
+            .setPositiveButton("Kirim Email Reset", null)
+            .setNegativeButton("Batal", null)
+            .show()
+
+        fun applyOtpMode(enable: Boolean) {
+            otpMode = enable
+            otpInput.visibility = if (enable) View.VISIBLE else View.GONE
+            newPassInput.visibility = if (enable) View.VISIBLE else View.GONE
+            confirmPassInput.visibility = if (enable) View.VISIBLE else View.GONE
+            emailInput.isEnabled = !enable
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).text =
+                if (enable) "Simpan Sandi Baru" else "Kirim Email Reset"
+            toggleOtpLink.text =
+                if (enable) "Kirim ulang ke email lain" else "Sudah punya kode OTP reset?"
+            hintText.text = if (enable) {
+                "Masukkan kode reset dari email (atau cukup klik tautan Reset di email untuk otomatis membuka aplikasi)."
+            } else {
+                "Kami akan mengirim tautan & kode reset kata sandi ke emailmu."
+            }
+            if (enable) otpInput.requestFocus() else emailInput.requestFocus()
+        }
+
+        toggleOtpLink.setOnClickListener { applyOtpMode(!otpMode) }
+
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val emailVal = emailInput.text.toString().trim()
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(emailVal).matches()) {
+                Toast.makeText(self, "Masukkan email yang valid.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (!SupabaseRepository.isConfigured()) {
+                Toast.makeText(self, "Supabase belum dikonfigurasi.", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            val btn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+            if (!otpMode) {
+                btn.isEnabled = false
+                btn.text = "Mengirim..."
+                authScope.launch {
+                    try {
+                        pendingPasswordRecovery = true
+                        SupabaseRepository.sendPasswordReset(emailVal)
+                        Toast.makeText(
+                            self,
+                            "Email reset dikirim ke $emailVal. Cek inbox atau folder Spam.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        applyOtpMode(true)
+                        btn.isEnabled = true
+                    } catch (e: Throwable) {
+                        pendingPasswordRecovery = false
+                        btn.isEnabled = true
+                        btn.text = "Kirim Email Reset"
+                        Toast.makeText(self, SupabaseRepository.errorMessage(e), Toast.LENGTH_LONG).show()
+                    }
+                }
+            } else {
+                val otpVal = otpInput.text.toString().trim()
+                val newPass = newPassInput.text.toString()
+                val confirmPass = confirmPassInput.text.toString()
+                if (otpVal.length < 6) {
+                    Toast.makeText(self, "Masukkan kode reset minimal 6 digit.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (newPass.length < 6) {
+                    Toast.makeText(self, "Kata sandi baru minimal 6 karakter.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                if (newPass != confirmPass) {
+                    Toast.makeText(self, "Konfirmasi kata sandi tidak cocok.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                btn.isEnabled = false
+                btn.text = "Memproses..."
+                authScope.launch {
+                    try {
+                        SupabaseRepository.verifyRecoveryOtpAndSetPassword(emailVal, otpVal, newPass)
+                        pendingPasswordRecovery = false
+                        dialog.dismiss()
+                        Toast.makeText(self, "Kata sandi berhasil diperbarui!", Toast.LENGTH_LONG).show()
+                        routeSignedInUser()
+                    } catch (e: Throwable) {
+                        btn.isEnabled = true
+                        btn.text = "Simpan Sandi Baru"
+                        Toast.makeText(self, SupabaseRepository.errorMessage(e), Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        emailInput.requestFocus()
+    }
+
+    /** Dialog setelah user membuka link Reset Password dari email (`jajanin://auth-callback`). */
+    internal fun showSetNewPasswordDialog() {
+        val self = this
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
+        val newPass = EditText(this).apply {
+            hint = "Kata sandi baru (min. 6 karakter)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        val confirmPass = EditText(this).apply {
+            hint = "Ulangi kata sandi baru"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        container.addView(newPass)
+        container.addView(confirmPass)
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Buat Kata Sandi Baru")
+            .setMessage("Masukkan kata sandi baru untuk akunmu.")
+            .setView(container)
+            .setPositiveButton("Simpan Sandi", null)
+            .setNegativeButton("Batal") { _, _ -> pendingPasswordRecovery = false }
+            .show()
+        dialog.setCancelable(false)
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val p1 = newPass.text.toString()
+            val p2 = confirmPass.text.toString()
+            if (p1.length < 6) {
+                Toast.makeText(self, "Kata sandi minimal 6 karakter.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (p1 != p2) {
+                Toast.makeText(self, "Konfirmasi kata sandi tidak cocok.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val btn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+            btn.isEnabled = false
+            authScope.launch {
+                try {
+                    SupabaseRepository.updatePassword(p1)
+                    pendingPasswordRecovery = false
+                    dialog.dismiss()
+                    Toast.makeText(self, "Kata sandi baru berhasil disimpan!", Toast.LENGTH_LONG).show()
+                    routeSignedInUser()
+                } catch (e: Throwable) {
+                    btn.isEnabled = true
+                    Toast.makeText(self, SupabaseRepository.errorMessage(e), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        newPass.requestFocus()
     }
 
     fun showAuthForm(focusPassword: Boolean, signup: Boolean = false) {
@@ -660,6 +887,7 @@ class MainActivity : Activity() {
         private val progress = dialog.findViewById<ProgressBar>(R.id.authProgress)
         private val toggle = dialog.findViewById<TextView>(R.id.authToggle)
         private val showPass = dialog.findViewById<TextView>(R.id.authShowPass)
+        private val forgot = dialog.findViewById<TextView>(R.id.authForgot)
 
         private var signup = false
         private var busy = false
@@ -693,6 +921,11 @@ class MainActivity : Activity() {
             }
             action.setOnClickListener { submit() }
             toggle.setOnClickListener { setMode(!signup) }
+            forgot.setOnClickListener {
+                val typedEmail = email.text.toString().trim()
+                dialog.dismiss()
+                showForgotPasswordDialog(typedEmail)
+            }
             showPass.setOnClickListener {
                 passVisible = !passVisible
                 val cursor = password.selectionStart
@@ -740,6 +973,7 @@ class MainActivity : Activity() {
             name.visibility = if (signup) View.VISIBLE else View.GONE
             nis.visibility = if (signup) View.VISIBLE else View.GONE
             phone.visibility = if (signup) View.VISIBLE else View.GONE
+            forgot.visibility = if (signup) View.GONE else View.VISIBLE
             // Jarak atas email menyesuaikan: tanpa kolom nama, email yang paling atas.
             (email.layoutParams as ViewGroup.MarginLayoutParams).topMargin =
                 (if (signup) 12 else 22 * resources.displayMetrics.density).toInt()
@@ -756,6 +990,7 @@ class MainActivity : Activity() {
             busy = value
             action.isEnabled = !value
             toggle.isEnabled = !value
+            forgot.isEnabled = !value
             name.isEnabled = !value
             nis.isEnabled = !value
             phone.isEnabled = !value

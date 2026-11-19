@@ -1,4 +1,4 @@
-package com.jajanin.app.feature.seller
+ package com.jajanin.app.feature.seller
 
 import com.jajanin.app.MainActivity
 import com.jajanin.app.feature.buyer.*

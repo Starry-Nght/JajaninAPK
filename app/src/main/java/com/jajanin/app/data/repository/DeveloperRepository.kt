@@ -164,8 +164,8 @@ internal object DeveloperRepository {
             set(java.util.Calendar.SECOND, 0)
             set(java.util.Calendar.MILLISECOND, 0)
         }
-        val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).apply {
-            timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+        val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
         }
         val todayStartIso = df.format(cal.time)
 

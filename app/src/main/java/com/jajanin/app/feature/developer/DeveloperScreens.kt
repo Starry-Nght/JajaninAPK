@@ -6,855 +6,710 @@ import android.graphics.Paint
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.DrawKit
+import com.jajanin.app.core.ui.FloatNavItem
+import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.NavVariant
+import com.jajanin.app.core.ui.drawFloatingNav
 import com.jajanin.app.core.ui.drawIcon
+import com.jajanin.app.core.ui.navBadge
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
-import com.jajanin.app.data.model.ProductRow
-import com.jajanin.app.data.repository.AdminOrder
-import com.jajanin.app.data.repository.DevAnnouncementRow
-import com.jajanin.app.data.repository.DevStats
-import com.jajanin.app.data.repository.DevUser
-import com.jajanin.app.data.repository.DevWarningRow
-import com.jajanin.app.data.repository.SellerInvite
+import com.jajanin.app.data.repository.SupabaseRepository
 
 internal val DEV_TABS = listOf("Overview", "Users", "Sellers", "Orders", "Warn", "Info")
 
+private const val HEADER_H = 60f
+
 /**
- * Modern Developer & DevOps Console UI for Jajanin.
- * Features an executive-level command dashboard, realtime system telemetry,
- * user/seller administration, order inspection, and moderation/broadcast controls.
+ * Clean, calm editorial Developer Console matching Buyer & Seller design language.
+ * - Single navigation bar: uses ONLY the bottom Liquid Glass Navbar (no duplicate top tab bar).
+ * - Open hairline-divided lists instead of heavy boxed cards.
+ * - Inline expandable rows that automatically close when switching tabs or filters.
  */
 internal fun JajaninView.drawDeveloper(c: Canvas, w: Float, h: Float) {
     c.drawColor(kit.bg)
     val off = -scroll
+    val navClear = h - GLASS_TOP_OFFSET - 10f
+
+    val bodySave = c.save()
+    c.clipRect(0f, HEADER_H, w, h)
 
     when (devTab) {
-        "Users" -> drawDevUsers(c, w, h, off, sellersOnly = false)
-        "Sellers" -> drawDevUsers(c, w, h, off, sellersOnly = true)
-        "Orders" -> drawDevOrders(c, w, h, off)
-        "Warn" -> drawDevWarnings(c, w, h, off)
-        "Info" -> drawDevAnnouncements(c, w, h, off)
-        else -> drawDevOverview(c, w, h, off)
+        "Users" -> drawDevUsers(c, w, h, off, navClear, sellersOnly = false)
+        "Sellers" -> drawDevUsers(c, w, h, off, navClear, sellersOnly = true)
+        "Orders" -> drawDevOrders(c, w, h, off, navClear)
+        "Warn" -> drawDevWarnings(c, w, h, off, navClear)
+        "Info" -> drawDevAnnouncements(c, w, h, off, navClear)
+        else -> drawDevOverview(c, w, h, off, navClear)
     }
 
-    // ================= Pinned Header & Segmented Console Dock =================
+    c.restoreToCount(bodySave)
+
+    // ================= Flat Editorial Top Header (Single Navbar Architecture) =================
     c.save()
     c.translate(-slideX, 0f)
 
-    // Top Command Deck (Glassmorphism floating bar)
-    val devBar = RectF(16f, 10f, 374f, 66f)
-    kit.rounded(c, RectF(devBar.left, devBar.top + 2f, devBar.right, devBar.bottom + 4f), kit.glassShadow, 18f)
-    kit.rounded(c, devBar, kit.glass, 18f, kit.glassBorder)
+    kit.rect(c, -100f, 0f, 490f, HEADER_H, kit.bg)
+    kit.line(c, 20f, HEADER_H, 370f, HEADER_H, kit.divider)
 
-    // Live Telemetry status dot & badge
-    val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(16, 185, 129) }
-    c.drawCircle(32f, 26f, 3.5f, dotPaint)
-    kit.text(c, "LIVE OPS", 40f, 29f, 8.5f, Color.rgb(52, 211, 153), true)
+    // Brand mark + Title
+    val logoBox = RectF(20f, 17f, 44f, 41f)
+    kit.rounded(c, logoBox, kit.blue, 6f)
+    kit.centerText(c, "D", logoBox, 14f, Color.WHITE, true)
 
-    kit.text(c, "Developer Console", 30f, 47f, 15f, Color.WHITE, true)
-    kit.text(c, "Super Admin & Realtime Monitor", 30f, 60f, 9.5f, Color.argb(190, 255, 255, 255))
+    val headerTitle = when (devTab) {
+        "Users" -> "Pembeli"
+        "Sellers" -> "Penjual & Warung"
+        "Orders" -> "Pesanan"
+        "Warn" -> "Moderasi"
+        "Info" -> "Pengumuman"
+        else -> "Developer"
+    }
+    kit.text(c, headerTitle, 52f, 35.5f, 17f, kit.ink, true)
 
-    // Header Quick Actions: Refresh, Bell (Inbox/Notif), Logout
-    val refresh = RectF(238f, 18f, 274f, 54f)
-    kit.rounded(c, refresh, Color.argb(45, 255, 255, 255), 12f)
-    drawIcon(c, "refresh", refresh.centerX(), refresh.centerY(), 15f, Color.WHITE)
-    bounds["devRefresh"] = RectF(refresh)
-    press(c, "devRefresh", refresh, 12f)
+    // Right actions: Theme, Refresh, Bell, Keluar (with generous hit boxes so taps register on 1st try)
+    val out = RectF(318f, 14f, 372f, 46f)
+    kit.rounded(c, out, kit.card, 6f, kit.dangerBorder)
+    kit.centerText(c, "Keluar", out, 10.5f, kit.danger, true)
+    press(c, "devLogout", out, 6f)
 
-    val bell = RectF(280f, 18f, 316f, 54f)
-    kit.rounded(c, bell, Color.argb(45, 255, 255, 255), 12f)
-    drawIcon(c, "bell", bell.centerX(), bell.centerY(), 15f, Color.WHITE)
+    val bell = RectF(280f, 12f, 314f, 48f)
+    drawIcon(c, "bell", bell.centerX(), bell.centerY(), 15f, kit.ink)
     val unreadCount = inboxUnreadCount()
     if (unreadCount > 0) {
-        val badgeCx = bell.right - 6f
-        val badgeCy = bell.top + 6f
-        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(239, 68, 68) }
-        c.drawCircle(badgeCx, badgeCy, 6.5f, badgePaint)
-        val countLabel = if (unreadCount > 9) "9+" else unreadCount.toString()
-        kit.centerText(c, countLabel, RectF(badgeCx - 6f, badgeCy - 6f, badgeCx + 6f, badgeCy + 6f), 7.5f, Color.WHITE, true)
+        val dot = RectF(bell.right - 9f, bell.top + 4f, bell.right - 1f, bell.top + 12f)
+        kit.rounded(c, dot, kit.danger, 4f)
     }
-    bounds["devBell"] = RectF(bell)
-    press(c, "devBell", bell, 12f)
+    press(c, "devBell", bell, 6f)
 
-    val out = RectF(322f, 18f, 364f, 54f)
-    kit.rounded(c, out, Color.argb(55, 239, 68, 68), 12f)
-    kit.centerText(c, "Keluar", out, 10.5f, Color.rgb(254, 202, 202), true)
-    bounds["devLogout"] = RectF(out)
-    press(c, "devLogout", out, 12f)
+    val refresh = RectF(244f, 12f, 278f, 48f)
+    drawIcon(c, "refresh", refresh.centerX(), refresh.centerY(), 15f, kit.ink)
+    press(c, "devRefresh", refresh, 6f)
 
-    // Segmented Dock (Pinned tab bar with badges & crisp vector icons)
-    val tabTop = 74f
-    val tabBottom = 122f
-    val dockRect = RectF(16f, tabTop, 374f, tabBottom)
-    kit.rounded(c, RectF(dockRect.left, dockRect.top + 2f, dockRect.right, dockRect.bottom + 3f), kit.glassShadow, 16f)
-    kit.rounded(c, dockRect, kit.glass, 16f, kit.glassBorder)
+    val themeBtn = RectF(208f, 12f, 242f, 48f)
+    kit.centerText(c, if (darkMode) "☾" else "☀", themeBtn, 14f, kit.muted, true)
+    press(c, "devTheme", themeBtn, 6f)
 
-    val slotW = dockRect.width() / DEV_TABS.size
-    DEV_TABS.forEachIndexed { i, tab ->
-        val active = devTab == tab
-        val slotLeft = dockRect.left + i * slotW
-        val slotRight = slotLeft + slotW
-        val pill = RectF(slotLeft + 2.5f, tabTop + 3.5f, slotRight - 2.5f, tabBottom - 3.5f)
+    // Register header hit boxes AFTER restore() or without slideX truncation, generous Y (2..58)
+    bounds["devTheme"] = RectF(208f, 2f, 242f, HEADER_H - 2f)
+    bounds["devRefresh"] = RectF(244f, 2f, 278f, HEADER_H - 2f)
+    bounds["devBell"] = RectF(280f, 2f, 314f, HEADER_H - 2f)
+    bounds["devLogout"] = RectF(315f, 2f, 386f, HEADER_H - 2f)
 
-        if (active) {
-            kit.rounded(c, pill, kit.blue, 12f)
-        }
-
-        val iconName = when (tab) {
-            "Overview" -> "grid"
-            "Users" -> "person"
-            "Sellers" -> "store"
-            "Orders" -> "receipt"
-            "Warn" -> "alert"
-            "Info" -> "megaphone"
-            else -> "grid"
-        }
-        val iconColor = if (active) Color.WHITE else Color.argb(175, 255, 255, 255)
-        val textColor = if (active) Color.WHITE else Color.argb(175, 255, 255, 255)
-
-        drawIcon(c, iconName, pill.centerX(), pill.centerY() - 6f, 13f, iconColor)
-        val labelW = kit.measure(tab, 8f, active)
-        kit.text(c, tab, pill.centerX() - labelW / 2f, pill.centerY() + 12f, 8f, textColor, active)
-
-        // Dynamic badges on specific tabs
-        when (tab) {
-            "Orders" -> if (devOrders.any { it.status.equals("pending", true) }) {
-                c.drawCircle(slotRight - 8f, tabTop + 8f, 3.5f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(245, 158, 11) })
-            }
-            "Warn" -> if (devWarnings.any { !it.isRead }) {
-                c.drawCircle(slotRight - 8f, tabTop + 8f, 3.5f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(239, 68, 68) })
-            }
-            "Sellers" -> if (devInvites.any { it.status == "pending" }) {
-                c.drawCircle(slotRight - 8f, tabTop + 8f, 3.5f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(59, 130, 246) })
-            }
-        }
-
-        bounds["devTab:$tab"] = RectF(slotLeft, tabTop, slotRight, tabBottom)
-        press(c, "devTab:$tab", pill, 12f)
-    }
-
-    // Modern Floating Action Button (FAB) for Warn and Info
+    // Clean Floating Action Button for Warn & Info
     if (devTab == "Warn" || devTab == "Info") {
-        val fabW = 158f
-        val fabH = 46f
-        val fab = RectF(w - fabW - 16f, h - fabH - 20f, w - 16f, h - 20f)
+        val fabW = 148f
+        val fabH = 40f
+        val fabTop = h - GLASS_TOP_OFFSET - fabH - 12f
+        val fab = RectF(w - fabW - 20f, fabTop, w - 20f, fabTop + fabH)
 
-        kit.rounded(c, RectF(fab.left, fab.top + 3f, fab.right, fab.bottom + 5f), Color.argb(60, 0, 0, 0), 23f)
-        val fabBg = if (devTab == "Warn") Color.rgb(220, 38, 38) else kit.blue
-        kit.rounded(c, fab, fabBg, 23f)
+        val fabBg = if (devTab == "Warn") kit.danger else kit.blue
+        kit.rounded(c, fab, fabBg, 8f)
+        drawIcon(c, "plus", fab.left + 18f, fab.centerY(), 13f, Color.WHITE)
+        val fabText = if (devTab == "Warn") "Peringatan" else "Pengumuman"
+        kit.text(c, fabText, fab.left + 32f, fab.centerY() + 4f, 11.5f, Color.WHITE, true)
 
-        drawIcon(c, "plus", fab.left + 22f, fab.centerY(), 16f, Color.WHITE)
-        val fabText = if (devTab == "Warn") "+ Peringatan" else "+ Pengumuman"
-        kit.text(c, fabText, fab.left + 38f, fab.centerY() + 4f, 11.5f, Color.WHITE, true)
-
-        bounds[if (devTab == "Warn") "devWarnNew" else "devAnnNew"] = RectF(fab)
-        press(c, if (devTab == "Warn") "devWarnNew" else "devAnnNew", fab, 23f)
+        val key = if (devTab == "Warn") "devWarnNew" else "devAnnNew"
+        bounds[key] = RectF(fab)
+        press(c, key, fab, 8f)
     }
 
     c.restore()
+
+    // Single Bottom Navigation: Liquid Glass Navbar
+    drawDevBottomNav(c, w, h)
 }
 
-private fun JajaninView.devContentTop(): Float = 134f
+private fun JajaninView.drawDevBottomNav(c: Canvas, w: Float, h: Float) {
+    val pendingOrders = devOrders.count { it.status.equals("pending", true) }
+    val unreadWarns = devWarnings.count { !it.isRead }
+    when {
+        pendingOrders > 0 -> navBadge(3, pendingOrders)
+        unreadWarns > 0 -> navBadge(4, unreadWarns)
+    }
+    drawFloatingNav(
+        c = c,
+        w = w,
+        h = h,
+        items = listOf(
+            FloatNavItem("Overview", "grid", true),
+            FloatNavItem("Users", "profile", true),
+            FloatNavItem("Sellers", "store", true),
+            FloatNavItem("Orders", "orders", true),
+            FloatNavItem("Warn", "bell", true),
+            FloatNavItem("Info", "bell", true),
+        ),
+        active = devTab,
+        prefix = "dtab:",
+        variant = NavVariant.STANDARD
+    )
+}
 
 // ================= TAB 1: OVERVIEW =================
 
-private fun JajaninView.drawDevOverview(c: Canvas, w: Float, h: Float, off: Float) {
-    val top = devContentTop()
+private fun JajaninView.drawDevOverview(c: Canvas, w: Float, h: Float, off: Float, navClear: Float) {
+    var y = HEADER_H + 16f + off
+    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
 
     if (devStatsLoading) {
-        val loadingRect = RectF(16f, top + 30f + off, 374f, top + 150f + off)
-        kit.card(c, loadingRect, 16f)
-        drawIcon(c, "refresh", loadingRect.centerX(), loadingRect.centerY() - 16f, 24f, kit.blue)
-        kit.centerText(c, "Menghubungkan ke Realtime Monitor...", RectF(loadingRect.left, loadingRect.centerY() + 8f, loadingRect.right, loadingRect.centerY() + 26f), 13f, kit.ink, true)
-        kit.centerText(c, "Memuat metrik dan telemetri platform...", RectF(loadingRect.left, loadingRect.centerY() + 28f, loadingRect.right, loadingRect.centerY() + 44f), 10.5f, kit.muted)
+        kit.text(c, "Memuat ringkasan platform...", 20f, y + 24f, 13f, kit.muted)
         contentHeight = 0f
         return
     }
 
-    var y = top + 8f + off
-
-    // Error Banner
     if (devError != null) {
-        val errRect = RectF(16f, y, 374f, y + 40f)
-        kit.rounded(c, errRect, Color.argb(35, 239, 68, 68), 12f, kit.dangerBorder)
-        drawIcon(c, "alert", 32f, errRect.centerY(), 14f, kit.danger)
-        kit.text(c, devError ?: "", 46f, errRect.centerY() + 4f, 10f, kit.danger, true)
-        y += 48f
+        val errRect = RectF(20f, y, 370f, y + 36f)
+        kit.rounded(c, errRect, kit.card, 6f, kit.dangerBorder)
+        kit.textEllipsized(c, devError ?: "", 32f, errRect.centerY() + 4f, 326f, 10.5f, kit.danger, true)
+        y += 46f
     }
-
-    // Telemetry System Pulse Strip
-    val stripRect = RectF(16f, y, 374f, y + 32f)
-    kit.rounded(c, stripRect, kit.tint, 10f)
-    val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(16, 185, 129) }
-    c.drawCircle(30f, stripRect.centerY(), 3.5f, dotPaint)
-    kit.text(c, "SISTEM OPERASIONAL", 38f, stripRect.centerY() + 3.5f, 9f, Color.rgb(16, 185, 129), true)
-    val syncText = "Supabase Realtime Sync Active"
-    kit.text(c, syncText, 360f - kit.measure(syncText, 9f), stripRect.centerY() + 3.5f, 9f, kit.muted)
-    y += 40f
 
     val s = devStats
-
-    // Hero Performance / Revenue Card
-    val revRect = RectF(16f, y, 374f, y + 110f)
-    kit.rounded(c, RectF(revRect.left, revRect.top + 2f, revRect.right, revRect.bottom + 4f), kit.glassShadow, 18f)
-    kit.rounded(c, revRect, kit.blue, 18f)
-
-    drawIcon(c, "zap", revRect.left + 28f, revRect.top + 24f, 15f, Color.rgb(253, 224, 71))
-    kit.text(c, "TRANSAKSI PLATFORM HARI INI", revRect.left + 42f, revRect.top + 28f, 9.5f, Color.argb(215, 255, 255, 255), true)
-    val livePill = "● LIVE DATA"
-    kit.text(c, livePill, revRect.right - kit.measure(livePill, 8.5f, true) - 20f, revRect.top + 28f, 8.5f, Color.rgb(134, 239, 172), true)
-
-    kit.text(c, formatRupiah(s.todayRevenue), revRect.left + 24f, revRect.top + 64f, 22f, Color.WHITE, true)
-
-    val chip1 = RectF(revRect.left + 20f, revRect.bottom - 34f, revRect.left + 172f, revRect.bottom - 12f)
-    kit.rounded(c, chip1, Color.argb(55, 255, 255, 255), 8f)
-    kit.centerText(c, "${s.todayCount} Pesanan Hari Ini", chip1, 9.5f, Color.WHITE, true)
-
     val avgVal = if (s.todayCount > 0) s.todayRevenue / s.todayCount else 0
-    val chip2 = RectF(revRect.left + 180f, revRect.bottom - 34f, revRect.right - 20f, revRect.bottom - 12f)
-    kit.rounded(c, chip2, Color.argb(55, 255, 255, 255), 8f)
-    kit.centerText(c, "Rata-rata ${formatRupiah(avgVal)}", chip2, 9.5f, Color.WHITE, true)
-
-    y += 122f
-
-    // KPI Metrics Grid
-    kit.text(c, "Metrik Kunci Platform", 18f, y + 14f, 15f, kit.ink, true)
-    kit.text(c, "Performa & statistik realtime", 18f, y + 28f, 9.5f, kit.muted)
-    y += 36f
-
-    data class StatCard(val label: String, val value: String, val sub: String, val icon: String, val tintColor: Int, val iconColor: Int)
-
     val successRate = if (s.completed + s.cancelled > 0) ((s.completed * 100) / (s.completed + s.cancelled)) else 100
-    val kpiCards = listOf(
-        StatCard("Pembeli", s.totalBuyers.toString(), "Akun terdaftar", "person", Color.argb(35, 59, 130, 246), Color.rgb(37, 99, 235)),
-        StatCard("Penjual", s.totalSellers.toString(), "${s.activeStalls} warung buka", "store", Color.argb(35, 139, 92, 246), Color.rgb(124, 58, 237)),
-        StatCard("Warung Aktif", s.activeStalls.toString(), "Buka terima order", "checkCircle", Color.argb(35, 16, 185, 129), Color.rgb(16, 185, 129)),
-        StatCard("Total Pesanan", s.totalOrders.toString(), "Semua riwayat", "receipt", Color.argb(35, 100, 116, 139), Color.rgb(71, 85, 105)),
-        StatCard("Perlu Diproses", s.pending.toString(), "Antrean pesanan", "clock", Color.argb(40, 245, 158, 11), Color.rgb(217, 119, 6)),
-        StatCard("Order Selesai", s.completed.toString(), "Transaksi tuntas", "check", Color.argb(35, 16, 185, 129), Color.rgb(16, 185, 129)),
-        StatCard("Dibatalkan", s.cancelled.toString(), "Pesanan gugur", "close", Color.argb(35, 239, 68, 68), Color.rgb(220, 38, 38)),
-        StatCard("Rasio Sukses", "$successRate%", "Tingkat tuntas", "zap", Color.argb(35, 6, 182, 212), Color.rgb(8, 145, 178)),
-    )
 
-    val cardW = 173f
-    val cardH = 68f
-    kpiCards.forEachIndexed { index, item ->
-        val col = index % 2
-        val row = index / 2
-        val left = 16f + col * 185f
-        val topY = y + row * 76f
+    // 1. Open Editorial Revenue Summary (No heavy box)
+    if (visible(y, y + 88f)) {
+        kit.text(c, "Volume Transaksi Hari Ini", 20f, y + 12f, 11.5f, kit.muted)
+        drawRightBadge(c, kit, "Aktif · Realtime", 370f, y, kit.successSoft, kit.success, 9f, radius = 5f)
 
-        if (topY + cardH >= 126f && topY <= h) {
-            val r = RectF(left, topY, left + cardW, topY + cardH)
-            kit.card(c, r, 14f)
+        kit.text(c, formatRupiah(s.todayRevenue), 20f, y + 42f, 26f, kit.ink, true)
+        kit.text(
+            c,
+            "${s.todayCount} pesanan hari ini  ·  Rata-rata ${formatRupiah(avgVal)}  ·  Selesai $successRate%",
+            20f,
+            y + 62f,
+            11f,
+            kit.muted
+        )
 
-            val iconBox = RectF(left + 10f, topY + 12f, left + 44f, topY + 46f)
-            kit.rounded(c, iconBox, item.tintColor, 10f)
-            drawIcon(c, item.icon, iconBox.centerX(), iconBox.centerY(), 16f, item.iconColor)
-
-            kit.text(c, item.label, left + 52f, topY + 24f, 10f, kit.muted)
-            kit.text(c, item.value, left + 52f, topY + 45f, 17f, kit.ink, true)
-            kit.text(c, item.sub, left + 52f, topY + 58f, 8.5f, kit.muted)
+        // Clean thin progress bar
+        val total = (s.completed + s.pending + s.cancelled).coerceAtLeast(1)
+        val track = RectF(20f, y + 74f, 370f, y + 78f)
+        kit.rounded(c, track, kit.divider, 2f)
+        val compW = 350f * (s.completed.toFloat() / total)
+        val pendW = 350f * (s.pending.toFloat() / total)
+        if (compW > 0f) {
+            kit.rounded(c, RectF(20f, track.top, 20f + compW, track.bottom), kit.success, 2f)
+        }
+        if (pendW > 0f) {
+            kit.rounded(c, RectF(20f + compW, track.top, 20f + compW + pendW, track.bottom), kit.blue, 2f)
         }
     }
+    y += 94f
 
-    y += 4 * 76f + 12f
-
-    // Daily Reset & Platform Operations Panel
-    val resetCard = RectF(16f, y, 374f, y + 92f)
-    if (resetCard.bottom >= 126f && resetCard.top <= h) {
-        kit.card(c, resetCard, 16f)
-        val shieldBox = RectF(28f, y + 12f, 54f, y + 38f)
-        kit.rounded(c, shieldBox, Color.argb(35, 239, 68, 68), 8f)
-        drawIcon(c, "shield", shieldBox.centerX(), shieldBox.centerY(), 14f, kit.danger)
-
-        kit.text(c, "Platform Ops: Reset Harian (00:00 WIB)", 62f, y + 27f, 12f, kit.ink, true)
-        kit.text(c, "Tutup antrean aktif, bersihkan log info/warn, dan nolkan counter ⚠ akun.", 28f, y + 46f, 9.5f, kit.muted)
-
-        val resetBtn = RectF(28f, y + 54f, 362f, y + 84f)
-        kit.rounded(c, resetBtn, kit.danger, 10f)
-        drawIcon(c, "refresh", resetBtn.left + 24f, resetBtn.centerY(), 13f, Color.WHITE)
-        val resetLabel = if (devResetting) "Mereset Sistem Monitor..." else "Eksekusi Reset Harian Monitor"
-        kit.centerText(c, resetLabel, resetBtn, 11f, Color.WHITE, true)
-        bounds.putVisible("devReset", resetBtn, 126f)
-        press(c, "devReset", resetBtn, 10f)
+    // 2. Clean 4-Column Metric Strip (Single surface, hairline dividers)
+    val strip = RectF(20f, y, 370f, y + 58f)
+    if (visible(strip.top, strip.bottom)) {
+        kit.rounded(c, strip, kit.card, 8f, kit.border)
+        val colW = strip.width() / 4f
+        val cols = listOf(
+            Triple(s.totalBuyers.toString(), "Pembeli", kit.ink),
+            Triple("${s.activeStalls}/${s.totalSellers}", "Warung Buka", kit.blue),
+            Triple(s.pending.toString(), "Antrean", if (s.pending > 0) kit.star else kit.ink),
+            Triple(s.totalOrders.toString(), "Total Order", kit.ink)
+        )
+        cols.forEachIndexed { idx, (valStr, label, clr) ->
+            val left = strip.left + idx * colW
+            if (idx > 0) kit.line(c, left, strip.top + 10f, left, strip.bottom - 10f, kit.divider)
+            kit.text(c, valStr, left + 12f, strip.top + 26f, 15.5f, clr, true)
+            kit.text(c, label, left + 12f, strip.top + 44f, 10f, kit.muted)
+        }
     }
+    y += 76f
 
-    y += 104f
+    // 3. Minimal Daily Reset Row
+    val resetRow = RectF(20f, y, 370f, y + 52f)
+    if (visible(resetRow.top, resetRow.bottom)) {
+        kit.rounded(c, resetRow, kit.card, 8f, kit.border)
+        kit.text(c, "Reset Harian (00:00 WIB)", 32f, y + 22f, 13f, kit.ink, true)
+        kit.text(c, "Tutup order gantung & bersihkan log harian", 32f, y + 39f, 10.5f, kit.muted)
 
-    // Recent Live Orders Feed
-    kit.text(c, "Aktivitas Pesanan Realtime", 18f, y + 14f, 15f, kit.ink, true)
-    drawBadge(c, kit, "${devOrders.size} Order", 216f, y + 2f, kit.tint, kit.blue, 9f)
-    y += 28f
+        val btn = RectF(286f, y + 12f, 358f, y + 40f)
+        kit.rounded(c, btn, kit.dangerBorder, 6f)
+        kit.centerText(c, if (devResetting) "Proses..." else "Reset", btn, 11f, kit.danger, true)
+        bounds.putVisible("devReset", btn, HEADER_H, navClear)
+        press(c, "devReset", btn, 6f)
+    }
+    y += 72f
+
+    // 4. Open Recent Orders List (Hairline-divided, no individual card boxes)
+    if (visible(y, y + 24f)) {
+        kit.text(c, "Pesanan Terbaru", 20f, y + 14f, 14f, kit.ink, true)
+        kit.textRight(c, "${devOrders.size} total", 370f, y + 14f, 80f, 11f, kit.muted)
+        kit.line(c, 20f, y + 24f, 370f, y + 24f, kit.divider)
+    }
+    y += 26f
 
     if (devOrders.isEmpty()) {
-        val emptyRect = RectF(16f, y, 374f, y + 64f)
-        kit.card(c, emptyRect, 14f)
-        drawIcon(c, "inbox", emptyRect.centerX(), emptyRect.centerY() - 8f, 16f, kit.muted)
-        kit.centerText(c, "Belum ada aktivitas pesanan tercatat.", RectF(emptyRect.left, emptyRect.centerY() + 8f, emptyRect.right, emptyRect.bottom), 11.5f, kit.muted)
-        y += 72f
+        if (visible(y, y + 48f)) {
+            kit.text(c, "Belum ada pesanan hari ini.", 20f, y + 28f, 12f, kit.muted)
+        }
+        y += 52f
     } else {
         devOrders.take(8).forEach { order ->
-            val orderH = 80f
-            if (y + orderH >= 126f && y <= h) {
-                val cardRect = RectF(16f, y, 374f, y + orderH)
-                kit.card(c, cardRect, 14f)
-
-                // Top row: ID, Pickup Code, Status
-                val idStr = "#${order.id.take(8).uppercase()}"
-                kit.text(c, idStr, 30f, y + 22f, 11f, kit.ink, true)
-                val codeStr = "[ KODE ${order.pickupCode} ]"
-                kit.text(c, codeStr, 96f, y + 22f, 10f, kit.blue, true)
-
-                val (stBg, stFg) = orderStatusBadgeColors(order.status)
-                drawRightBadge(c, kit, statusLabelShort(order.status).uppercase(), 360f, y + 10f, stBg, stFg, 8.5f)
-
-                // Middle row: Buyer Name & Total IDR
-                drawIcon(c, "person", 36f, y + 42f, 12f, kit.muted)
-                kit.text(c, order.buyerName.take(20), 48f, y + 46f, 12.5f, kit.ink, true)
-                val totalStr = formatRupiah(order.totalIdr)
-                kit.text(c, totalStr, 360f - kit.measure(totalStr, 13f, true), y + 46f, 13f, kit.blue, true)
-
-                // Bottom row: Payment info & Items summary
-                val payStr = "${order.paymentMethod?.uppercase() ?: "TUNAI"} · ${if (order.paymentStatus == "paid") "LUNAS" else "BELUM BAYAR"}"
-                kit.text(c, payStr, 30f, y + 66f, 9.5f, kit.muted)
-                val timeStr = order.timeLabel
-                kit.text(c, timeStr, 360f - kit.measure(timeStr, 9.5f), y + 66f, 9.5f, kit.muted)
-
-                bounds.putVisible("devOrder:${order.id}", cardRect, 126f)
-                press(c, "devOrder:${order.id}", cardRect, 14f)
-            }
-            y += orderH + 8f
+            y = drawDevOrderRow(c, order, y, ::visible, navClear)
         }
     }
 
-    contentHeight = (y - off) + 40f
+    contentHeight = (y - off) + GLASS_TOP_OFFSET + 28f
 }
 
-// ================= TAB 2 & 3: USERS & SELLERS =================
+// ================= TAB 2 & 3: USERS (BUYERS) & SELLERS =================
 
-private fun JajaninView.drawDevUsers(c: Canvas, w: Float, h: Float, off: Float, sellersOnly: Boolean) {
-    val top = devContentTop()
-    var y = top + 8f + off
+private fun JajaninView.drawDevUsers(
+    c: Canvas,
+    w: Float,
+    h: Float,
+    off: Float,
+    navClear: Float,
+    sellersOnly: Boolean
+) {
+    var y = HEADER_H + 14f + off
+    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
 
-    val title = if (sellersOnly) "Mitra Penjual & Warung" else "Manajemen Pengguna"
-    val sub = if (sellersOnly) "Kelola akun penjual, status toko, dan kemitraan kantin" else "Kelola seluruh akun pengguna, verifikasi, dan moderasi"
-    kit.text(c, title, 18f, y + 14f, 16f, kit.ink, true)
-    kit.text(c, sub, 18f, y + 28f, 9.5f, kit.muted)
-    y += 34f
-
-    // Search Bar with crisp search icon and clear indicator
-    val search = RectF(16f, y, 374f, y + 42f)
-    kit.card(c, search, 13f)
-    drawIcon(c, "search", search.left + 20f, search.centerY(), 14f, kit.blue)
-    val queryText = if (devQuery.isBlank()) "Cari nama, email, nomor HP..." else devQuery
-    val queryColor = if (devQuery.isBlank()) kit.muted else kit.ink
-    kit.text(c, queryText, search.left + 36f, search.centerY() + 4f, 11.5f, queryColor, devQuery.isNotBlank())
-    if (devQuery.isNotBlank()) {
-        drawIcon(c, "close", search.right - 18f, search.centerY(), 12f, kit.muted)
+    // Search Input (Clean subtle bar, Radius 8f)
+    val search = RectF(20f, y, 370f, y + 38f)
+    if (visible(search.top, search.bottom)) {
+        kit.rounded(c, search, kit.card, 8f, if (devQuery.isNotBlank()) kit.blue else kit.border)
+        drawIcon(c, "search", search.left + 16f, search.centerY(), 14f, kit.muted)
+        val placeholder = if (sellersOnly) "Cari nama penjual, NIS, atau nama toko..." else "Cari nama pembeli, NIS, atau email..."
+        val queryText = if (devQuery.isBlank()) placeholder else devQuery
+        val queryColor = if (devQuery.isBlank()) kit.muted else kit.ink
+        kit.textEllipsized(c, queryText, search.left + 34f, search.centerY() + 4f, 296f, 11.5f, queryColor, devQuery.isNotBlank())
+        if (devQuery.isNotBlank()) {
+            drawIcon(c, "close", search.right - 16f, search.centerY(), 12f, kit.muted)
+        }
+        bounds.putVisible("devSearch", search, HEADER_H, navClear)
+        press(c, "devSearch", search, 8f)
     }
-    bounds.putVisible("devSearch", search, 126f)
-    press(c, "devSearch", search, 13f)
-    y += 50f
+    y += 48f
 
-    // Filter Chips with dynamic counts
-    val filters = if (sellersOnly) listOf("Semua", "Aktif", "Ditangguhkan") else listOf("Semua", "Buyer", "Seller", "Ditangguhkan")
-    var chipX = 16f
+    // Role-specific base list (No duplicate Seller tab inside Users tab!)
+    val rolePool = devUsers.filter { u ->
+        if (sellersOnly) u.role == "seller" else u.role != "seller"
+    }
+
+    val filters = if (sellersOnly) {
+        listOf("Semua", "Buka", "Tutup", "Ditangguhkan")
+    } else {
+        listOf("Semua", "Aktif", "Ditangguhkan")
+    }
+    val activeFilter = if (devUserFilter in filters) devUserFilter else "Semua"
+
+    var chipX = 20f
     filters.forEach { filter ->
         val count = when (filter) {
-            "Buyer" -> devUsers.count { it.role == "buyer" }
-            "Seller" -> devUsers.count { it.role == "seller" }
-            "Aktif" -> devUsers.count { if (sellersOnly) it.role == "seller" && it.accountStatus == "active" else it.accountStatus == "active" }
-            "Ditangguhkan" -> devUsers.count { if (sellersOnly) it.role == "seller" && it.accountStatus == "suspended" else it.accountStatus == "suspended" }
-            else -> if (sellersOnly) devUsers.count { it.role == "seller" } else devUsers.size
+            "Aktif" -> rolePool.count { it.accountStatus == "active" }
+            "Buka" -> rolePool.count { it.stallOpen == true }
+            "Tutup" -> rolePool.count { it.stallOpen == false }
+            "Ditangguhkan" -> rolePool.count { it.accountStatus == "suspended" }
+            else -> rolePool.size
         }
         val label = "$filter ($count)"
-        val chipW = kit.measure(label, 9.5f, true) + 20f
-        val chip = RectF(chipX, y, chipX + chipW, y + 28f)
-        val active = devUserFilter == filter
+        val chipW = kit.measure(label, 10f, true) + 20f
+        val chip = RectF(chipX, y, chipX + chipW, y + 26f)
+        val isSel = activeFilter == filter
 
-        kit.rounded(c, chip, if (active) kit.blue else kit.card, 14f, if (active) null else kit.border)
-        kit.centerText(c, label, chip, 9.5f, if (active) Color.WHITE else kit.ink, true)
-        bounds.putVisible("devFilter:$filter", chip, 126f)
-        press(c, "devFilter:$filter", chip, 14f)
+        if (visible(chip.top, chip.bottom)) {
+            kit.rounded(c, chip, if (isSel) kit.blue else kit.card, 6f, if (isSel) null else kit.border)
+            kit.centerText(c, label, chip, 10f, if (isSel) Color.WHITE else kit.muted, true)
+            bounds.putVisible("devFilter:$filter", chip, HEADER_H, navClear)
+            press(c, "devFilter:$filter", chip, 6f)
+        }
         chipX += chipW + 6f
     }
     y += 36f
 
-    val rows = devUsers.filter { u ->
-        (!sellersOnly || u.role == "seller") &&
-            (devQuery.isBlank() ||
-                u.displayName.contains(devQuery.trim(), true) ||
-                u.stallName.orEmpty().contains(devQuery.trim(), true) ||
-                u.email.contains(devQuery.trim(), true) ||
-                u.phone.contains(devQuery.trim())) &&
-            when (devUserFilter) {
-                "Buyer" -> u.role == "buyer"
-                "Seller" -> u.role == "seller"
+    val rows = rolePool.filter { u ->
+        (devQuery.isBlank() ||
+            u.displayName.contains(devQuery.trim(), true) ||
+            u.stallName.orEmpty().contains(devQuery.trim(), true) ||
+            u.email.contains(devQuery.trim(), true) ||
+            u.phone.contains(devQuery.trim())) &&
+            when (activeFilter) {
                 "Aktif" -> u.accountStatus == "active"
+                "Buka" -> u.stallOpen == true
+                "Tutup" -> u.stallOpen == false
                 "Ditangguhkan" -> u.accountStatus == "suspended"
                 else -> true
             }
     }
 
     if (devUsersLoading && devUsers.isEmpty()) {
-        val loadRect = RectF(16f, y, 374f, y + 80f)
-        kit.card(c, loadRect, 14f)
-        kit.centerText(c, "Memuat daftar akun pengguna...", loadRect, 12f, kit.muted)
+        kit.text(c, "Memuat daftar akun...", 20f, y + 24f, 12f, kit.muted)
         contentHeight = 0f
         return
     }
 
-    // Selected User Detailed Inspector Modal Card
-    val selected = devUsers.firstOrNull { it.id == devSelectedUserId }
-    if (selected != null) {
-        val hasStall = selected.role == "seller"
-        val isBuyer = selected.role == "buyer"
-        val inspectorH = if (isBuyer) 220f else if (hasStall) 214f else 184f
-        val card = RectF(16f, y, 374f, y + inspectorH)
-
-        // Inspector card container with glowing border
-        kit.rounded(c, RectF(card.left, card.top + 2f, card.right, card.bottom + 4f), kit.glassShadow, 16f)
-        kit.rounded(c, card, kit.card, 16f, kit.blue)
-
-        // User Avatar Circle
-        val (roleBg, roleFg) = roleBadgeColors(selected.role)
-        drawAvatar(c, kit, selected.displayName, 42f, y + 36f, 20f, roleFg)
-
-        // Name & Identity (Seller shows Real Name + Store Name clearly for Developer)
-        val inspectorTitle = if (selected.role == "seller" && !selected.stallName.isNullOrBlank()) {
-            "${selected.displayName} · ${selected.stallName}"
-        } else {
-            selected.displayName
-        }
-        kit.textEllipsized(c, inspectorTitle, 70f, y + 26f, 258f, 14f, kit.ink, true)
-        val subEmail = selected.email.take(28) + if (selected.phone.isNotBlank()) " · ${selected.phone}" else ""
-        kit.text(c, subEmail, 70f, y + 42f, 10f, kit.muted)
-
-        // Role & Account Status Badges
-        val roleW = drawBadge(c, kit, selected.role.uppercase(), 70f, y + 48f, roleBg, roleFg, 8.5f)
-        val (stBg, stFg) = accountStatusBadgeColors(selected.accountStatus)
-        drawBadge(c, kit, selected.accountStatus.uppercase(), 70f + roleW + 6f, y + 48f, stBg, stFg, 8.5f)
-
-        // Close Inspector Button
-        val closeBtn = RectF(334f, y + 10f, 364f, y + 40f)
-        drawIcon(c, "close", closeBtn.centerX(), closeBtn.centerY(), 14f, kit.muted)
-        bounds.putVisible("devUserClose", closeBtn, 126f)
-        press(c, "devUserClose", closeBtn, 10f)
-
-        // User Stats Matrix ribbon
-        val ribbon = RectF(28f, y + 74f, 362f, y + 106f)
-        kit.rounded(c, ribbon, kit.tint, 10f)
-        val colW = ribbon.width() / 3f
-        kit.centerText(c, "${selected.orderCount} Order", RectF(ribbon.left, ribbon.top, ribbon.left + colW, ribbon.bottom), 10f, kit.ink, true)
-        val warnClr = if (selected.warningCount > 0) kit.danger else kit.muted
-        kit.centerText(c, "⚠ ${selected.warningCount} Peringatan", RectF(ribbon.left + colW, ribbon.top, ribbon.left + colW * 2f, ribbon.bottom), 10f, warnClr, true)
-        val statusLabel = if (selected.accountStatus == "active") "Akun Aktif" else "Ditangguhkan"
-        kit.centerText(c, statusLabel, RectF(ribbon.left + colW * 2f, ribbon.top, ribbon.right, ribbon.bottom), 10f, kit.ink, true)
-
-        var actY = y + 116f
-
-        // Stall Status (if seller)
-        if (selected.role == "seller") {
-            val stallStr = "Warung: ${selected.stallName ?: "Belum ada warung"}${selected.stallOpen?.let { if (it) " (Buka)" else " (Tutup)" } ?: ""}"
-            kit.text(c, stallStr.take(44), 30f, actY + 12f, 10.5f, kit.blue, true)
-            actY += 22f
-        }
-
-        // Action Buttons Row 1: Peringatkan & Tangguhkan/Aktifkan
-        val b1 = RectF(28f, actY, 190f, actY + 34f)
-        val b2 = RectF(198f, actY, 362f, actY + 34f)
-
-        kit.rounded(c, b1, Color.argb(35, 245, 158, 11), 10f)
-        drawIcon(c, "alert", b1.left + 18f, b1.centerY(), 13f, Color.rgb(217, 119, 6))
-        kit.centerText(c, "Peringatkan User", RectF(b1.left + 12f, b1.top, b1.right, b1.bottom), 10.5f, Color.rgb(217, 119, 6), true)
-        bounds.putVisible("devWarn:${selected.id}", b1, 126f)
-        press(c, "devWarn:${selected.id}", b1, 10f)
-
-        val suspended = selected.accountStatus == "suspended"
-        val b2Bg = if (suspended) kit.successSoft else Color.argb(35, 239, 68, 68)
-        val b2Fg = if (suspended) kit.success else kit.danger
-        kit.rounded(c, b2, b2Bg, 10f)
-        kit.centerText(c, if (suspended) "Aktifkan Akun" else "Tangguhkan Akun", b2, 10.5f, b2Fg, true)
-        bounds.putVisible(if (suspended) "devActive:${selected.id}" else "devSuspend:${selected.id}", b2, 126f)
-        press(c, if (suspended) "devActive:${selected.id}" else "devSuspend:${selected.id}", b2, 10f)
-
-        actY += 40f
-
-        // Action Buttons Row 2: Stall Toggle (if seller) or Seller Invite (if buyer)
-        if (selected.stallId != null) {
-            val b3 = RectF(28f, actY, 362f, actY + 32f)
-            kit.rounded(c, b3, kit.bg, 10f, kit.border)
-            val isOpen = selected.stallOpen == true
-            kit.centerText(c, if (isOpen) "Tutup Warung Sementara" else "Buka Warung Kembali", b3, 10f, kit.ink, true)
-            bounds.putVisible("devStall:${selected.stallId}:${!isOpen}", b3, 126f)
-            press(c, "devStall:${selected.stallId}:${!isOpen}", b3, 10f)
-        } else if (selected.role == "buyer") {
-            val pending = devInvites.firstOrNull { it.targetUserId == selected.id && it.status == "pending" }
-            val inviteBtn = RectF(28f, actY, 362f, actY + 34f)
-            if (pending != null) {
-                kit.rounded(c, inviteBtn, kit.warnSoft, 10f)
-                kit.centerText(c, "Undangan Menunggu · Batalkan Undangan", inviteBtn, 10.5f, Color.rgb(183, 116, 0), true)
-                bounds.putVisible("devInviteCancel:${pending.id}", inviteBtn, 126f)
-                press(c, "devInviteCancel:${pending.id}", inviteBtn, 10f)
-            } else {
-                kit.rounded(c, inviteBtn, kit.tint, 10f)
-                drawIcon(c, "plus", inviteBtn.left + 24f, inviteBtn.centerY(), 13f, kit.blue)
-                kit.centerText(c, "Undang Akun Menjadi Penjual", inviteBtn, 10.5f, kit.blue, true)
-                bounds.putVisible("devInvite:${selected.id}", inviteBtn, 126f)
-                press(c, "devInvite:${selected.id}", inviteBtn, 10f)
-            }
-        }
-
-        y += inspectorH + 12f
-    }
-
-    // User Cards List
     if (rows.isEmpty()) {
-        val emptyRect = RectF(16f, y, 374f, y + 64f)
-        kit.card(c, emptyRect, 14f)
-        kit.centerText(c, "Tidak ada akun pengguna yang cocok.", emptyRect, 12f, kit.muted)
-        y += 72f
+        if (visible(y, y + 50f)) {
+            kit.text(c, "Tidak ada akun yang cocok.", 20f, y + 26f, 12f, kit.muted)
+        }
+        y += 56f
     } else {
+        kit.line(c, 20f, y, 370f, y, kit.divider)
         rows.forEach { u ->
-            val userH = 68f
-            if (y + userH >= 126f && y <= h) {
-                val card = RectF(16f, y, 374f, y + userH)
-                val isSelected = u.id == devSelectedUserId
-                kit.card(c, card, 14f)
-                if (isSelected) {
-                    kit.rounded(c, card, Color.TRANSPARENT, 14f, kit.blue)
+            val isExpanded = u.id == devSelectedUserId
+            val baseH = 66f
+            val expandH = if (isExpanded) 86f else 0f
+            val rowH = baseH + expandH
+
+            if (visible(y, y + rowH)) {
+                val rowRect = RectF(20f, y, 370f, y + baseH)
+                if (isExpanded) {
+                    kit.rounded(c, RectF(16f, y + 2f, 374f, y + rowH - 2f), kit.card, 8f, kit.border)
                 }
 
-                // Avatar
+                val cleanName = SupabaseRepository.extractCleanName(u.displayName).ifBlank { u.displayName }
+                val nis = SupabaseRepository.extractNis(u.displayName)
                 val (_, roleFg) = roleBadgeColors(u.role)
-                drawAvatar(c, kit, u.displayName, 42f, y + 34f, 18f, roleFg)
 
-                // Online/Status Dot on avatar corner
-                val isSuspended = u.accountStatus == "suspended"
-                val statusDotColor = if (isSuspended) Color.rgb(239, 68, 68) else Color.rgb(16, 185, 129)
-                c.drawCircle(54f, y + 46f, 4f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = statusDotColor })
+                // Clean Soft Avatar
+                val av = RectF(20f, y + 13f, 56f, y + 49f)
+                kit.rounded(c, av, kit.tint, 8f)
+                val initial = cleanName.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "U"
+                kit.centerText(c, initial, av, 15f, roleFg, true)
 
-                // Details (For sellers: show both Real Name & Store Name)
-                val primaryTitle = if (u.role == "seller" && !u.stallName.isNullOrBlank()) {
-                    "${u.displayName}  ·  Toko: ${u.stallName}"
+                // Primary Line: Clean Name (+ Store Name for Sellers)
+                val titleText = if (sellersOnly && !u.stallName.isNullOrBlank()) {
+                    "$cleanName  ·  ${u.stallName}"
                 } else {
-                    u.displayName
+                    cleanName
                 }
-                kit.textEllipsized(c, primaryTitle, 68f, y + 26f, 224f, 13f, kit.ink, true)
-                val subline = "${u.email.take(24)}${if (u.phone.isNotBlank()) " · ${u.phone}" else ""}"
-                kit.textEllipsized(c, subline, 68f, y + 43f, 224f, 10f, kit.muted)
-                val roleCaption = "${u.role.uppercase()} · ${u.accountStatus.uppercase()}"
-                kit.text(c, roleCaption, 68f, y + 57f, 8.5f, kit.muted)
+                kit.textEllipsized(c, titleText, 68f, y + 25f, 215f, 13.5f, kit.ink, true)
 
-                // Right stack: Order count & Warning badge
-                val rightX = 360f
-                if (u.warningCount > 0) {
-                    drawRightBadge(c, kit, "⚠ ${u.warningCount}", rightX, y + 16f, Color.argb(40, 239, 68, 68), kit.danger, 9f)
+                // Secondary Line: NIS + Phone / Email
+                val subParts = mutableListOf<String>()
+                if (nis.isNotBlank()) subParts += "NIS $nis"
+                if (u.phone.isNotBlank()) subParts += displayLocalPhone(u.phone)
+                subParts += u.email
+                kit.textEllipsized(c, subParts.joinToString("  ·  "), 68f, y + 44f, 220f, 10.5f, kit.muted)
+
+                // Right Column: Status / Order Count
+                val isSuspended = u.accountStatus == "suspended"
+                when {
+                    isSuspended -> drawRightBadge(c, kit, "Ditangguhkan", 370f, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
+                    u.warningCount > 0 -> drawRightBadge(c, kit, "⚠ ${u.warningCount}", 370f, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
+                    sellersOnly && u.stallOpen != null -> {
+                        val open = u.stallOpen
+                        drawRightBadge(
+                            c,
+                            kit,
+                            if (open) "Buka" else "Tutup",
+                            370f,
+                            y + 12f,
+                            if (open) kit.successSoft else kit.tint,
+                            if (open) kit.success else kit.muted,
+                            8.5f,
+                            radius = 4f
+                        )
+                    }
                 }
-                val orderLabel = "${u.orderCount} order"
-                kit.text(c, orderLabel, rightX - kit.measure(orderLabel, 10f, true), y + 48f, 10f, kit.ink, true)
+                kit.textRight(c, "${u.orderCount} pesanan", 370f, y + 44f, 80f, 10.5f, kit.muted)
 
-                if (u.role == "seller" && u.stallOpen != null) {
-                    val stallStatus = if (u.stallOpen) "Buka" else "Tutup"
-                    val stallColor = if (u.stallOpen) Color.rgb(16, 185, 129) else kit.muted
-                    kit.text(c, stallStatus, rightX - kit.measure(stallStatus, 9f), y + 60f, 9f, stallColor)
+                bounds.putVisible("devUser:${u.id}", rowRect, HEADER_H, navClear)
+                press(c, "devUser:${u.id}", rowRect, 6f)
+
+                // Inline Expanded Actions (Calm, compact buttons right inside the row)
+                if (isExpanded) {
+                    kit.line(c, 28f, y + baseH - 2f, 362f, y + baseH - 2f, kit.divider)
+                    val btnY = y + baseH + 8f
+
+                    // Row 1: Peringatkan & Tangguhkan/Aktifkan
+                    val b1 = RectF(28f, btnY, 190f, btnY + 32f)
+                    val b2 = RectF(198f, btnY, 362f, btnY + 32f)
+
+                    kit.rounded(c, b1, kit.warnBox, 6f)
+                    kit.centerText(c, "Kirim Peringatan", b1, 10.5f, kit.star, true)
+                    bounds.putVisible("devWarn:${u.id}", b1, HEADER_H, navClear)
+                    press(c, "devWarn:${u.id}", b1, 6f)
+
+                    val b2Bg = if (isSuspended) kit.successSoft else kit.dangerBorder
+                    val b2Fg = if (isSuspended) kit.success else kit.danger
+                    kit.rounded(c, b2, b2Bg, 6f)
+                    kit.centerText(c, if (isSuspended) "Aktifkan Akun" else "Tangguhkan Akun", b2, 10.5f, b2Fg, true)
+                    bounds.putVisible(if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, HEADER_H, navClear)
+                    press(c, if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, 6f)
+
+                    // Row 2: Stall Toggle (for Seller) or Invite to Seller (for Buyer)
+                    val b3 = RectF(28f, btnY + 38f, 362f, btnY + 68f)
+                    if (u.stallId != null) {
+                        val isOpen = u.stallOpen == true
+                        kit.rounded(c, b3, kit.tint, 6f)
+                        kit.centerText(c, if (isOpen) "Tutup Warung Sementara" else "Buka Kembali Warung", b3, 10.5f, kit.blue, true)
+                        bounds.putVisible("devStall:${u.stallId}:${!isOpen}", b3, HEADER_H, navClear)
+                        press(c, "devStall:${u.stallId}:${!isOpen}", b3, 6f)
+                    } else if (u.role == "buyer") {
+                        val pending = devInvites.firstOrNull { it.targetUserId == u.id && it.status == "pending" }
+                        if (pending != null) {
+                            kit.rounded(c, b3, kit.warnSoft, 6f)
+                            kit.centerText(c, "Batalkan Undangan Penjual", b3, 10.5f, kit.blue, true)
+                            bounds.putVisible("devInviteCancel:${pending.id}", b3, HEADER_H, navClear)
+                            press(c, "devInviteCancel:${pending.id}", b3, 6f)
+                        } else {
+                            kit.rounded(c, b3, kit.tint, 6f)
+                            kit.centerText(c, "Undang Menjadi Penjual", b3, 10.5f, kit.blue, true)
+                            bounds.putVisible("devInvite:${u.id}", b3, HEADER_H, navClear)
+                            press(c, "devInvite:${u.id}", b3, 6f)
+                        }
+                    }
+                } else {
+                    kit.line(c, 20f, y + rowH, 370f, y + rowH, kit.divider)
                 }
-
-                bounds.putVisible("devUser:${u.id}", card, 126f)
-                press(c, "devUser:${u.id}", card, 14f)
             }
-            y += userH + 8f
+            y += rowH
         }
     }
 
-    contentHeight = (y - off) + 40f
+    contentHeight = (y - off) + GLASS_TOP_OFFSET + 28f
 }
 
 // ================= TAB 4: ORDERS =================
 
-private fun JajaninView.drawDevOrders(c: Canvas, w: Float, h: Float, off: Float) {
-    val top = devContentTop()
-    var y = top + 8f + off
+private fun JajaninView.drawDevOrders(c: Canvas, w: Float, h: Float, off: Float, navClear: Float) {
+    var y = HEADER_H + 14f + off
+    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
 
-    kit.text(c, "Platform Order Inspector", 18f, y + 14f, 16f, kit.ink, true)
-    kit.text(c, "Audit dan pantau seluruh transaksi kantin secara langsung", 18f, y + 28f, 9.5f, kit.muted)
-    y += 34f
-
-    // Summary banner
-    val summaryRect = RectF(16f, y, 374f, y + 36f)
-    kit.rounded(c, summaryRect, kit.tint, 10f)
-    kit.text(c, "${devOrders.size} Pesanan Terdata", 30f, summaryRect.centerY() + 3.5f, 10.5f, kit.ink, true)
-    val totalRevenue = devOrders.sumOf { it.totalIdr }
-    val revStr = "Total: ${formatRupiah(totalRevenue)}"
-    kit.text(c, revStr, 360f - kit.measure(revStr, 11f, true), summaryRect.centerY() + 3.5f, 11f, kit.blue, true)
-    y += 46f
-
-    if (devError != null && devOrders.isEmpty()) {
-        val errRect = RectF(16f, y, 374f, y + 40f)
-        kit.rounded(c, errRect, Color.argb(35, 239, 68, 68), 12f, kit.dangerBorder)
-        kit.centerText(c, devError ?: "", errRect, 11f, kit.danger)
-        y += 48f
+    // Compact summary strip
+    val summary = RectF(20f, y, 370f, y + 48f)
+    if (visible(summary.top, summary.bottom)) {
+        kit.rounded(c, summary, kit.card, 8f, kit.border)
+        val activeCount = devOrders.count { !it.status.equals("completed", true) && !it.status.equals("cancelled", true) }
+        val totalRev = devOrders.filter { !it.status.equals("cancelled", true) }.sumOf { it.totalIdr }
+        kit.text(c, "${devOrders.size} Pesanan  ·  $activeCount Aktif", 32f, summary.centerY() + 4f, 12f, kit.ink, true)
+        kit.textRight(c, formatRupiah(totalRev), 358f, summary.centerY() + 4f, 140f, 12.5f, kit.blue, true)
     }
+    y += 60f
 
     if (devOrdersLoading && devOrders.isEmpty()) {
-        val loadRect = RectF(16f, y, 374f, y + 80f)
-        kit.card(c, loadRect, 14f)
-        kit.centerText(c, "Memuat data seluruh pesanan...", loadRect, 12f, kit.muted)
+        kit.text(c, "Memuat pesanan...", 20f, y + 24f, 12f, kit.muted)
         contentHeight = 0f
         return
     }
 
     if (devOrders.isEmpty()) {
-        val emptyRect = RectF(16f, y, 374f, y + 64f)
-        kit.card(c, emptyRect, 14f)
-        drawIcon(c, "inbox", emptyRect.centerX(), emptyRect.centerY() - 8f, 16f, kit.muted)
-        kit.centerText(c, "Belum ada order masuk di platform.", RectF(emptyRect.left, emptyRect.centerY() + 8f, emptyRect.right, emptyRect.bottom), 11.5f, kit.muted)
-        y += 72f
+        if (visible(y, y + 50f)) {
+            kit.text(c, "Belum ada pesanan tercatat.", 20f, y + 26f, 12f, kit.muted)
+        }
+        y += 56f
     } else {
+        kit.line(c, 20f, y, 370f, y, kit.divider)
         devOrders.forEach { order ->
-            val expanded = devExpandedOrderId == order.id
-            val baseH = 88f
-            val itemLinesH = if (expanded) order.items.size * 22f + 36f else 0f
-            val cardH = baseH + itemLinesH
-
-            if (y + cardH >= 126f && y <= h) {
-                val cardRect = RectF(16f, y, 374f, y + cardH)
-                kit.card(c, cardRect, 14f)
-
-                // Top row: ID, Pickup Code, Status
-                val idStr = "#${order.id.take(8).uppercase()}"
-                kit.text(c, idStr, 30f, y + 22f, 11f, kit.ink, true)
-                val codeStr = "[ KODE ${order.pickupCode} ]"
-                kit.text(c, codeStr, 96f, y + 22f, 10f, kit.blue, true)
-
-                val (stBg, stFg) = orderStatusBadgeColors(order.status)
-                drawRightBadge(c, kit, statusLabelShort(order.status).uppercase(), 360f, y + 10f, stBg, stFg, 8.5f)
-
-                // Middle row: Buyer Name & Total IDR
-                drawIcon(c, "person", 36f, y + 42f, 12f, kit.muted)
-                kit.text(c, order.buyerName.take(20), 48f, y + 46f, 12.5f, kit.ink, true)
-                val totalStr = formatRupiah(order.totalIdr)
-                kit.text(c, totalStr, 360f - kit.measure(totalStr, 13.5f, true), y + 46f, 13.5f, kit.blue, true)
-
-                // Bottom row: Payment info & Time & Expansion Hint
-                val payStr = "${order.paymentMethod?.uppercase() ?: "TUNAI"} · ${if (order.paymentStatus == "paid") "LUNAS" else "BELUM BAYAR"}"
-                kit.text(c, payStr, 30f, y + 68f, 9.5f, kit.muted)
-                val timeStr = order.timeLabel
-                kit.text(c, timeStr, 170f, y + 68f, 9.5f, kit.muted)
-
-                val hintText = if (expanded) "Tutup ▲" else "Rincian ▼"
-                kit.text(c, hintText, 360f - kit.measure(hintText, 9.5f, true), y + 68f, 9.5f, kit.blue, true)
-
-                // Expanded Item Breakdown Table
-                if (expanded) {
-                    val lineY = y + 78f
-                    kit.line(c, 28f, lineY, 362f, lineY, kit.divider)
-                    var itemY = lineY + 16f
-                    order.items.forEach { item ->
-                        val qtyStr = "${item.quantity}×"
-                        drawBadge(c, kit, qtyStr, 30f, itemY - 11f, kit.tint, kit.blue, 8.5f, padX = 4f, padY = 2f)
-                        kit.text(c, item.itemName.take(24), 56f, itemY, 11f, kit.ink)
-                        val subtotal = formatRupiah(item.unitPriceIdr * item.quantity)
-                        kit.text(c, subtotal, 360f - kit.measure(subtotal, 11f, true), itemY, 11f, kit.muted, true)
-                        itemY += 22f
-                    }
-                    kit.line(c, 28f, itemY - 6f, 362f, itemY - 6f, kit.divider)
-                    kit.text(c, "Total Tagihan Pesanan", 30f, itemY + 10f, 10.5f, kit.ink, true)
-                    kit.text(c, totalStr, 360f - kit.measure(totalStr, 11.5f, true), itemY + 10f, 11.5f, kit.blue, true)
-                }
-
-                bounds.putVisible("devOrder:${order.id}", cardRect, 126f)
-                press(c, "devOrder:${order.id}", cardRect, 14f)
-            }
-            y += cardH + 8f
+            y = drawDevOrderRow(c, order, y, ::visible, navClear)
         }
     }
 
-    contentHeight = (y - off) + 40f
+    contentHeight = (y - off) + GLASS_TOP_OFFSET + 28f
+}
+
+private fun JajaninView.drawDevOrderRow(
+    c: Canvas,
+    order: com.jajanin.app.data.repository.AdminOrder,
+    y: Float,
+    visible: (Float, Float) -> Boolean,
+    navClear: Float,
+): Float {
+    val expanded = devExpandedOrderId == order.id
+    val baseH = 68f
+    val itemCount = maxOf(order.items.size, 1)
+    val roomBonus = if (order.pickupRoom.isNotBlank() || order.sellerStoreName.isNotBlank()) 22f else 0f
+    val targetExtraH = itemCount * 22f + 24f + roomBonus
+    val animFrac = if (!expanded) {
+        0f
+    } else if (devOrderExpandAt > 0L && motionEnabled()) {
+        val elapsed = (android.os.SystemClock.uptimeMillis() - devOrderExpandAt).coerceAtLeast(0L)
+        val raw = (elapsed / 180f).coerceIn(0f, 1f)
+        if (raw < 1f) postInvalidateOnAnimation()
+        1f - (1f - raw) * (1f - raw) * (1f - raw)
+    } else {
+        1f
+    }
+    val extraH = if (expanded) targetExtraH * animFrac else 0f
+    val rowH = baseH + extraH
+
+    if (visible(y, y + rowH)) {
+        val cardBounds = if (expanded) {
+            RectF(16f, y + 2f, 374f, y + rowH - 2f)
+        } else {
+            RectF(20f, y, 370f, y + rowH)
+        }
+        if (expanded) {
+            kit.rounded(c, cardBounds, kit.card, 8f, kit.border)
+        }
+
+        val cleanBuyer = SupabaseRepository.extractCleanName(order.buyerName).ifBlank { order.buyerName }
+        val nis = SupabaseRepository.extractNis(order.buyerName)
+        val title = if (nis.isNotBlank()) "$cleanBuyer · NIS $nis" else cleanBuyer
+
+        kit.textEllipsized(c, title, 22f, y + 24f, 215f, 13.5f, kit.ink, true)
+        val totalStr = formatRupiah(order.totalIdr)
+        kit.textRight(c, totalStr, 368f, y + 24f, 110f, 13.5f, kit.blue, true)
+
+        val payLabel = "${order.paymentMethod?.uppercase() ?: "TUNAI"} · ${if (order.paymentStatus == "paid") "Lunas" else "Belum bayar"}"
+        val meta = "#${order.id.take(6).uppercase()} · Kode ${order.pickupCode} · $payLabel"
+        val (stBg, stFg) = orderStatusBadgeColors(order.status)
+        val stText = statusLabelShort(order.status)
+        val stW = kit.measure(stText, 8.5f, true) + 14f
+        kit.textEllipsized(c, meta, 22f, y + 45f, 340f - stW - 8f, 10.5f, kit.muted)
+        drawRightBadge(c, kit, stText, 368f, y + 33f, stBg, stFg, 8.5f, radius = 4f)
+
+        if (expanded && extraH > 6f) {
+            val detailSave = c.save()
+            c.clipRect(16f, y + baseH - 4f, 374f, y + rowH - 2f)
+            kit.line(c, 24f, y + baseH - 4f, 366f, y + baseH - 4f, kit.divider)
+            var itemY = y + baseH + 14f
+            if (roomBonus > 0f) {
+                val storeInfo = buildString {
+                    if (order.sellerStoreName.isNotBlank()) append(order.sellerStoreName)
+                    if (order.pickupRoom.isNotBlank()) {
+                        if (isNotEmpty()) append(" · ")
+                        append("Ruang: ${order.pickupRoom}")
+                    }
+                }
+                kit.textEllipsized(c, storeInfo, 24f, itemY, 336f, 10.5f, kit.blue, true)
+                itemY += 22f
+            }
+            if (order.items.isEmpty()) {
+                kit.text(c, "Rincian item tidak tersedia.", 24f, itemY, 10.5f, kit.muted)
+            } else {
+                order.items.forEach { item ->
+                    kit.textEllipsized(c, "${item.quantity}×  ${item.itemName}", 24f, itemY, 230f, 11f, kit.ink)
+                    val sub = formatRupiah(item.unitPriceIdr * item.quantity)
+                    kit.textRight(c, sub, 366f, itemY, 100f, 11f, kit.muted, true)
+                    itemY += 22f
+                }
+            }
+            c.restoreToCount(detailSave)
+        } else {
+            kit.line(c, 20f, y + rowH, 370f, y + rowH, kit.divider)
+        }
+
+        press(c, "devOrder:${order.id}", cardBounds, if (expanded) 8f else 6f)
+        bounds.putVisible("devOrder:${order.id}", cardBounds, HEADER_H, navClear)
+    }
+    return y + rowH
 }
 
 // ================= TAB 5: WARN (MODERASI) =================
 
-private fun JajaninView.drawDevWarnings(c: Canvas, w: Float, h: Float, off: Float) {
-    val top = devContentTop()
-    var y = top + 8f + off
+private fun JajaninView.drawDevWarnings(c: Canvas, w: Float, h: Float, off: Float, navClear: Float) {
+    var y = HEADER_H + 14f + off
+    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
 
-    kit.text(c, "Riwayat & Log Moderasi", 18f, y + 14f, 16f, kit.ink, true)
-    kit.text(c, "Rekam jejak peringatan dan penegakan aturan platform", 18f, y + 28f, 9.5f, kit.muted)
-    y += 34f
-
-    // Overview metric banner
-    val summaryRect = RectF(16f, y, 374f, y + 36f)
-    kit.rounded(c, summaryRect, kit.tint, 10f)
-    val colW = summaryRect.width() / 3f
-    kit.centerText(c, "${devWarnings.size} Total Log", RectF(summaryRect.left, summaryRect.top, summaryRect.left + colW, summaryRect.bottom), 10f, kit.ink, true)
     val unreadW = devWarnings.count { !it.isRead }
-    kit.centerText(c, "$unreadW Belum Dibaca", RectF(summaryRect.left + colW, summaryRect.top, summaryRect.left + colW * 2f, summaryRect.bottom), 10f, if (unreadW > 0) kit.danger else kit.muted, true)
-    val critW = devWarnings.count { it.severity == "critical" }
-    kit.centerText(c, "$critW Kritis", RectF(summaryRect.left + colW * 2f, summaryRect.top, summaryRect.right, summaryRect.bottom), 10f, if (critW > 0) kit.danger else kit.muted, true)
-    y += 46f
-
-    if (devWarningsLoading && devWarnings.isEmpty()) {
-        val loadRect = RectF(16f, y, 374f, y + 80f)
-        kit.card(c, loadRect, 14f)
-        kit.centerText(c, "Memuat log peringatan...", loadRect, 12f, kit.muted)
-        contentHeight = 0f
-        return
+    if (visible(y, y + 24f)) {
+        kit.text(c, "${devWarnings.size} riwayat peringatan  ·  $unreadW belum dibaca", 20f, y + 14f, 11.5f, kit.muted)
+        kit.line(c, 20f, y + 24f, 370f, y + 24f, kit.divider)
     }
+    y += 26f
 
     if (devWarnings.isEmpty()) {
-        val emptyRect = RectF(16f, y, 374f, y + 64f)
-        kit.card(c, emptyRect, 14f)
-        drawIcon(c, "alert", emptyRect.centerX(), emptyRect.centerY() - 8f, 16f, kit.muted)
-        kit.centerText(c, "Belum ada peringatan moderasi terkirim.", RectF(emptyRect.left, emptyRect.centerY() + 8f, emptyRect.right, emptyRect.bottom), 11.5f, kit.muted)
-        y += 72f
+        if (visible(y, y + 50f)) {
+            kit.text(c, "Belum ada peringatan moderasi terkirim.", 20f, y + 26f, 12f, kit.muted)
+        }
+        y += 56f
     } else {
         devWarnings.forEach { warn ->
-            val msgLines = wrapText(kit, warn.message, 316f, 10f)
-            val lineCount = maxOf(msgLines.size, 1)
-            val cardH = 74f + lineCount * 16f
+            val msgLines = wrapText(kit, warn.message, 340f, 11f)
+            val rowH = 56f + maxOf(msgLines.size, 1) * 16f
 
-            if (y + cardH >= 126f && y <= h - 70f) {
-                val card = RectF(16f, y, 374f, y + cardH)
-                kit.card(c, card, 14f)
-
-                // Left Severity Accent Stripe
-                val sevColor = when (warn.severity.lowercase()) {
-                    "critical" -> Color.rgb(220, 38, 38)
-                    "warning" -> Color.rgb(217, 119, 6)
-                    else -> Color.rgb(37, 99, 235)
-                }
-                kit.rounded(c, RectF(card.left, card.top, card.left + 5f, card.bottom), sevColor, 2f)
-
-                // Top row: Severity badge & Read/Unread badge
+            if (visible(y, y + rowH)) {
                 val (sevBg, sevFg) = severityBadgeColors(warn.severity)
                 val sevLabel = when (warn.severity.lowercase()) {
-                    "critical" -> "KRITIS"
-                    "warning" -> "PERINGATAN"
-                    else -> "INFORMASI"
+                    "critical" -> "Kritis"
+                    "warning" -> "Peringatan"
+                    else -> "Info"
                 }
-                val badgeW = drawBadge(c, kit, sevLabel, 28f, y + 10f, sevBg, sevFg, 8.5f)
+                val bw = drawBadge(c, kit, sevLabel, 20f, y + 10f, sevBg, sevFg, 8.5f, radius = 4f)
+                kit.textEllipsized(c, warn.title, 20f + bw + 8f, y + 21f, 230f, 13f, kit.ink, true)
 
-                val readText = if (warn.isRead) "DIBACA ✓" else "BARU ●"
-                val readColor = if (warn.isRead) kit.muted else Color.rgb(217, 119, 6)
-                kit.text(c, readText, 360f - kit.measure(readText, 8.5f, true), y + 21f, 8.5f, readColor, true)
+                val readLabel = if (warn.isRead) "Dibaca" else "Baru"
+                kit.textRight(c, readLabel, 370f, y + 21f, 60f, 10f, if (warn.isRead) kit.muted else kit.star, true)
 
-                // Warning Title
-                kit.text(c, warn.title.take(32), 28f, y + 38f, 13f, kit.ink, true)
-
-                // Wrapped Message Body
-                var textY = y + 54f
+                var textY = y + 40f
                 msgLines.forEach { line ->
-                    kit.text(c, line, 28f, textY, 10f, kit.muted)
+                    kit.text(c, line, 20f, textY, 11f, kit.muted)
                     textY += 16f
                 }
 
-                // Footer: Target User ID & Timestamp
-                val targetStr = "Target: #${warn.targetUserId.take(8)}..."
-                kit.text(c, targetStr, 28f, card.bottom - 10f, 9f, kit.muted)
-                val timeStr = warn.createdAt.take(16).replace('T', ' ') + " WIB"
-                kit.text(c, timeStr, 360f - kit.measure(timeStr, 9f), card.bottom - 10f, 9f, kit.muted)
+                val targetUser = devUsers.firstOrNull { it.id == warn.targetUserId }
+                val targetName = targetUser?.let { SupabaseRepository.extractCleanName(it.displayName) }
+                    ?: "#${warn.targetUserId.take(8)}"
+                val foot = "Kepada: $targetName  ·  ${warn.createdAt.take(16).replace('T', ' ')}"
+                kit.text(c, foot, 20f, y + rowH - 9f, 9.5f, kit.muted)
+
+                kit.line(c, 20f, y + rowH, 370f, y + rowH, kit.divider)
             }
-            y += cardH + 8f
+            y += rowH
         }
     }
 
-    contentHeight = (y - off) + 100f
+    contentHeight = (y - off) + GLASS_TOP_OFFSET + 80f
 }
 
 // ================= TAB 6: INFO (PENGUMUMAN) =================
 
-private fun JajaninView.drawDevAnnouncements(c: Canvas, w: Float, h: Float, off: Float) {
-    val top = devContentTop()
-    var y = top + 8f + off
+private fun JajaninView.drawDevAnnouncements(c: Canvas, w: Float, h: Float, off: Float, navClear: Float) {
+    var y = HEADER_H + 14f + off
+    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
 
-    kit.text(c, "Siaran & Pengumuman Platform", 18f, y + 14f, 16f, kit.ink, true)
-    kit.text(c, "Broadcast pengumuman ke seluruh role pengguna aplikasi", 18f, y + 28f, 9.5f, kit.muted)
-    y += 34f
-
-    // Summary banner
-    val summaryRect = RectF(16f, y, 374f, y + 36f)
-    kit.rounded(c, summaryRect, kit.tint, 10f)
-    kit.text(c, "${devAnnouncements.size} Siaran Pengumuman", 30f, summaryRect.centerY() + 3.5f, 10.5f, kit.ink, true)
-    val syncText = "Realtime Broadcast Active"
-    kit.text(c, syncText, 360f - kit.measure(syncText, 9.5f), summaryRect.centerY() + 3.5f, 9.5f, kit.blue)
-    y += 46f
-
-    if (devAnnLoading && devAnnouncements.isEmpty()) {
-        val loadRect = RectF(16f, y, 374f, y + 80f)
-        kit.card(c, loadRect, 14f)
-        kit.centerText(c, "Memuat daftar pengumuman...", loadRect, 12f, kit.muted)
-        contentHeight = 0f
-        return
+    if (visible(y, y + 24f)) {
+        kit.text(c, "${devAnnouncements.size} siaran pengumuman aktif", 20f, y + 14f, 11.5f, kit.muted)
+        kit.line(c, 20f, y + 24f, 370f, y + 24f, kit.divider)
     }
+    y += 26f
 
     if (devAnnouncements.isEmpty()) {
-        val emptyRect = RectF(16f, y, 374f, y + 64f)
-        kit.card(c, emptyRect, 14f)
-        drawIcon(c, "megaphone", emptyRect.centerX(), emptyRect.centerY() - 8f, 16f, kit.muted)
-        kit.centerText(c, "Belum ada siaran pengumuman aktif.", RectF(emptyRect.left, emptyRect.centerY() + 8f, emptyRect.right, emptyRect.bottom), 11.5f, kit.muted)
-        y += 72f
+        if (visible(y, y + 50f)) {
+            kit.text(c, "Belum ada pengumuman aktif.", 20f, y + 26f, 12f, kit.muted)
+        }
+        y += 56f
     } else {
         devAnnouncements.forEach { ann ->
-            val msgLines = wrapText(kit, ann.message, 316f, 10.5f)
-            val lineCount = maxOf(msgLines.size, 1)
-            val cardH = 74f + lineCount * 16f
+            val msgLines = wrapText(kit, ann.message, 340f, 11f)
+            val rowH = 56f + maxOf(msgLines.size, 1) * 16f
 
-            if (y + cardH >= 126f && y <= h - 70f) {
-                val card = RectF(16f, y, 374f, y + cardH)
-                kit.card(c, card, 14f)
-
-                // Left Accent Stripe (Purple / Indigo)
-                kit.rounded(c, RectF(card.left, card.top, card.left + 5f, card.bottom), Color.rgb(124, 58, 237), 2f)
-
-                // Target Audience Badge
+            if (visible(y, y + rowH)) {
                 val (tBg, tFg) = targetRoleBadgeColors(ann.targetRole)
                 val targetLabel = when (ann.targetRole.lowercase()) {
-                    "sellers" -> "PENJUAL KANTIN"
-                    "buyers" -> "PEMBELI"
-                    else -> "SEMUA PENGGUNA"
+                    "sellers" -> "Penjual"
+                    "buyers" -> "Pembeli"
+                    else -> "Semua"
                 }
-                drawBadge(c, kit, targetLabel, 28f, y + 10f, tBg, tFg, 8.5f)
+                val bw = drawBadge(c, kit, targetLabel, 20f, y + 10f, tBg, tFg, 8.5f, radius = 4f)
+                kit.textEllipsized(c, ann.title, 20f + bw + 8f, y + 21f, 250f, 13f, kit.ink, true)
 
-                val activeStr = "SIARAN AKTIF ●"
-                kit.text(c, activeStr, 360f - kit.measure(activeStr, 8.5f, true), y + 21f, 8.5f, Color.rgb(16, 185, 129), true)
-
-                // Title
-                kit.text(c, ann.title.take(32), 28f, y + 38f, 13.5f, kit.ink, true)
-
-                // Wrapped Message Body
-                var textY = y + 54f
+                var textY = y + 40f
                 msgLines.forEach { line ->
-                    kit.text(c, line, 28f, textY, 10.5f, kit.muted)
+                    kit.text(c, line, 20f, textY, 11f, kit.muted)
                     textY += 16f
                 }
 
-                // Footer: Date & Author
-                val dateStr = ann.createdAt.take(16).replace('T', ' ') + " WIB"
-                kit.text(c, dateStr, 28f, card.bottom - 10f, 9f, kit.muted)
-                val authorStr = "Admin / Developer"
-                kit.text(c, authorStr, 360f - kit.measure(authorStr, 9f, true), card.bottom - 10f, 9f, kit.blue, true)
+                kit.text(c, ann.createdAt.take(16).replace('T', ' '), 20f, y + rowH - 9f, 9.5f, kit.muted)
+                kit.line(c, 20f, y + rowH, 370f, y + rowH, kit.divider)
             }
-            y += cardH + 8f
+            y += rowH
         }
     }
 
-    contentHeight = (y - off) + 100f
+    contentHeight = (y - off) + GLASS_TOP_OFFSET + 80f
 }
 
-// ================= VISUAL HELPERS & COLOR SYSTEMS =================
+// ================= HELPERS =================
 
-/** Unread inbox count for buyer/seller (warnings + announcements + seller invites badge). */
 internal fun JajaninView.inboxUnreadCount(): Int =
     myWarnings.count { !it.isRead } + myAnnouncements.size +
         myInvites.count { it.status == "pending" }
 
+private fun displayLocalPhone(raw: String): String =
+    if (raw.startsWith("+62")) "0" + raw.removePrefix("+62") else raw
+
 private fun LinkedHashMap<String, RectF>.putVisible(
     key: String,
     r: RectF,
-    topLimit: Float = 126f,
+    topLimit: Float = HEADER_H,
     bottomLimit: Float = Float.MAX_VALUE,
 ) {
     val top = r.top.coerceAtLeast(topLimit)
@@ -894,10 +749,10 @@ private fun drawBadge(
     y: Float,
     bgColor: Int,
     textColor: Int,
-    textSize: Float = 9.5f,
-    padX: Float = 7f,
-    padY: Float = 3.5f,
-    radius: Float = 6f,
+    textSize: Float = 9f,
+    padX: Float = 6f,
+    padY: Float = 3f,
+    radius: Float = 4f,
     bold: Boolean = true
 ): Float {
     val textW = kit.measure(text, textSize, bold)
@@ -917,10 +772,10 @@ private fun drawRightBadge(
     y: Float,
     bgColor: Int,
     textColor: Int,
-    textSize: Float = 9.5f,
-    padX: Float = 7f,
-    padY: Float = 3.5f,
-    radius: Float = 6f,
+    textSize: Float = 9f,
+    padX: Float = 6f,
+    padY: Float = 3f,
+    radius: Float = 4f,
     bold: Boolean = true
 ): Float {
     val textW = kit.measure(text, textSize, bold)
@@ -933,54 +788,29 @@ private fun drawRightBadge(
     return totalW
 }
 
-private fun drawAvatar(
-    c: Canvas,
-    kit: DrawKit,
-    name: String,
-    cx: Float,
-    cy: Float,
-    radius: Float,
-    bgColor: Int,
-    textColor: Int = Color.WHITE
-) {
-    val rect = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
-    kit.rounded(c, rect, bgColor, radius)
-    val initial = name.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "?"
-    val fontSize = radius * 1.05f
-    val textW = kit.measure(initial, fontSize, true)
-    kit.text(c, initial, cx - textW / 2f, cy + fontSize * 0.36f, fontSize, textColor, true)
-}
-
 private fun orderStatusBadgeColors(status: String): Pair<Int, Int> = when (status.lowercase()) {
-    "pending" -> Pair(Color.argb(45, 245, 158, 11), Color.rgb(217, 119, 6))
-    "confirmed", "preparing", "processing" -> Pair(Color.argb(40, 37, 99, 235), Color.rgb(37, 99, 235))
-    "ready" -> Pair(Color.argb(40, 147, 51, 234), Color.rgb(147, 51, 234))
-    "completed" -> Pair(Color.argb(40, 16, 185, 129), Color.rgb(16, 185, 129))
-    "cancelled" -> Pair(Color.argb(40, 239, 68, 68), Color.rgb(220, 38, 38))
-    else -> Pair(Color.argb(30, 100, 116, 139), Color.rgb(100, 116, 139))
-}
-
-private fun accountStatusBadgeColors(status: String): Pair<Int, Int> = when (status.lowercase()) {
-    "active" -> Pair(Color.argb(40, 16, 185, 129), Color.rgb(16, 185, 129))
-    "suspended" -> Pair(Color.argb(40, 239, 68, 68), Color.rgb(220, 38, 38))
-    "warned" -> Pair(Color.argb(45, 245, 158, 11), Color.rgb(217, 119, 6))
-    else -> Pair(Color.argb(30, 100, 116, 139), Color.rgb(100, 116, 139))
+    "pending" -> Pair(Color.argb(40, 245, 158, 11), Color.rgb(217, 119, 6))
+    "confirmed", "preparing", "processing" -> Pair(Color.argb(35, 59, 130, 246), Color.rgb(59, 130, 246))
+    "ready" -> Pair(Color.argb(35, 139, 92, 246), Color.rgb(139, 92, 246))
+    "completed" -> Pair(Color.argb(35, 16, 185, 129), Color.rgb(16, 185, 129))
+    "cancelled" -> Pair(Color.argb(35, 239, 68, 68), Color.rgb(239, 68, 68))
+    else -> Pair(Color.argb(25, 100, 116, 139), Color.rgb(100, 116, 139))
 }
 
 private fun roleBadgeColors(role: String): Pair<Int, Int> = when (role.lowercase()) {
-    "seller" -> Pair(Color.argb(40, 124, 58, 237), Color.rgb(124, 58, 237))
-    "developer" -> Pair(Color.argb(45, 245, 158, 11), Color.rgb(217, 119, 6))
-    else -> Pair(Color.argb(35, 59, 130, 246), Color.rgb(37, 99, 235))
+    "seller" -> Pair(Color.argb(35, 139, 92, 246), Color.rgb(139, 92, 246))
+    "developer" -> Pair(Color.argb(40, 245, 158, 11), Color.rgb(217, 119, 6))
+    else -> Pair(Color.argb(35, 59, 130, 246), Color.rgb(59, 130, 246))
 }
 
 private fun severityBadgeColors(severity: String): Pair<Int, Int> = when (severity.lowercase()) {
-    "critical" -> Pair(Color.argb(40, 239, 68, 68), Color.rgb(220, 38, 38))
-    "warning" -> Pair(Color.argb(45, 245, 158, 11), Color.rgb(217, 119, 6))
-    else -> Pair(Color.argb(40, 37, 99, 235), Color.rgb(37, 99, 235))
+    "critical" -> Pair(Color.argb(35, 239, 68, 68), Color.rgb(239, 68, 68))
+    "warning" -> Pair(Color.argb(40, 245, 158, 11), Color.rgb(217, 119, 6))
+    else -> Pair(Color.argb(35, 59, 130, 246), Color.rgb(59, 130, 246))
 }
 
 private fun targetRoleBadgeColors(target: String): Pair<Int, Int> = when (target.lowercase()) {
-    "sellers" -> Pair(Color.argb(40, 124, 58, 237), Color.rgb(124, 58, 237))
-    "buyers" -> Pair(Color.argb(40, 16, 185, 129), Color.rgb(16, 185, 129))
-    else -> Pair(Color.argb(40, 147, 51, 234), Color.rgb(147, 51, 234))
+    "sellers" -> Pair(Color.argb(35, 139, 92, 246), Color.rgb(139, 92, 246))
+    "buyers" -> Pair(Color.argb(35, 16, 185, 129), Color.rgb(16, 185, 129))
+    else -> Pair(Color.argb(35, 59, 130, 246), Color.rgb(59, 130, 246))
 }
