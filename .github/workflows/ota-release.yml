@@ -1,0 +1,161 @@
+name: Build & Publish Android OTA
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "app/src/**"
+      - "app/build.gradle.kts"
+      - "build.gradle.kts"
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: "Optional versionCode override (leave blank to auto-increment)"
+        required: false
+        default: ""
+      version_name:
+        description: "Optional versionName override (leave blank to auto-generate)"
+        required: false
+        default: ""
+      changelog:
+        description: "Changelog shown in 'Yang Diperbarui' on phones"
+        required: false
+        default: ""
+      mandatory:
+        description: "Require users to install this update"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  build-and-publish-ota:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore consistent signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
+            echo "Restored debug.keystore for consistent OTA signing."
+          else
+            echo "Warning: DEBUG_KEYSTORE_B64 not configured; Gradle will generate an ephemeral debug keystore."
+          fi
+
+      - name: Determine next OTA version & changelog
+        id: meta
+        env:
+          SUPABASE_URL: https://yezxyhpczfnkcndfpuht.supabase.co
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INPUT_CODE: ${{ inputs.version_code }}
+          INPUT_NAME: ${{ inputs.version_name }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, urllib.request
+
+          url = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ.get("SERVICE_KEY", "").strip()
+          latest = 1
+          if key:
+              req = urllib.request.Request(
+                  f"{url}/rest/v1/app_releases?select=version_code&order=version_code.desc&limit=1",
+                  headers={"apikey": key, "Authorization": f"Bearer {key}"},
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=15) as r:
+                      rows = json.loads(r.read().decode("utf-8"))
+                      if rows:
+                          latest = max(latest, int(rows[0]["version_code"]))
+              except Exception as e:
+                  print(f"Could not read existing app_releases: {e}")
+
+          override_code = os.environ.get("INPUT_CODE", "").strip()
+          next_code = int(override_code) if override_code else latest + 1
+          override_name = os.environ.get("INPUT_NAME", "").strip()
+          next_name = override_name if override_name else f"1.{next_code - 1}"
+
+          notes = os.environ.get("INPUT_CHANGELOG", "").strip()
+          if not notes:
+              notes = subprocess.check_output(
+                  ["git", "log", "-1", "--pretty=%s"], text=True
+              ).strip()
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version_code={next_code}\n")
+              out.write(f"version_name={next_name}\n")
+              out.write("changelog<<EOF\n" + notes + "\nEOF\n")
+          PY
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug \
+            -PVERSION_CODE="${{ steps.meta.outputs.version_code }}" \
+            -PVERSION_NAME="${{ steps.meta.outputs.version_name }}"
+
+      - name: Upload workflow APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jajanin-v${{ steps.meta.outputs.version_name }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish OTA APK & release notes to Supabase
+        env:
+          SUPABASE_URL: https://yezxyhpczfnkcndfpuht.supabase.co
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERSION_CODE: ${{ steps.meta.outputs.version_code }}
+          VERSION_NAME: ${{ steps.meta.outputs.version_name }}
+          CHANGELOG: ${{ steps.meta.outputs.changelog }}
+          MANDATORY: ${{ inputs.mandatory == true }}
+        run: |
+          if [ -z "$SERVICE_KEY" ]; then
+            echo "SUPABASE_SERVICE_ROLE_KEY secret is not configured; skipping Supabase OTA publish."
+            exit 0
+          fi
+
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          SHA256=$(sha256sum "$APK_PATH" | awk '{print $1}')
+          OBJ="jajanin-v${VERSION_CODE}.apk"
+
+          curl -fsS -X POST "${SUPABASE_URL}/storage/v1/object/app-updates/${OBJ}" \
+            -H "apikey: ${SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SERVICE_KEY}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "x-upsert: true" \
+            --data-binary "@${APK_PATH}" >/dev/null
+
+          SHA256="$SHA256" python3 - <<'PY' > /tmp/ota_payload.json
+          import json, os
+          print(json.dumps({
+              "version_code": int(os.environ["VERSION_CODE"]),
+              "version_name": os.environ["VERSION_NAME"],
+              "apk_url": f"{os.environ['SUPABASE_URL']}/storage/v1/object/public/app-updates/jajanin-v{os.environ['VERSION_CODE']}.apk",
+              "changelog": os.environ["CHANGELOG"],
+              "mandatory": os.environ.get("MANDATORY", "false").lower() == "true",
+              "sha256": os.environ["SHA256"],
+          }))
+          PY
+
+          curl -fsS -X POST "${SUPABASE_URL}/rest/v1/app_releases" \
+            -H "apikey: ${SERVICE_KEY}" \
+            -H "Authorization: Bearer ${SERVICE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d @/tmp/ota_payload.json

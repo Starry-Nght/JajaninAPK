@@ -14,12 +14,15 @@ val supabaseUrl = providers.gradleProperty("SUPABASE_URL")
     .orElse("https://yezxyhpczfnkcndfpuht.supabase.co").get()
 val supabasePublishableKey = providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY")
     .orElse("sb_publishable_vj7akRru3TvuUmkugtyRBg_0oRAQck6").get()
+val otaVersionCode = providers.gradleProperty("VERSION_CODE").map(String::toInt).orElse(1).get()
+val otaVersionName = providers.gradleProperty("VERSION_NAME").orElse("1.0").get()
 
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android { namespace = "com.jajanin.app"; compileSdk = 35
     defaultConfig {
-        applicationId = "com.jajanin.app"; minSdk = 24; targetSdk = 35; versionCode = 1; versionName = "1.0"
+        applicationId = "com.jajanin.app"; minSdk = 24; targetSdk = 35
+        versionCode = otaVersionCode; versionName = otaVersionName
         buildConfigField("String", "SUPABASE_URL", supabaseUrl.asBuildConfigString())
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", supabasePublishableKey.asBuildConfigString())
     }
