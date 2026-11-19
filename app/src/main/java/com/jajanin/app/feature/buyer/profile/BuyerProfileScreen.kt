@@ -2,6 +2,7 @@ package com.jajanin.app.feature.buyer.profile
 
 import android.graphics.Canvas
 import android.graphics.RectF
+import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.drawBottomNav
@@ -123,6 +124,21 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
             title = "Informasi Penting",
             subtitle = "Aturan pemesanan & jam operasional",
             key = "infoPage"
+        ),
+        ProfileRowSpec(
+            title = "Cek Update (OTA)",
+            subtitle = if (otaUpdateAvailable) {
+                otaLatestChangelog?.replace('\n', ' ') ?: "Pembaruan siap dipasang langsung dari aplikasi"
+            } else {
+                "Periksa versi terbaru tanpa install ulang"
+            },
+            trailing = if (otaUpdateAvailable && !otaLatestVersion.isNullOrBlank()) {
+                "Update $otaLatestVersion"
+            } else {
+                "v${BuildConfig.VERSION_NAME}"
+            },
+            trailingColor = if (otaUpdateAvailable) kit.blue else kit.muted,
+            key = "checkOta"
         )
     )
     y = drawCleanProfileGroup(c, y, appRows, ::visible, navClear)

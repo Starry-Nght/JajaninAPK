@@ -25,6 +25,8 @@ import com.jajanin.app.core.ui.drawHelp
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawInfoPage
 import com.jajanin.app.core.ui.statusNextAction
+import com.jajanin.app.core.update.checkForOtaUpdate
+import com.jajanin.app.core.update.showDevOtaPublishForm
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
 import com.jajanin.app.core.util.statusSortOrder
@@ -208,6 +210,9 @@ internal class JajaninView(context: Context) : View(context) {
     internal var stallActiveOrders = -1
     internal var stallFull = false
     internal var stallLoading = false
+    internal var otaUpdateAvailable = false
+    internal var otaLatestVersion: String? = null
+    internal var otaLatestChangelog: String? = null
     // --- Live server clock (WIB): offset dihitung dari ordering_status, lalu tick lokal ---
     internal var serverBaseMillis = 0L
     internal var serverBaseElapsed = 0L
@@ -919,6 +924,8 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "help" -> go(Screen.HELP)
                     hit == "about" -> go(Screen.ABOUT)
                     hit == "infoPage" -> go(Screen.INFO)
+                    hit == "checkOta" -> activity()?.checkForOtaUpdate(silent = false)
+                    hit == "devPublishOta" -> activity()?.showDevOtaPublishForm()
                     hit.startsWith("notifInvite:") -> activity()?.showInviteVerify(hit.substringAfter(':'))
                     hit.startsWith("devNotifInviteCancel:") -> activity()?.confirmCancelInvite(hit.substringAfter(':'))
                     hit.startsWith("notifWarn:") -> activity()?.showNotifWarning(hit.substringAfter(':'))

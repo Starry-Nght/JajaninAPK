@@ -2,6 +2,7 @@ package com.jajanin.app.feature.seller.profile
 
 import android.graphics.Canvas
 import android.graphics.RectF
+import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.press
@@ -192,6 +193,22 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
             SellerSettingRow("Bantuan", "help", subtitle = "Cara berjualan di Jajanin"),
             SellerSettingRow("Tentang Jajanin", "about", subtitle = "Versi dan informasi aplikasi"),
             SellerSettingRow("Informasi Penting", "infoPage", subtitle = "Ketentuan dan panduan mitra"),
+            SellerSettingRow(
+                title = "Cek Update (OTA)",
+                key = "checkOta",
+                subtitle = if (otaUpdateAvailable) {
+                    otaLatestChangelog?.replace('\n', ' ') ?: "Pembaruan siap dipasang langsung dari HP"
+                } else {
+                    "Periksa pembaruan langsung tanpa hapus aplikasi"
+                },
+                value = if (otaUpdateAvailable && !otaLatestVersion.isNullOrBlank()) {
+                    "Update $otaLatestVersion"
+                } else {
+                    "v${BuildConfig.VERSION_NAME}"
+                },
+                valueColor = if (otaUpdateAvailable) kit.blue else kit.muted,
+                chevron = true,
+            ),
         ),
         isVisible,
         navClear,

@@ -36,6 +36,11 @@ import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.isTerminalStatus
 import com.jajanin.app.core.ui.showThemedInfo
 import com.jajanin.app.core.ui.showThemedOptions
+import com.jajanin.app.core.update.OtaPublishDraft
+import com.jajanin.app.core.update.OtaRelease
+import com.jajanin.app.core.update.checkForOtaUpdate
+import com.jajanin.app.core.update.publishOtaApkFromUri
+import com.jajanin.app.core.update.resumePendingOtaIfPermitted
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.model.ProductRow
 import com.jajanin.app.feature.buyer.home.normalizeCategory
@@ -84,6 +89,11 @@ class MainActivity : Activity() {
     internal var productRefreshJob: Job? = null
     internal val REQUEST_PRODUCT_IMAGE = 8301
     internal val REQUEST_QRIS_IMAGE = 8302
+    internal val REQUEST_OTA_APK = 8303
+    internal var pendingOtaRelease: OtaRelease? = null
+    internal var pendingOtaPublishDraft: OtaPublishDraft? = null
+    internal var otaPromptedVersion: Int = -1
+    internal var otaDownloadJob: Job? = null
 
     // Kode akses wajib untuk memasuki role penjual & developer.
     // Cukup dimasukkan SATU KALI (saat pertama); status tersimpan permanen
@@ -171,6 +181,7 @@ class MainActivity : Activity() {
         startMyOrdersUpdates()
         refreshProducts()
         refreshMyOrders()
+        checkForOtaUpdate(silent = true)
         handleAuthLink(intent)
         restoreSessionIfNeeded()
         handleOrderNotification(intent)
@@ -309,6 +320,11 @@ class MainActivity : Activity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        resumePendingOtaIfPermitted()
+    }
+
     /** Mendaftarkan token FCM perangkat ini (semua role). Gagal = diam. */
     internal fun registerMyDevice() {
         if (!SupabaseRepository.hasSession()) return
@@ -355,6 +371,10 @@ class MainActivity : Activity() {
                     uploadStallQrisImage(uri)
                 }
             }
+            REQUEST_OTA_APK -> {
+                val uri = data?.data ?: return
+                publishOtaApkFromUri(uri)
+            }
         }
     }
 
@@ -388,6 +408,7 @@ class MainActivity : Activity() {
     internal var pendingOrderNotificationId: String? = null
 
     override fun onDestroy() {
+        otaDownloadJob?.cancel()
         adminObserver?.close()
         productObserver?.close()
         ui.myObserver?.close()

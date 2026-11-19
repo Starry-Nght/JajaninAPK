@@ -232,6 +232,33 @@ private fun JajaninView.drawDevOverview(c: Canvas, w: Float, h: Float, off: Floa
         bounds.putVisible("devReset", btn, HEADER_H, navClear)
         press(c, "devReset", btn, 6f)
     }
+    y += 64f
+
+    // 3b. OTA App Update Row (Check + Publish from Developer Console)
+    val otaRow = RectF(20f, y, 370f, y + 52f)
+    if (visible(otaRow.top, otaRow.bottom)) {
+        kit.rounded(c, otaRow, kit.card, 8f, kit.border)
+        val curVer = com.jajanin.app.BuildConfig.VERSION_NAME
+        val otaSub = if (otaUpdateAvailable && !otaLatestVersion.isNullOrBlank()) {
+            "Tersedia $otaLatestVersion (terpasang v$curVer)"
+        } else {
+            "Versi terpasang v$curVer · Update langsung via Supabase"
+        }
+        kit.text(c, "Pembaruan OTA Aplikasi", 32f, y + 22f, 13f, kit.ink, true)
+        kit.textEllipsized(c, otaSub, 32f, y + 39f, 190f, 10.5f, if (otaUpdateAvailable) kit.blue else kit.muted)
+
+        val checkBtn = RectF(234f, y + 12f, 290f, y + 40f)
+        kit.rounded(c, checkBtn, kit.tint, 6f, kit.border)
+        kit.centerText(c, "Cek", checkBtn, 11f, kit.blue, true)
+        bounds.putVisible("checkOta", checkBtn, HEADER_H, navClear)
+        press(c, "checkOta", checkBtn, 6f)
+
+        val pubBtn = RectF(296f, y + 12f, 358f, y + 40f)
+        kit.rounded(c, pubBtn, kit.blue, 6f)
+        kit.centerText(c, "Rilis", pubBtn, 11f, android.graphics.Color.WHITE, true)
+        bounds.putVisible("devPublishOta", pubBtn, HEADER_H, navClear)
+        press(c, "devPublishOta", pubBtn, 6f)
+    }
     y += 72f
 
     // 4. Open Recent Orders List (Hairline-divided, no individual card boxes)
