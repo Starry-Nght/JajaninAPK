@@ -168,9 +168,10 @@ internal fun MainActivity.startProductUpdates() {
     }
 }
 
-internal fun MainActivity.refreshProducts() {
+internal fun MainActivity.refreshProducts(manual: Boolean = false) {
     if (!SupabaseRepository.isConfigured()) return
     productRefreshJob?.cancel()
+    ui.productsRefreshing = true
     ui.productsLoading = ui.products.isEmpty()
     ui.productsError = null
     ui.invalidate()
@@ -178,7 +179,10 @@ internal fun MainActivity.refreshProducts() {
         try {
             ui.products = OrderRepository.fetchAvailableProducts()
             ui.productsError = null
-            val remoteTop = OrderRepository.fetchTopSelling3Days()
+            ui.productsLoading = false
+            ui.invalidate()
+
+            val remoteTop = runCatching { OrderRepository.fetchTopSelling3Days() }.getOrDefault(emptyMap())
             val merged = HashMap(remoteTop)
             ui.myOrders.forEach { o ->
                 if (o.status != STATUS_CANCELLED) {
@@ -194,10 +198,18 @@ internal fun MainActivity.refreshProducts() {
                 }
             }
             ui.topSelling3d = merged
+            if (manual) {
+                refreshOrderingStatus()
+                Toast.makeText(this@refreshProducts, "Menu diperbarui", Toast.LENGTH_SHORT).show()
+            }
         } catch (error: Throwable) {
             ui.productsError = SupabaseRepository.errorMessage(error)
+            if (manual) {
+                Toast.makeText(this@refreshProducts, ui.productsError ?: "Gagal memuat menu", Toast.LENGTH_SHORT).show()
+            }
         } finally {
             ui.productsLoading = false
+            ui.productsRefreshing = false
             ui.invalidate()
         }
     }

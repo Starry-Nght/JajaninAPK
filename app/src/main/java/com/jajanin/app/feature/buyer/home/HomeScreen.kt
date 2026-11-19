@@ -372,27 +372,36 @@ private fun JajaninView.drawCleanTopHeader(c: Canvas, cartCount: Int) {
     bounds["cartCheckout"] = cartBtn
 
     // Right 2: Bell / Inbox Icon
-    val inboxBtn = RectF(cartBtn.left - 38f, 16f, cartBtn.left - 8f, 44f)
+    val inboxBtn = RectF(cartBtn.left - 34f, 16f, cartBtn.left - 6f, 44f)
     drawIcon(c, "bell", inboxBtn.centerX(), inboxBtn.centerY(), 16f, kit.ink)
+    press(c, "inbox", inboxBtn, 6f)
     bounds["inbox"] = inboxBtn
     val unread = inboxUnreadCount()
     if (unread > 0) {
-        val dot = RectF(inboxBtn.right - 9f, inboxBtn.top + 4f, inboxBtn.right - 1f, inboxBtn.top + 12f)
+        val dot = RectF(inboxBtn.right - 8f, inboxBtn.top + 4f, inboxBtn.right, inboxBtn.top + 12f)
         kit.rounded(c, dot, kit.danger, 4f)
     }
 
-    // Right 3: Profile Avatar + Short Name
+    // Right 3: Manual Menu Refresh Icon
+    val refreshBtn = RectF(inboxBtn.left - 32f, 16f, inboxBtn.left - 4f, 44f)
+    drawIcon(c, "refresh", refreshBtn.centerX(), refreshBtn.centerY(), 16f, if (productsRefreshing) kit.blue else kit.ink)
+    press(c, "buyerRefresh", refreshBtn, 6f)
+    bounds["buyerRefresh"] = refreshBtn
+
+    // Right 4: Profile Avatar + Short Name
     val rawName = myDisplayName.trim().ifBlank { "Profil" }
     val shortName = rawName.substringBefore(' ').take(8)
     val initial = (rawName.firstOrNull() ?: 'P').uppercaseChar().toString()
     val profText = shortName
-    val profTextW = kit.measure(profText, 11.5f, true).coerceAtMost(84f)
+    val profRight = refreshBtn.left - 8f
+    val maxNameW = (profRight - 160f).coerceIn(32f, 72f)
+    val profTextW = kit.measure(profText, 11.5f, true).coerceAtMost(maxNameW)
     val profW = 24f + 6f + profTextW
-    val profBtn = RectF(inboxBtn.left - 10f - profW, 16f, inboxBtn.left - 10f, 44f)
+    val profBtn = RectF(profRight - profW, 16f, profRight, 44f)
     val avatar = RectF(profBtn.left, 18f, profBtn.left + 24f, 42f)
     kit.rounded(c, avatar, kit.tint, 12f)
     kit.centerText(c, initial, avatar, 11f, kit.blue, true)
-    kit.textEllipsized(c, profText, avatar.right + 6f, 34.5f, 84f, 11.5f, kit.ink, true)
+    kit.textEllipsized(c, profText, avatar.right + 6f, 34.5f, maxNameW, 11.5f, kit.ink, true)
     bounds["homeProfile"] = profBtn
 
     c.restore()

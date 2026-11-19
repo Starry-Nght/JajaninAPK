@@ -314,9 +314,13 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        // Segarkan status akun tiap kembali ke aplikasi (semua role).
+        // Segarkan akun + katalog pembeli tiap kembali ke aplikasi agar menu tidak tertinggal.
         authScope.launch {
             if (SupabaseRepository.hasSession()) refreshMyStatus()
+        }
+        if (ui.myRole == "buyer") {
+            refreshProducts()
+            startProductUpdates()
         }
     }
 

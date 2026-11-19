@@ -109,6 +109,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var pendingScrollToOrders = false
     internal var selectedRole = "buyer"
     internal var productsLoading = false
+    internal var productsRefreshing = false
     internal var productsError: String? = null
     internal var scrollDummy = 0
     internal var productDescription = ""
@@ -779,6 +780,7 @@ internal class JajaninView(context: Context) : View(context) {
                     // --- Pembeli (buyer): pencarian, katalog, keranjang, checkout ---
                     hit == "search" -> activity()?.showSearchForm()
                     hit == "clearSearch" -> applyQuery("")
+                    hit == "buyerRefresh" -> activity()?.refreshProducts(manual = true)
                     hit == "homeProfile" -> selectBuyerTab("Profile")
                     hit.startsWith("fav:") -> activity()?.toggleFavorite(hit.substringAfter(':'))
                     hit == "cartCheckout" || hit == "cartCheckoutBar" -> {

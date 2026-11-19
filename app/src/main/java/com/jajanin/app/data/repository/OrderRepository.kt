@@ -201,8 +201,9 @@ internal object OrderRepository {
         val channel = SupabaseRepository.client.realtime.channel("available-menu-items")
         val flow = channel.postgresChangeFlow<PostgresAction>("public") { table = "menu_items" }
         val job = scope.launch {
-            launch { flow.collect { onChange() } }
-            channel.subscribe()
+            runCatching { SupabaseRepository.client.realtime.connect() }
+            launch { runCatching { flow.collect { onChange() } } }
+            runCatching { channel.subscribe() }
         }
         return OrderObserver(channel, job, scope)
     }
