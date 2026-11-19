@@ -62,6 +62,7 @@ import com.jajanin.app.feature.buyer.exp.expNextAt
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.realtime.PostgresAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,9 +106,50 @@ internal fun MainActivity.startMyOrdersUpdates() {
     ui.myObserver = null
     if (!SupabaseRepository.isConfigured()) return
     runCatching {
-        ui.myObserver = OrderRepository.observeOrders(authScope) {
-            if (SupabaseRepository.hasSession()) refreshMyOrders()
+        ui.myObserver = OrderRepository.observeOrders(authScope, "buyer-orders") { action ->
+            if (!SupabaseRepository.hasSession()) return@observeOrders
+            if (!applyRealtimeOrderToBuyer(action)) refreshMyOrders()
         }
+    }
+}
+
+private fun MainActivity.applyRealtimeOrderToBuyer(action: PostgresAction): Boolean {
+    return when (action) {
+        is PostgresAction.Update -> {
+            val patch = OrderRepository.decodeOrderPatch(action.record) ?: return false
+            val currentUid = SupabaseRepository.currentUid()
+            if (patch.userId != null && currentUid != null && patch.userId != currentUid) return true
+            if (ui.myOrders.none { it.id == patch.id }) return false
+            ui.myOrders = ui.myOrders.map { order ->
+                if (order.id == patch.id) {
+                    order.copy(
+                        status = patch.status ?: order.status,
+                        paymentStatus = patch.paymentStatus ?: order.paymentStatus,
+                    )
+                } else {
+                    order
+                }
+            }
+            if (ui.lastOrderId == patch.id && patch.status != null) {
+                ui.lastOrderStatus = patch.status
+            }
+            ui.invalidate()
+            true
+        }
+        is PostgresAction.Insert -> {
+            val patch = OrderRepository.decodeOrderPatch(action.record) ?: return false
+            val currentUid = SupabaseRepository.currentUid()
+            patch.userId != null && currentUid != null && patch.userId != currentUid
+        }
+        is PostgresAction.Delete -> {
+            val deletedId = OrderRepository.extractRecordId(action.oldRecord) ?: return false
+            if (ui.myOrders.any { it.id == deletedId }) {
+                ui.myOrders = ui.myOrders.filterNot { it.id == deletedId }
+                ui.invalidate()
+            }
+            true
+        }
+        else -> false
     }
 }
 
@@ -164,7 +206,37 @@ internal fun MainActivity.startProductUpdates() {
     if (!SupabaseRepository.isConfigured()) return
     runCatching {
         productObserver?.close()
-        productObserver = OrderRepository.observeProducts(authScope) { refreshProducts() }
+        productObserver = OrderRepository.observeProducts(authScope) { action ->
+            if (!applyRealtimeProduct(action)) refreshProducts()
+        }
+    }
+}
+
+private fun MainActivity.applyRealtimeProduct(action: PostgresAction): Boolean {
+    return when (action) {
+        is PostgresAction.Insert, is PostgresAction.Update -> {
+            val record = if (action is PostgresAction.Insert) action.record else (action as PostgresAction.Update).record
+            val product = OrderRepository.decodeProductRecord(record) ?: return false
+            val visible = product.available && product.name.isNotBlank() && product.priceIdr > 0 && product.category.isNotBlank()
+            ui.products = if (visible) {
+                if (ui.products.any { it.id == product.id }) {
+                    ui.products.map { if (it.id == product.id) product else it }
+                } else {
+                    listOf(product) + ui.products
+                }
+            } else {
+                ui.products.filterNot { it.id == product.id }
+            }
+            ui.invalidate()
+            true
+        }
+        is PostgresAction.Delete -> {
+            val deletedId = OrderRepository.extractRecordId(action.oldRecord) ?: return false
+            ui.products = ui.products.filterNot { it.id == deletedId }
+            ui.invalidate()
+            true
+        }
+        else -> false
     }
 }
 
@@ -499,7 +571,7 @@ internal fun MainActivity.placeCartOrder() {
             if (method == "qris") {
                 // Ambil QR warung lalu tampilkan layar bayar.
                 ui.lastOrderStatus = placed.status
-                openQrisPayment(placed.id, placed.totalIdr, stallId)
+                openQrisPayment(placed.id, placed.totalIdr, stallId, verifiedQris)
             } else {
                 refreshMyOrders()
                 ui.lastOrderStatus = placed.status
@@ -522,9 +594,21 @@ internal fun MainActivity.placeCartOrder() {
 }
 
 /** Layar QRIS: tampilkan QR warung + nominal pas untuk order yang baru dibuat. */
-internal fun MainActivity.openQrisPayment(orderId: String, amountIdr: Int, stallId: String?) {
+internal fun MainActivity.openQrisPayment(
+    orderId: String,
+    amountIdr: Int,
+    stallId: String?,
+    preloadedQris: String? = null,
+) {
     ui.qrisOrderId = orderId
     ui.qrisAmount = amountIdr
+    val cachedUrl = preloadedQris?.trim()?.takeIf { it.isNotBlank() }
+    if (cachedUrl != null) {
+        ui.qrisImageUrl = cachedUrl
+        ui.qrisLoading = false
+        ui.go(Screen.QRIS)
+        return
+    }
     ui.qrisImageUrl = null
     ui.qrisLoading = stallId != null
     ui.go(Screen.QRIS)
@@ -546,14 +630,20 @@ internal fun MainActivity.openQrisPayment(orderId: String, amountIdr: Int, stall
 internal fun MainActivity.submitPaymentProof() {
     val self = this
     val orderId = ui.qrisOrderId ?: return
+    val previousOrders = ui.myOrders
+    val previousStatus = ui.lastOrderStatus
+    ui.myOrders = previousOrders.map { if (it.id == orderId) it.copy(paymentStatus = "waiting_verification") else it }
+    ui.lastOrderStatus = "pending"
+    ui.go(Screen.READY)
     authScope.launch {
         try {
             OrderRepository.submitPaymentProof(orderId)
-            ui.lastOrderStatus = "pending"
             refreshMyOrders()
-            ui.go(Screen.READY)
             Toast.makeText(self, "Menunggu verifikasi penjual.", Toast.LENGTH_LONG).show()
         } catch (error: Throwable) {
+            ui.myOrders = previousOrders
+            ui.lastOrderStatus = previousStatus
+            ui.invalidate()
             Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
         }
     }
@@ -562,12 +652,17 @@ internal fun MainActivity.submitPaymentProof() {
 /** Pembeli mengajukan bukti dari kartu riwayat pesanannya sendiri. */
 internal fun MainActivity.submitPaymentProofFor(orderId: String) {
     val self = this
+    val previousOrders = ui.myOrders
+    ui.myOrders = previousOrders.map { if (it.id == orderId) it.copy(paymentStatus = "waiting_verification") else it }
+    ui.invalidate()
     authScope.launch {
         try {
             OrderRepository.submitPaymentProof(orderId)
             refreshMyOrders()
             Toast.makeText(self, "Menunggu verifikasi penjual.", Toast.LENGTH_LONG).show()
         } catch (error: Throwable) {
+            ui.myOrders = previousOrders
+            ui.invalidate()
             Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
         }
     }

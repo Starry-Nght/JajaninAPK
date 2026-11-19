@@ -19,10 +19,17 @@ import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -58,6 +65,14 @@ internal data class ProfileRow(
     val id: String,
     @SerialName("display_name") val displayName: String? = null,
     val email: String? = null,
+)
+
+@Serializable
+internal data class RealtimeOrderPatch(
+    val id: String,
+    @SerialName("user_id") val userId: String? = null,
+    val status: String? = null,
+    @SerialName("payment_status") val paymentStatus: String? = null,
 )
 
 /** Model siap-tampil untuk layar admin & pembeli: nama pembeli, jam, ruangan ambil, dan kontak penjual sudah diresolusi saat fetch. */
@@ -197,12 +212,28 @@ internal object OrderRepository {
         "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients"
     )
 
-    fun observeProducts(scope: CoroutineScope, onChange: () -> Unit): OrderObserver {
+    private val realtimeJson = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
+
+    internal fun decodeProductRecord(record: JsonObject): ProductRow? = runCatching {
+        realtimeJson.decodeFromJsonElement<ProductRow>(record)
+    }.getOrNull()
+
+    internal fun decodeOrderPatch(record: JsonObject): RealtimeOrderPatch? = runCatching {
+        realtimeJson.decodeFromJsonElement<RealtimeOrderPatch>(record)
+    }.getOrNull()
+
+    internal fun extractRecordId(record: JsonObject): String? =
+        record["id"]?.jsonPrimitive?.contentOrNull
+
+    fun observeProducts(scope: CoroutineScope, onAction: (PostgresAction) -> Unit): OrderObserver {
         val channel = SupabaseRepository.client.realtime.channel("available-menu-items")
         val flow = channel.postgresChangeFlow<PostgresAction>("public") { table = "menu_items" }
         val job = scope.launch {
             runCatching { SupabaseRepository.client.realtime.connect() }
-            launch { runCatching { flow.collect { onChange() } } }
+            launch { runCatching { flow.collect { onAction(it) } } }
             runCatching { channel.subscribe() }
         }
         return OrderObserver(channel, job, scope)
@@ -634,32 +665,39 @@ internal object OrderRepository {
     }
 
     /**
-     * Berlangganan perubahan tabel orders lewat Supabase Realtime.
-     *
-     * [onChange] dipanggil di thread [scope] untuk setiap insert/update/delete;
-     * pemicu refresh daftar, bukan membawa payload (daftar di-fetch ulang utuh).
+     * Berlangganan perubahan tabel orders lewat Supabase Realtime dengan payload PostgresAction.
      */
-    fun observeOrders(scope: CoroutineScope, onChange: () -> Unit): OrderObserver {
-        val channel = SupabaseRepository.client.realtime.channel("admin-orders")
+    fun observeOrders(
+        scope: CoroutineScope,
+        channelName: String = "orders-live",
+        onAction: (PostgresAction) -> Unit,
+    ): OrderObserver {
+        val channel = SupabaseRepository.client.realtime.channel(channelName)
         val flow = channel.postgresChangeFlow<PostgresAction>("public") { table = "orders" }
         val job = scope.launch {
-            launch { flow.collect { onChange() } }
-            channel.subscribe()
+            runCatching { SupabaseRepository.client.realtime.connect() }
+            launch { runCatching { flow.collect { onAction(it) } } }
+            runCatching { channel.subscribe() }
         }
         return OrderObserver(channel, job, scope)
     }
 
-    private suspend fun hydrate(rows: List<OrderRow>): List<AdminOrder> {
-        val buyerNames = resolveBuyerNames(rows)
+    private suspend fun hydrate(rows: List<OrderRow>): List<AdminOrder> = coroutineScope {
+        if (rows.isEmpty()) return@coroutineScope emptyList()
+        val buyerNamesDeferred = async { resolveBuyerNames(rows) }
         val menuIds = rows.flatMap { it.items }.mapNotNull { it.menuItemId?.takeIf(String::isNotBlank) }.distinct()
-        val menuLookup = if (menuIds.isEmpty()) emptyMap() else runCatching {
-            client.postgrest.from("menu_items")
-                .select(Columns.raw("id,stall_id,ingredients")) {
-                    filter { isIn("id", menuIds.map { id -> "\"$id\"" }) }
-                }
-                .decodeList<MenuRoomLookupRow>()
-                .associateBy { it.id }
-        }.getOrDefault(emptyMap())
+        val menuLookupDeferred = async {
+            if (menuIds.isEmpty()) emptyMap() else runCatching {
+                client.postgrest.from("menu_items")
+                    .select(Columns.raw("id,stall_id,ingredients")) {
+                        filter { isIn("id", menuIds.map { id -> "\"$id\"" }) }
+                    }
+                    .decodeList<MenuRoomLookupRow>()
+                    .associateBy { it.id }
+            }.getOrDefault(emptyMap())
+        }
+        val buyerNames = buyerNamesDeferred.await()
+        val menuLookup = menuLookupDeferred.await()
 
         val stallIds = menuLookup.values.map { it.stallId }.distinct()
         val stallLookup = if (stallIds.isEmpty()) emptyMap() else runCatching {
@@ -671,7 +709,7 @@ internal object OrderRepository {
                 .associateBy { it.id }
         }.getOrDefault(emptyMap())
 
-        return rows.map { row ->
+        rows.map { row ->
             val firstMenuId = row.items.firstNotNullOfOrNull { it.menuItemId?.takeIf(String::isNotBlank) }
             val menuRow = firstMenuId?.let { menuLookup[it] }
             val stall = menuRow?.let { stallLookup[it.stallId] }

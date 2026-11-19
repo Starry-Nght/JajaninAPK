@@ -62,6 +62,7 @@ import com.jajanin.app.feature.buyer.exp.expNextAt
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.realtime.PostgresAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -478,15 +479,46 @@ internal fun MainActivity.toggleProductAvailability(productId: String) {
     }
 }
 
+private fun MainActivity.patchAdminOrderLocal(
+    orderId: String,
+    status: String? = null,
+    paymentStatus: String? = null,
+) {
+    ui.adminOrders = ui.adminOrders.map { order ->
+        if (order.id == orderId) {
+            order.copy(
+                status = status ?: order.status,
+                paymentStatus = paymentStatus ?: order.paymentStatus,
+            )
+        } else {
+            order
+        }
+    }
+    ui.adminDetailOrder?.let { detail ->
+        if (detail.id == orderId) {
+            ui.adminDetailOrder = detail.copy(
+                status = status ?: detail.status,
+                paymentStatus = paymentStatus ?: detail.paymentStatus,
+            )
+        }
+    }
+    ui.invalidate()
+}
+
 internal fun MainActivity.markOrderPaid(orderId: String) {
     val self = this
+    val previousOrders = ui.adminOrders
+    val previousDetail = ui.adminDetailOrder
+    patchAdminOrderLocal(orderId, paymentStatus = "paid")
     authScope.launch {
         try {
             OrderRepository.markOrderPaid(orderId)
             refreshAdminOrders()
-            loadAdminOrderDetail(orderId)
             Toast.makeText(self, "Pembayaran ditandai lunas.", Toast.LENGTH_SHORT).show()
         } catch (error: Throwable) {
+            ui.adminOrders = previousOrders
+            ui.adminDetailOrder = previousDetail
+            ui.invalidate()
             Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
         }
     }
@@ -495,13 +527,18 @@ internal fun MainActivity.markOrderPaid(orderId: String) {
 /** Penjual menolak bukti bayar QRIS. */
 internal fun MainActivity.rejectOrderPayment(orderId: String) {
     val self = this
+    val previousOrders = ui.adminOrders
+    val previousDetail = ui.adminDetailOrder
+    patchAdminOrderLocal(orderId, paymentStatus = "rejected")
     authScope.launch {
         try {
             OrderRepository.rejectOrderPayment(orderId)
             refreshAdminOrders()
-            loadAdminOrderDetail(orderId)
             Toast.makeText(self, "Bukti pembayaran ditolak.", Toast.LENGTH_SHORT).show()
         } catch (error: Throwable) {
+            ui.adminOrders = previousOrders
+            ui.adminDetailOrder = previousDetail
+            ui.invalidate()
             Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
         }
     }
@@ -674,8 +711,31 @@ internal fun MainActivity.pickQrisImage() {
 
 internal fun MainActivity.startAdminOrders() {
     adminObserver?.close()
-    adminObserver = OrderRepository.observeOrders(authScope) { refreshAdminOrders() }
+    adminObserver = OrderRepository.observeOrders(authScope, "admin-orders") { action ->
+        if (!applyRealtimeOrderToSeller(action)) refreshAdminOrders()
+    }
     refreshAdminOrders()
+}
+
+private fun MainActivity.applyRealtimeOrderToSeller(action: PostgresAction): Boolean {
+    return when (action) {
+        is PostgresAction.Update -> {
+            val patch = OrderRepository.decodeOrderPatch(action.record) ?: return false
+            if (ui.adminOrders.none { it.id == patch.id }) return false
+            patchAdminOrderLocal(patch.id, status = patch.status, paymentStatus = patch.paymentStatus)
+            true
+        }
+        is PostgresAction.Delete -> {
+            val deletedId = OrderRepository.extractRecordId(action.oldRecord) ?: return false
+            if (ui.adminOrders.any { it.id == deletedId }) {
+                ui.adminOrders = ui.adminOrders.filterNot { it.id == deletedId }
+                if (ui.adminDetailOrder?.id == deletedId) ui.adminDetailOrder = null
+                ui.invalidate()
+            }
+            true
+        }
+        else -> false
+    }
 }
 
 /** Pilihan peran dari layar ROLE: hanya Pembeli/Penjual. Developer masuk
@@ -1221,11 +1281,17 @@ internal fun MainActivity.submitAdminOrderStatus(orderId: String, nextStatus: St
     val self = this
     if (adminStatusBusy) return
     adminStatusBusy = true
+    val previousOrders = ui.adminOrders
+    val previousDetail = ui.adminDetailOrder
+    patchAdminOrderLocal(orderId, status = nextStatus)
     authScope.launch {
         try {
             OrderRepository.updateOrderStatus(orderId, nextStatus)
             refreshAdminOrders()
         } catch (error: Throwable) {
+            ui.adminOrders = previousOrders
+            ui.adminDetailOrder = previousDetail
+            ui.invalidate()
             Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
         } finally {
             adminStatusBusy = false
@@ -1235,8 +1301,10 @@ internal fun MainActivity.submitAdminOrderStatus(orderId: String, nextStatus: St
 
 /** Memuat satu order ke layar detail (dipanggil dari tap baris & deep-link notifikasi). */
 internal fun MainActivity.loadAdminOrderDetail(orderId: String) {
+    val cached = ui.adminOrders.firstOrNull { it.id == orderId }
     ui.adminDetailId = orderId
-    ui.adminDetailLoading = true
+    if (cached != null) ui.adminDetailOrder = cached
+    ui.adminDetailLoading = cached == null && ui.adminDetailOrder?.id != orderId
     ui.adminDetailError = null
     ui.invalidate()
     authScope.launch {
@@ -1250,7 +1318,9 @@ internal fun MainActivity.loadAdminOrderDetail(orderId: String) {
                 ui.adminDetailError = null
             }
         } catch (error: Throwable) {
-            ui.adminDetailError = SupabaseRepository.errorMessage(error)
+            if (ui.adminDetailOrder == null) {
+                ui.adminDetailError = SupabaseRepository.errorMessage(error)
+            }
         } finally {
             ui.adminDetailLoading = false
             ui.invalidate()
