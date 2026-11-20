@@ -94,6 +94,137 @@ class MainActivity : Activity() {
     internal var pendingOtaPublishDraft: OtaPublishDraft? = null
     internal var otaPromptedVersion: Int = -1
     internal var otaDownloadJob: Job? = null
+    internal var autoRefreshJob: Job? = null
+    internal var buyerOrdersSeeded = false
+    internal val knownBuyerOrderStatuses = HashMap<String, String>()
+    internal val knownBuyerPaymentStatuses = HashMap<String, String>()
+    internal var sellerOrdersSeeded = false
+    internal val knownSellerOrderIds = HashSet<String>()
+    internal val knownSellerPaymentStatuses = HashMap<String, String>()
+
+    internal fun resetOrderNotificationState() {
+        buyerOrdersSeeded = false
+        knownBuyerOrderStatuses.clear()
+        knownBuyerPaymentStatuses.clear()
+        sellerOrdersSeeded = false
+        knownSellerOrderIds.clear()
+        knownSellerPaymentStatuses.clear()
+    }
+
+    internal fun detectAndNotifyBuyerOrderChanges(orders: List<AdminOrder>) {
+        if (!buyerOrdersSeeded) {
+            orders.forEach { order ->
+                knownBuyerOrderStatuses[order.id] = order.status.lowercase()
+                knownBuyerPaymentStatuses[order.id] = order.paymentStatus.lowercase()
+            }
+            buyerOrdersSeeded = true
+            return
+        }
+        orders.forEach { order ->
+            val newStatus = order.status.lowercase()
+            val oldStatus = knownBuyerOrderStatuses.put(order.id, newStatus)
+            val newPay = order.paymentStatus.lowercase()
+            val oldPay = knownBuyerPaymentStatuses.put(order.id, newPay)
+
+            if (oldStatus != null && oldStatus != newStatus) {
+                val store = order.sellerStoreName.takeIf { it.isNotBlank() } ?: "Penjual"
+                val roomSuffix = order.pickupRoom.takeIf { it.isNotBlank() }?.let { " di $it" }.orEmpty()
+                val title = when (newStatus) {
+                    STATUS_CONFIRMED -> "Pesanan #${order.pickupCode} Dikonfirmasi"
+                    STATUS_PREPARING, "processing" -> "Pesanan #${order.pickupCode} Sedang Disiapkan"
+                    STATUS_READY -> "Pesanan #${order.pickupCode} Siap Diambil!"
+                    STATUS_COMPLETED -> "Pesanan #${order.pickupCode} Selesai"
+                    STATUS_CANCELLED -> "Pesanan #${order.pickupCode} Dibatalkan"
+                    else -> "Status Pesanan #${order.pickupCode} Diperbarui"
+                }
+                val body = when (newStatus) {
+                    STATUS_CONFIRMED -> "$store telah menerima pesananmu (${order.itemsSummary})."
+                    STATUS_PREPARING, "processing" -> "$store sedang menyiapkan pesananmu."
+                    STATUS_READY -> "Pesananmu sudah siap diambil$roomSuffix. Tunjukkan kode #${order.pickupCode}."
+                    STATUS_COMPLETED -> "Terima kasih! Pesanan #${order.pickupCode} telah selesai."
+                    STATUS_CANCELLED -> "Pesanan #${order.pickupCode} telah dibatalkan oleh $store."
+                    else -> "Status pesanan #${order.pickupCode} berubah menjadi $newStatus."
+                }
+                NotificationHelper.showOrderUpdate(
+                    context = this,
+                    notificationKey = "${order.id}:status:$newStatus",
+                    orderId = order.id,
+                    title = title,
+                    body = body,
+                )
+            }
+
+            if (oldPay != null && oldPay != newPay && (newPay == "paid" || newPay == "rejected")) {
+                val title = if (newPay == "paid") {
+                    "Pembayaran #${order.pickupCode} Diverifikasi"
+                } else {
+                    "Bukti Bayar #${order.pickupCode} Ditolak"
+                }
+                val body = if (newPay == "paid") {
+                    "Pembayaran pesanan #${order.pickupCode} telah ditandai lunas oleh penjual."
+                } else {
+                    "Bukti pembayaran QRIS #${order.pickupCode} ditolak penjual. Silakan konfirmasi ulang."
+                }
+                NotificationHelper.showOrderUpdate(
+                    context = this,
+                    notificationKey = "${order.id}:pay:$newPay",
+                    orderId = order.id,
+                    title = title,
+                    body = body,
+                )
+            }
+        }
+    }
+
+    internal fun detectAndNotifySellerOrderChanges(orders: List<AdminOrder>) {
+        if (!sellerOrdersSeeded) {
+            orders.forEach { order ->
+                knownSellerOrderIds.add(order.id)
+                knownSellerPaymentStatuses[order.id] = order.paymentStatus.lowercase()
+            }
+            sellerOrdersSeeded = true
+            return
+        }
+        orders.forEach { order ->
+            val isNewOrder = knownSellerOrderIds.add(order.id)
+            val newPay = order.paymentStatus.lowercase()
+            val oldPay = knownSellerPaymentStatuses.put(order.id, newPay)
+
+            if (isNewOrder && !isTerminalStatus(order.status)) {
+                val summary = order.itemsSummary.ifBlank { "${order.itemCount} item" }
+                NotificationHelper.showOrderUpdate(
+                    context = this,
+                    notificationKey = "${order.id}:new",
+                    orderId = order.id,
+                    title = "Pesanan Baru #${order.pickupCode}",
+                    body = "${order.buyerName} memesan $summary (${formatRupiah(order.totalIdr)})",
+                )
+            } else if (!isNewOrder && oldPay != null && oldPay != newPay && newPay == "waiting_verification") {
+                NotificationHelper.showOrderUpdate(
+                    context = this,
+                    notificationKey = "${order.id}:qris_wait",
+                    orderId = order.id,
+                    title = "Bukti Bayar QRIS #${order.pickupCode}",
+                    body = "${order.buyerName} mengirim konfirmasi pembayaran QRIS (${formatRupiah(order.totalIdr)}).",
+                )
+            }
+        }
+    }
+
+    internal fun startAutoRefreshLoop() {
+        autoRefreshJob?.cancel()
+        autoRefreshJob = authScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1_000L)
+                if (!SupabaseRepository.isConfigured()) continue
+                if (ui.myRole == "seller" && SupabaseRepository.hasSession()) {
+                    silentRefreshSellerTick()
+                } else if (ui.myRole == "buyer" || ui.myRole == null) {
+                    silentRefreshBuyerTick()
+                }
+            }
+        }
+    }
 
     // Kode akses wajib untuk memasuki role penjual & developer.
     // Cukup dimasukkan SATU KALI (saat pertama); status tersimpan permanen
@@ -302,6 +433,12 @@ class MainActivity : Activity() {
             refreshOrderingStatus()
             registerMyDevice()
             startInboxObserver()
+            pendingOrderNotificationId?.let { orderId ->
+                pendingOrderNotificationId = null
+                ui.selectedBuyerOrderId = orderId
+                ui.lastOrderId = orderId
+                ui.go(Screen.READY)
+            }
         }
     }
 
@@ -322,6 +459,13 @@ class MainActivity : Activity() {
             refreshProducts()
             startProductUpdates()
         }
+        startAutoRefreshLoop()
+    }
+
+    override fun onStop() {
+        autoRefreshJob?.cancel()
+        autoRefreshJob = null
+        super.onStop()
     }
 
     override fun onResume() {
@@ -412,6 +556,7 @@ class MainActivity : Activity() {
     internal var pendingOrderNotificationId: String? = null
 
     override fun onDestroy() {
+        autoRefreshJob?.cancel()
         otaDownloadJob?.cancel()
         adminObserver?.close()
         productObserver?.close()
@@ -855,6 +1000,7 @@ class MainActivity : Activity() {
                 devObserver?.close()
                 devObserver = null
                 inboxObserverClose()
+                resetOrderNotificationState()
                 ui.adminNotifOpen = false
                 ui.isSellerProfile = false
                 ui.myRole = null

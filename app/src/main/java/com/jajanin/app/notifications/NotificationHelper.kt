@@ -28,14 +28,25 @@ internal object NotificationHelper {
     }
 
     fun showNewOrder(context: Context, orderId: String, title: String, body: String) {
+        showOrderUpdate(context, orderId, orderId, title, body)
+    }
+
+    fun showOrderUpdate(
+        context: Context,
+        notificationKey: String,
+        orderId: String,
+        title: String,
+        body: String,
+    ) {
         ensureChannel(context)
         val tap = Intent(context, MainActivity::class.java).apply {
             putExtra(EXTRA_ORDER_ID, orderId)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
+        val notifId = notificationKey.hashCode()
         val pending = PendingIntent.getActivity(
             context,
-            orderId.hashCode(),
+            notifId,
             tap,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -55,7 +66,7 @@ internal object NotificationHelper {
             .build()
         try {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.notify(orderId.hashCode(), notification)
+            manager.notify(notifId, notification)
         } catch (e: SecurityException) {
             // POST_NOTIFICATIONS belum diberikan; diamkan agar pipeline pesanan tidak terganggu.
         }

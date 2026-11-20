@@ -39,12 +39,6 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
     drawIcon(c, "box", cartStartX + cartIcon / 2f, cartButton.centerY(), cartIcon, Color.WHITE)
     kit.text(c, cartLabel, cartStartX + cartIcon + 4f, cartButton.centerY() + 12f * .34f, 12f, Color.WHITE, true)
     bounds["cartCheckout"] = cartButton
-
-    val refreshBtn = RectF(cartButton.left - 42f, 22f, cartButton.left - 8f, 58f)
-    kit.glassPill(c, refreshBtn, 17f, onDark = true, accent = if (productsRefreshing) kit.blue else null)
-    drawIcon(c, "refresh", refreshBtn.centerX(), refreshBtn.centerY(), 15f, Color.WHITE)
-    press(c, "buyerRefresh", refreshBtn, 17f)
-    bounds["buyerRefresh"] = refreshBtn
     c.restore()
 
     val off = -scroll

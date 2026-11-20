@@ -491,6 +491,50 @@ internal object OrderRepository {
     }
 
     /**
+     * Pembeli membatalkan pesanannya sendiri sebelum dikonfirmasi penjual (`status = 'pending'`).
+     * Menggunakan kebijakan RLS delete pada `order_items` & `orders` untuk pemilik saat `pending`.
+     */
+    suspend fun cancelBuyerPendingOrder(orderId: String) {
+        val uid = SupabaseRepository.currentUid() ?: error("Silakan masuk terlebih dahulu.")
+        val current = client.postgrest.from("orders")
+            .select(Columns.raw("id,status")) {
+                filter {
+                    eq("id", orderId)
+                    eq("user_id", uid)
+                }
+                limit(1)
+            }
+            .decodeSingleOrNull<RealtimeOrderPatch>()
+            ?: error("Pesanan tidak ditemukan.")
+        if (!current.status.equals(STATUS_PENDING, ignoreCase = true)) {
+            error("Pesanan sudah dikonfirmasi penjual dan tidak bisa dibatalkan.")
+        }
+        runCatching {
+            client.postgrest.from("order_items").delete {
+                filter { eq("order_id", orderId) }
+            }
+        }
+        client.postgrest.from("orders").delete {
+            filter {
+                eq("id", orderId)
+                eq("user_id", uid)
+                eq("status", STATUS_PENDING)
+            }
+        }
+        val stillExists = runCatching {
+            client.postgrest.from("orders")
+                .select(Columns.raw("id")) {
+                    filter { eq("id", orderId) }
+                    limit(1)
+                }
+                .decodeSingleOrNull<IdRow>() != null
+        }.getOrDefault(false)
+        if (stillExists) {
+            error("Gagal membatalkan pesanan. Pesanan mungkin sudah dikonfirmasi penjual.")
+        }
+    }
+
+    /**
      * Pembeli mengajukan bukti bayar QRIS: unpaid|rejected -> waiting_verification.
      * Trigger DB menolak perubahan lain; penjual yang memverifikasi.
      */

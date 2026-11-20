@@ -316,7 +316,12 @@ internal fun MainActivity.handleOrderNotification(intent: Intent?) {
     authScope.launch {
         if (!SupabaseRepository.awaitLoggedIn()) return@launch
         if (SupabaseRepository.currentRole() != "seller") {
+            if (pendingOrderNotificationId != orderId) return@launch
             pendingOrderNotificationId = null
+            ui.selectedBuyerOrderId = orderId
+            ui.lastOrderId = orderId
+            refreshMyOrders()
+            ui.go(Screen.READY)
             return@launch
         }
         // Bila routeSignedInUser sudah lebih dulu mengonsumsi id ini, jangan navigasi ulang.

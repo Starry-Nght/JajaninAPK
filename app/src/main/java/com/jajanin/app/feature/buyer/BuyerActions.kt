@@ -87,7 +87,9 @@ internal fun MainActivity.refreshMyOrders() {
     ui.invalidate()
     myOrdersJob = authScope.launch {
         try {
-            ui.myOrders = withTimeout(12_000L) { OrderRepository.fetchMyOrders() }
+            val fresh = withTimeout(12_000L) { OrderRepository.fetchMyOrders() }
+            detectAndNotifyBuyerOrderChanges(fresh)
+            ui.myOrders = fresh
             ui.myOrdersError = null
             refreshMyExp()
         } catch (ce: CancellationException) {
@@ -97,6 +99,35 @@ internal fun MainActivity.refreshMyOrders() {
         } finally {
             ui.myOrdersLoading = false
             ui.invalidate()
+        }
+    }
+}
+
+/** Auto-refresh pembeli setiap 1 detik di latar belakang tanpa kedipan indikator loading. */
+internal suspend fun MainActivity.silentRefreshBuyerTick() {
+    if (!SupabaseRepository.isConfigured()) return
+    runCatching {
+        val freshProducts = OrderRepository.fetchAvailableProducts()
+        if (freshProducts != ui.products) {
+            ui.products = freshProducts
+            ui.productsLoading = false
+            ui.invalidate()
+        }
+    }
+    if (SupabaseRepository.hasSession() && !ui.placingOrder) {
+        runCatching {
+            val freshOrders = OrderRepository.fetchMyOrders()
+            detectAndNotifyBuyerOrderChanges(freshOrders)
+            if (freshOrders != ui.myOrders) {
+                ui.myOrders = freshOrders
+                ui.lastOrderId?.let { id ->
+                    freshOrders.firstOrNull { it.id == id }?.let { matched ->
+                        ui.lastOrderStatus = matched.status
+                    }
+                }
+                ui.myOrdersLoading = false
+                ui.invalidate()
+            }
         }
     }
 }
@@ -133,6 +164,7 @@ private fun MainActivity.applyRealtimeOrderToBuyer(action: PostgresAction): Bool
             if (ui.lastOrderId == patch.id && patch.status != null) {
                 ui.lastOrderStatus = patch.status
             }
+            detectAndNotifyBuyerOrderChanges(ui.myOrders)
             ui.invalidate()
             true
         }
@@ -568,6 +600,9 @@ internal fun MainActivity.placeCartOrder() {
             ui.lastOrderPickup = placed.pickupCode
             ui.lastOrderTotal = placed.totalIdr
             ui.lastOrderMethod = placed.paymentMethod
+            knownBuyerOrderStatuses[placed.id] = placed.status.lowercase()
+            knownBuyerPaymentStatuses[placed.id] = placed.paymentStatus.lowercase()
+            buyerOrdersSeeded = true
             if (method == "qris") {
                 // Ambil QR warung lalu tampilkan layar bayar.
                 ui.lastOrderStatus = placed.status
@@ -666,6 +701,48 @@ internal fun MainActivity.submitPaymentProofFor(orderId: String) {
             Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
         }
     }
+}
+
+/** Pembeli membatalkan pesanan miliknya sendiri selama masih berstatus 'pending' (sebelum dikonfirmasi penjual). */
+internal fun MainActivity.cancelBuyerOrder(orderId: String) {
+    val self = this
+    val order = ui.myOrders.firstOrNull { it.id == orderId }
+    val currentStatus = order?.status ?: if (ui.lastOrderId == orderId) ui.lastOrderStatus else null
+    if (currentStatus != null && !currentStatus.equals(STATUS_PENDING, ignoreCase = true)) {
+        Toast.makeText(this, "Pesanan sudah dikonfirmasi penjual dan tidak bisa dibatalkan.", Toast.LENGTH_LONG).show()
+        return
+    }
+    val codeLabel = order?.pickupCode ?: ui.lastOrderPickup ?: orderId.take(6).uppercase()
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Batalkan pesanan #$codeLabel?")
+        .setMessage("Pesanan hanya dapat dibatalkan sebelum dikonfirmasi penjual.")
+        .setPositiveButton("Batalkan Pesanan") { _, _ ->
+            val previousOrders = ui.myOrders
+            ui.myOrders = previousOrders.filterNot { it.id == orderId }
+            if (ui.currentScreen == Screen.READY && (ui.selectedBuyerOrderId == orderId || ui.lastOrderId == orderId)) {
+                ui.go(Screen.ORDERS)
+            } else {
+                ui.invalidate()
+            }
+            authScope.launch {
+                try {
+                    OrderRepository.cancelBuyerPendingOrder(orderId)
+                    knownBuyerOrderStatuses.remove(orderId)
+                    knownBuyerPaymentStatuses.remove(orderId)
+                    refreshMyOrders()
+                    refreshOrderingStatus()
+                    refreshProducts()
+                    Toast.makeText(self, "Pesanan #$codeLabel berhasil dibatalkan.", Toast.LENGTH_SHORT).show()
+                } catch (error: Throwable) {
+                    ui.myOrders = previousOrders
+                    ui.invalidate()
+                    refreshMyOrders()
+                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        .setNegativeButton("Kembali", null)
+        .show()
 }
 
 /** Penjual menandai lunas (tunai saat ambil / verifikasi QRIS). */

@@ -67,6 +67,44 @@ internal data class OtaPublishDraft(
 )
 
 private val otaJson = Json { ignoreUnknownKeys = true }
+private const val PREFS_OTA = "jajanin_ota"
+private const val PREF_LAST_PROMPTED_CODE = "last_prompted_version_code"
+
+@Volatile
+private var cachedInstalledSha256: String? = null
+
+internal fun MainActivity.installedVersionCode(): Int {
+    val pkgCode = runCatching {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode.toInt() else @Suppress("DEPRECATION") info.versionCode
+    }.getOrDefault(BuildConfig.VERSION_CODE)
+    return maxOf(BuildConfig.VERSION_CODE, pkgCode)
+}
+
+internal fun MainActivity.installedVersionName(): String {
+    val pkgName = runCatching {
+        packageManager.getPackageInfo(packageName, 0).versionName?.trim().orEmpty()
+    }.getOrDefault("")
+    return pkgName.ifBlank { BuildConfig.VERSION_NAME.trim() }
+}
+
+private suspend fun MainActivity.installedApkSha256(): String? = withContext(Dispatchers.IO) {
+    cachedInstalledSha256?.let { return@withContext it }
+    runCatching {
+        val src = File(applicationInfo.sourceDir)
+        if (!src.isFile) return@runCatching null
+        val digest = MessageDigest.getInstance("SHA-256")
+        src.inputStream().use { input ->
+            val buf = ByteArray(16 * 1024)
+            while (true) {
+                val r = input.read(buf)
+                if (r <= 0) break
+                digest.update(buf, 0, r)
+            }
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }.also { cachedInstalledSha256 = it }
+    }.getOrNull()
+}
 
 /** Checks Supabase `app_releases` for a newer APK and prompts for in-place update. */
 internal fun MainActivity.checkForOtaUpdate(silent: Boolean) {
@@ -78,6 +116,8 @@ internal fun MainActivity.checkForOtaUpdate(silent: Boolean) {
         Toast.makeText(this, "Memeriksa pembaruan...", Toast.LENGTH_SHORT).show()
     }
     authScope.launch {
+        val installedCode = installedVersionCode()
+        val installedName = installedVersionName()
         val result = runCatching { fetchLatestOtaRelease() }
         val release = result.getOrNull()
         if (result.isFailure) {
@@ -95,32 +135,45 @@ internal fun MainActivity.checkForOtaUpdate(silent: Boolean) {
             if (!silent) {
                 Toast.makeText(
                     this@checkForOtaUpdate,
-                    "Aplikasi sudah versi terbaru (v${BuildConfig.VERSION_NAME})",
+                    "Aplikasi sudah versi terbaru (v$installedName)",
                     Toast.LENGTH_SHORT,
                 ).show()
             }
             return@launch
         }
 
-        val hasNewer = release.versionCode > BuildConfig.VERSION_CODE
+        val localSha = installedApkSha256()
+        val sameSha = !release.sha256.isNullOrBlank() &&
+            !localSha.isNullOrBlank() &&
+            release.sha256.equals(localSha, ignoreCase = true)
+        val sameVerName = release.versionName.trim().removePrefix("v")
+            .equals(installedName.removePrefix("v"), ignoreCase = true)
+        val hasNewer = release.versionCode > installedCode && !sameSha && !sameVerName
+
         ui.otaUpdateAvailable = hasNewer
-        ui.otaLatestVersion = "v${release.versionName}"
+        ui.otaLatestVersion = if (hasNewer) "v${release.versionName}" else "v$installedName"
         ui.otaLatestChangelog = release.changelog.trim().takeIf { it.isNotEmpty() }
         ui.invalidate()
 
+        val prefs = getSharedPreferences(PREFS_OTA, android.content.Context.MODE_PRIVATE)
         if (!hasNewer) {
+            prefs.edit().putInt(PREF_LAST_PROMPTED_CODE, maxOf(installedCode, release.versionCode)).apply()
             if (!silent) {
                 Toast.makeText(
                     this@checkForOtaUpdate,
-                    "Aplikasi sudah versi terbaru (v${BuildConfig.VERSION_NAME})",
+                    "Aplikasi sudah versi terbaru (v$installedName)",
                     Toast.LENGTH_SHORT,
                 ).show()
             }
             return@launch
         }
 
-        if (silent && otaPromptedVersion == release.versionCode) return@launch
+        val lastPrompted = prefs.getInt(PREF_LAST_PROMPTED_CODE, -1)
+        if (silent && !release.mandatory && (otaPromptedVersion >= release.versionCode || lastPrompted >= release.versionCode)) {
+            return@launch
+        }
         otaPromptedVersion = release.versionCode
+        prefs.edit().putInt(PREF_LAST_PROMPTED_CODE, release.versionCode).apply()
         showOtaAvailableDialog(release)
     }
 }

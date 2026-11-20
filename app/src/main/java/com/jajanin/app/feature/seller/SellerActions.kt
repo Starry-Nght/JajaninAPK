@@ -723,6 +723,7 @@ private fun MainActivity.applyRealtimeOrderToSeller(action: PostgresAction): Boo
             val patch = OrderRepository.decodeOrderPatch(action.record) ?: return false
             if (ui.adminOrders.none { it.id == patch.id }) return false
             patchAdminOrderLocal(patch.id, status = patch.status, paymentStatus = patch.paymentStatus)
+            detectAndNotifySellerOrderChanges(ui.adminOrders)
             true
         }
         is PostgresAction.Delete -> {
@@ -1246,7 +1247,9 @@ internal fun MainActivity.refreshAdminOrders() {
     ui.invalidate()
     adminRefreshJob = authScope.launch {
         try {
-            ui.adminOrders = OrderRepository.fetchAdminTodayOrders()
+            val freshOrders = OrderRepository.fetchAdminTodayOrders()
+            detectAndNotifySellerOrderChanges(freshOrders)
+            ui.adminOrders = freshOrders
             ui.adminError = null
             // Jika layar detail sedang terbuka, ikutkan perubahan realtime
             // (mis. pembeli baru mengirim bukti bayar) tanpa perlu tarik-ulang.
@@ -1259,6 +1262,25 @@ internal fun MainActivity.refreshAdminOrders() {
         } catch (error: Throwable) {
             ui.adminError = SupabaseRepository.errorMessage(error)
         } finally {
+            ui.adminLoading = false
+            ui.invalidate()
+        }
+    }
+}
+
+/** Auto-refresh penjual setiap 1 detik di latar belakang tanpa mengaktifkan spinner loading. */
+internal suspend fun MainActivity.silentRefreshSellerTick() {
+    if (!SupabaseRepository.hasSession() || adminStatusBusy) return
+    runCatching {
+        val freshOrders = OrderRepository.fetchAdminTodayOrders()
+        detectAndNotifySellerOrderChanges(freshOrders)
+        if (freshOrders != ui.adminOrders) {
+            ui.adminOrders = freshOrders
+            ui.adminDetailId?.let { id ->
+                freshOrders.firstOrNull { it.id == id }?.let { fresh ->
+                    ui.adminDetailOrder = fresh.copy(buyerPhone = ui.adminDetailOrder?.buyerPhone.orEmpty())
+                }
+            }
             ui.adminLoading = false
             ui.invalidate()
         }

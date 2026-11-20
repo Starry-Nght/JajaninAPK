@@ -110,6 +110,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var selectedRole = "buyer"
     internal var productsLoading = false
     internal var productsRefreshing = false
+    internal var pullRefreshDragY = 0f
     internal var productsError: String? = null
     internal var scrollDummy = 0
     internal var productDescription = ""
@@ -612,6 +613,7 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.ABOUT -> drawAbout(canvas, 390f, height / s)
             Screen.INFO -> drawInfoPage(canvas, 390f, height / s)
         }
+        drawPullRefreshBanner(canvas)
         canvas.restore()
         val spec = navSpec?.copy(badgeIndex = navBadgeIndex, badgeCount = navBadgeCount)
         if (spec != lastPresentedNavSpec) {
@@ -625,6 +627,53 @@ internal class JajaninView(context: Context) : View(context) {
     }
 
     private fun navScrollPad(): Float = 82f
+
+    private fun canPullRefresh(): Boolean =
+        screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
+            screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL
+
+    private fun drawPullRefreshBanner(c: Canvas) {
+        if (!canPullRefresh()) return
+        val activePull = pullRefreshDragY > 6f
+        val showRefreshing = productsRefreshing && (screen == Screen.HOME || screen == Screen.EXPLORE)
+        if (!activePull && !showRefreshing) return
+        val offset = if (activePull) (pullRefreshDragY * 0.45f).coerceAtMost(34f) else 18f
+        val top = 56f + offset
+        val pill = RectF(118f, top, 272f, top + 30f)
+        val ready = pullRefreshDragY >= 44f || showRefreshing
+        kit.rounded(c, pill, kit.card, 15f, if (ready) kit.blue else kit.border)
+        drawIcon(c, "refresh", pill.left + 18f, pill.centerY(), 13f, if (ready) kit.blue else kit.muted)
+        val label = when {
+            showRefreshing && !activePull -> "Menyegarkan..."
+            ready -> "Lepas untuk refresh"
+            else -> "Tarik untuk refresh"
+        }
+        kit.text(c, label, pill.left + 32f, pill.centerY() + 4f, 10.5f, if (ready) kit.blue else kit.ink, true)
+    }
+
+    private fun triggerPullRefresh() {
+        val act = activity() ?: return
+        when (screen) {
+            Screen.HOME, Screen.EXPLORE -> {
+                act.refreshProducts(manual = true)
+                act.refreshMyOrders()
+            }
+            Screen.ORDERS, Screen.READY -> {
+                act.refreshMyOrders()
+                act.refreshProducts()
+                android.widget.Toast.makeText(context, "Pesanan diperbarui", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            Screen.ADMIN -> {
+                act.refreshAdminOrders()
+                act.refreshSellerProducts()
+                android.widget.Toast.makeText(context, "Antrean diperbarui", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            Screen.ADMIN_DETAIL -> {
+                adminDetailId?.let { act.loadAdminOrderDetail(it) }
+            }
+            else -> {}
+        }
+    }
 
     /** Layar yang memakai tipografi penjual (termasuk profil & notifikasi seller). */
     private fun isSellerScreen(): Boolean =
@@ -672,6 +721,7 @@ internal class JajaninView(context: Context) : View(context) {
                 moved = false
                 swipeMode = 0
                 swipeDragX = 0f
+                pullRefreshDragY = 0f
                 // Sama seperti dispatch di ACTION_UP (terbalik) supaya highlight
                 // menunjuk kontrol yang benar saat area tumpang tindih.
                 val hitKey = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key
@@ -682,9 +732,9 @@ internal class JajaninView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_MOVE -> {
                 val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
-                    screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
-                    screen == Screen.DEV || screen == Screen.CHECKOUT || screen == Screen.NOTIF ||
-                    screen == Screen.EXP_HISTORY || screen == Screen.PROFILE
+                    screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
+                    screen == Screen.PRODUCT_FORM || screen == Screen.DEV || screen == Screen.CHECKOUT ||
+                    screen == Screen.NOTIF || screen == Screen.EXP_HISTORY || screen == Screen.PROFILE
                 val touchInPinnedHeader = touchStartY <= 68f
                 val dx = x - touchStartX
                 val dy = y - touchStartY
@@ -712,8 +762,15 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     1 -> {
-                        val maxScroll = (contentHeight - height / s + navScrollPad()).coerceAtLeast(0f)
-                        scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
+                        val deltaY = y - previousY
+                        if (scroll <= 0.5f && (deltaY > 0f || pullRefreshDragY > 0f) && canPullRefresh()) {
+                            pullRefreshDragY = (pullRefreshDragY + deltaY * 0.58f).coerceIn(0f, 84f)
+                            scroll = 0f
+                        } else {
+                            pullRefreshDragY = 0f
+                            val maxScroll = (contentHeight - height / s + navScrollPad()).coerceAtLeast(0f)
+                            scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
+                        }
                         previousY = y
                         invalidate()
                     }
@@ -725,6 +782,7 @@ internal class JajaninView(context: Context) : View(context) {
                 val offset = swipeDragX
                 swipeMode = 0
                 swipeDragX = 0f
+                pullRefreshDragY = 0f
                 pressedTab = null
                 pressedKey = null
                 if (wasHorizontal) snapSlideBack(offset) else invalidate()
@@ -734,6 +792,18 @@ internal class JajaninView(context: Context) : View(context) {
                 if (pressedTab != null || pressedKey != null) {
                     pressedTab = null
                     pressedKey = null
+                    invalidate()
+                }
+                if (pullRefreshDragY >= 44f) {
+                    pullRefreshDragY = 0f
+                    swipeMode = 0
+                    swipeDragX = 0f
+                    invalidate()
+                    triggerPullRefresh()
+                    return true
+                }
+                if (pullRefreshDragY > 0f) {
+                    pullRefreshDragY = 0f
                     invalidate()
                 }
                 if (swipeMode == 2) {
@@ -816,6 +886,7 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "placeOrder" -> if (!placingOrder) activity()?.placeCartOrder()
                     hit == "paid" -> activity()?.submitPaymentProof()
                     hit.startsWith("myOrderPaid:") -> activity()?.submitPaymentProofFor(hit.substringAfter(':'))
+                    hit.startsWith("buyerCancel:") -> activity()?.cancelBuyerOrder(hit.substringAfter(':'))
                     hit.startsWith("buyerOrder:") -> {
                         selectedBuyerOrderId = hit.substringAfter(':')
                         go(Screen.READY)

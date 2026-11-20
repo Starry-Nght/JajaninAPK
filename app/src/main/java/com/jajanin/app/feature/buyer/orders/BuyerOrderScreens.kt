@@ -192,10 +192,25 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     bounds["headerBack"] = RectF(12f, 10f, 64f, HEADER_H)
 
     // Bottom Action CTA
-    val cta = RectF(20f, h - 62f, w - 20f, h - 14f)
-    kit.rounded(c, cta, kit.blue, 8f)
-    kit.centerText(c, "Lihat Semua Pesanan", cta, 14f, Color.WHITE, true)
-    bounds["orders"] = RectF(cta)
+    val targetOrderId = matchedOrder?.id ?: lastOrderId
+    val canBuyerCancel = status.equals(STATUS_PENDING, ignoreCase = true) && !targetOrderId.isNullOrBlank()
+    if (canBuyerCancel && targetOrderId != null) {
+        val cancelBtn = RectF(20f, h - 62f, 134f, h - 14f)
+        kit.rounded(c, cancelBtn, kit.card, 8f, kit.dangerBorder)
+        kit.centerText(c, "Batalkan", cancelBtn, 13f, kit.danger, true)
+        press(c, "buyerCancel:$targetOrderId", cancelBtn, 8f)
+        bounds["buyerCancel:$targetOrderId"] = RectF(cancelBtn)
+
+        val cta = RectF(144f, h - 62f, w - 20f, h - 14f)
+        kit.rounded(c, cta, kit.blue, 8f)
+        kit.centerText(c, "Lihat Semua Pesanan", cta, 13.5f, Color.WHITE, true)
+        bounds["orders"] = RectF(cta)
+    } else {
+        val cta = RectF(20f, h - 62f, w - 20f, h - 14f)
+        kit.rounded(c, cta, kit.blue, 8f)
+        kit.centerText(c, "Lihat Semua Pesanan", cta, 14f, Color.WHITE, true)
+        bounds["orders"] = RectF(cta)
+    }
 }
 
 internal fun JajaninView.drawOrders(c: Canvas, w: Float, h: Float) {
@@ -281,10 +296,12 @@ private fun JajaninView.drawBuyerOrderItem(
     visible: (Float, Float) -> Boolean,
     bottomClip: Float
 ): Float {
+    val canCancel = active && order.status.equals(STATUS_PENDING, ignoreCase = true)
     val needsProof = order.paymentMethod == "qris" &&
         (order.paymentStatus == "unpaid" || order.paymentStatus == "rejected")
+    val hasActionRow = active && (needsProof || canCancel)
     val cardH = when {
-        active && needsProof -> 196f
+        hasActionRow -> 196f
         active -> 160f
         else -> 114f
     }
@@ -345,7 +362,31 @@ private fun JajaninView.drawBuyerOrderItem(
             drawOrderProgressTrack(c, order.status, 34f, 356f, top + 108f)
         }
 
-        if (active && needsProof) {
+        if (canCancel && needsProof) {
+            val cancelBtn = RectF(32f, top + 154f, 132f, top + 184f)
+            kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
+            kit.centerText(c, "Batalkan", cancelBtn, 11f, kit.danger, true)
+            press(c, "buyerCancel:${order.id}", cancelBtn, 6f)
+            bounds.putVisible("buyerCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+
+            val payBtn = RectF(140f, top + 154f, 358f, top + 184f)
+            kit.rounded(c, payBtn, kit.tint, 6f, kit.blue)
+            kit.centerText(
+                c,
+                if (order.paymentStatus == "rejected") "Konfirmasi bayar ulang" else "Saya sudah membayar",
+                payBtn,
+                11f,
+                kit.blue,
+                true
+            )
+            bounds.putVisible("myOrderPaid:${order.id}", payBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+        } else if (canCancel) {
+            val cancelBtn = RectF(32f, top + 154f, 358f, top + 184f)
+            kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
+            kit.centerText(c, "Batalkan Pesanan", cancelBtn, 11f, kit.danger, true)
+            press(c, "buyerCancel:${order.id}", cancelBtn, 6f)
+            bounds.putVisible("buyerCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+        } else if (active && needsProof) {
             val payBtn = RectF(32f, top + 154f, 358f, top + 184f)
             kit.rounded(c, payBtn, kit.tint, 6f, kit.blue)
             kit.centerText(
@@ -362,7 +403,7 @@ private fun JajaninView.drawBuyerOrderItem(
         press(c, "buyerOrder:${order.id}", card, 8f)
     }
 
-    val hitBottom = if (active && needsProof) top + 150f else top + cardH
+    val hitBottom = if (hasActionRow) top + 150f else top + cardH
     bounds.putVisible(
         "buyerOrder:${order.id}",
         RectF(card.left, card.top, card.right, hitBottom),
