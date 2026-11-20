@@ -86,7 +86,7 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
     val ready = today.count { it.status.equals(STATUS_READY, true) }
     val completed = today.count { it.status.equals(STATUS_COMPLETED, true) }
     val active = pending + confirmed + preparing + ready
-    val revenue = today.filterNot { it.status.equals(STATUS_CANCELLED, true) }.sumOf { it.totalIdr }
+    val revenue = today.filter { it.status.equals(STATUS_COMPLETED, true) }.sumOf { it.totalIdr }
 
     val off = -scroll
     val bottomLimit = h - NAV_CLEAR

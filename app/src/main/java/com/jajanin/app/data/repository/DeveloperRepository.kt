@@ -177,7 +177,7 @@ internal object DeveloperRepository {
 
         val todayCount = todayOrders.size
         val todayRevenue = todayOrders
-            .filter { it.status.lowercase() != "cancelled" }
+            .filter { it.status.equals("completed", ignoreCase = true) }
             .sumOf { it.totalIdr }
 
         return DevStats(
