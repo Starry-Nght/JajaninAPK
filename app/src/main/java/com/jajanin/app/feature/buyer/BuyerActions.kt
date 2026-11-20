@@ -129,6 +129,17 @@ internal suspend fun MainActivity.silentRefreshBuyerTick() {
                 ui.invalidate()
             }
         }
+        runCatching {
+            val status = OrderRepository.fetchOrderingStatus()
+            val changed = ui.orderingBlocked != status.blocked ||
+                ui.orderingBlockMessage != status.blockMessage ||
+                ui.ordersToday != status.ordersToday
+            ui.orderingBlocked = status.blocked
+            ui.orderingBlockMessage = status.blockMessage
+            ui.ordersToday = status.ordersToday
+            ui.orderingStatusLoading = false
+            if (changed) ui.invalidate()
+        }
     }
 }
 

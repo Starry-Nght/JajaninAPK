@@ -1019,6 +1019,8 @@ internal class JajaninView(context: Context) : View(context) {
                     // --- Developer / super admin ---
                     hit == "devSearch" -> activity()?.showDevSearch()
                     hit == "devReset" -> activity()?.confirmDailyReset()
+                    hit == "devResetQuotas" -> activity()?.confirmResetAllQuotas()
+                    hit.startsWith("devResetUserQuota:") -> activity()?.confirmResetUserQuota(hit.substringAfter(':'))
                     hit == "devLogout" -> activity()?.logout()
                     hit == "devRefresh" -> activity()?.refreshDeveloper()
                     hit == "devBell" -> activity()?.openNotif()

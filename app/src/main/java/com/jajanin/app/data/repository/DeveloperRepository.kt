@@ -388,6 +388,17 @@ internal object DeveloperRepository {
         return client.postgrest.rpc("daily_reset_monitor").decodeAs<DailyResetResult>()
     }
 
+    /** Reset jatah pesanan harian (0/2) untuk satu pembeli tertentu (developer only). */
+    suspend fun resetBuyerQuota(userId: String): Int {
+        val params = mapOf("p_target_user_id" to kotlinx.serialization.json.JsonPrimitive(userId))
+        return client.postgrest.rpc("dev_reset_buyer_quota", params).decodeAs<Int>()
+    }
+
+    /** Reset jatah pesanan harian (0/2) untuk seluruh pembeli sekaligus (developer only). */
+    suspend fun resetAllBuyerQuotas(): Int {
+        return client.postgrest.rpc("dev_reset_all_quotas").decodeAs<Int>()
+    }
+
     // --- Buyer/seller inbox ---
 
     suspend fun fetchMyWarnings(): List<DevWarningRow> {

@@ -340,6 +340,50 @@ internal fun MainActivity.doDailyReset() {
     }
 }
 
+/** Konfirmasi & eksekusi reset jatah pesanan harian semua pembeli ke 0/2. */
+internal fun MainActivity.confirmResetAllQuotas() {
+    val self = this
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Reset jatah pesanan semua buyer?")
+        .setMessage("Kuota pesanan harian (maks 2/hari) untuk semua akun pembeli akan dikembalikan ke 0/2. Riwayat order & omzet tetap utuh.")
+        .setPositiveButton("Reset Jatah") { _, _ ->
+            authScope.launch {
+                try {
+                    val count = DeveloperRepository.resetAllBuyerQuotas()
+                    refreshDeveloper()
+                    Toast.makeText(self, "Jatah pesanan $count pembeli berhasil direset ke 0/2.", Toast.LENGTH_LONG).show()
+                } catch (error: Throwable) {
+                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        .setNegativeButton("Batal", null)
+        .show()
+}
+
+/** Konfirmasi & eksekusi reset jatah pesanan harian untuk satu pembeli tertentu. */
+internal fun MainActivity.confirmResetUserQuota(userId: String) {
+    val self = this
+    val user = ui.devUsers.firstOrNull { it.id == userId }
+    val name = user?.displayName ?: "pembeli ini"
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Reset jatah pesanan?")
+        .setMessage("Kembalikan kuota pesanan harian $name ke 0/2 supaya bisa memesan lagi hari ini.")
+        .setPositiveButton("Reset Jatah") { _, _ ->
+            authScope.launch {
+                try {
+                    DeveloperRepository.resetBuyerQuota(userId)
+                    refreshDeveloper()
+                    Toast.makeText(self, "Jatah pesanan $name direset ke 0/2.", Toast.LENGTH_SHORT).show()
+                } catch (error: Throwable) {
+                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        .setNegativeButton("Batal", null)
+        .show()
+}
+
 // ================= Buyer/seller inbox =================
 
 /** Realtime ringan untuk badge inbox buyer/seller (peringatan + pengumuman). */
