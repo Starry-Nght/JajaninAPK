@@ -102,6 +102,24 @@ class MainActivity : Activity() {
     internal val knownSellerOrderIds = HashSet<String>()
     internal val knownSellerPaymentStatuses = HashMap<String, String>()
 
+    private fun notifStatePrefs() = getSharedPreferences("jajanin_order_notif_state", MODE_PRIVATE)
+
+    internal fun recordBuyerOrderSeed(orderId: String, status: String, paymentStatus: String) {
+        val uid = SupabaseRepository.currentUid().orEmpty()
+        val normStatus = status.lowercase()
+        val normPay = paymentStatus.lowercase()
+        knownBuyerOrderStatuses[orderId] = normStatus
+        knownBuyerPaymentStatuses[orderId] = normPay
+        buyerOrdersSeeded = true
+        if (uid.isNotBlank()) {
+            notifStatePrefs().edit()
+                .putBoolean("buyer_seeded:$uid", true)
+                .putString("buyer_status:$uid:$orderId", normStatus)
+                .putString("buyer_pay:$uid:$orderId", normPay)
+                .apply()
+        }
+    }
+
     internal fun resetOrderNotificationState() {
         buyerOrdersSeeded = false
         knownBuyerOrderStatuses.clear()
@@ -112,21 +130,44 @@ class MainActivity : Activity() {
     }
 
     internal fun detectAndNotifyBuyerOrderChanges(orders: List<AdminOrder>) {
-        if (!buyerOrdersSeeded) {
+        val uid = SupabaseRepository.currentUid().orEmpty()
+        val prefs = notifStatePrefs()
+        val wasSeeded = buyerOrdersSeeded || (uid.isNotBlank() && prefs.getBoolean("buyer_seeded:$uid", false))
+        if (!wasSeeded) {
+            val editor = prefs.edit()
+            if (uid.isNotBlank()) editor.putBoolean("buyer_seeded:$uid", true)
             orders.forEach { order ->
-                knownBuyerOrderStatuses[order.id] = order.status.lowercase()
-                knownBuyerPaymentStatuses[order.id] = order.paymentStatus.lowercase()
+                val st = order.status.lowercase()
+                val pay = order.paymentStatus.lowercase()
+                knownBuyerOrderStatuses[order.id] = st
+                knownBuyerPaymentStatuses[order.id] = pay
+                if (uid.isNotBlank()) {
+                    editor.putString("buyer_status:$uid:${order.id}", st)
+                    editor.putString("buyer_pay:$uid:${order.id}", pay)
+                }
             }
+            editor.apply()
             buyerOrdersSeeded = true
             return
         }
+        buyerOrdersSeeded = true
+        val editor = prefs.edit()
+        var statusChangedCount = 0
         orders.forEach { order ->
             val newStatus = order.status.lowercase()
-            val oldStatus = knownBuyerOrderStatuses.put(order.id, newStatus)
+            val persistedStatus = if (uid.isNotBlank()) prefs.getString("buyer_status:$uid:${order.id}", null) else null
+            val oldStatus = knownBuyerOrderStatuses[order.id] ?: persistedStatus
+            knownBuyerOrderStatuses[order.id] = newStatus
+            if (uid.isNotBlank()) editor.putString("buyer_status:$uid:${order.id}", newStatus)
+
             val newPay = order.paymentStatus.lowercase()
-            val oldPay = knownBuyerPaymentStatuses.put(order.id, newPay)
+            val persistedPay = if (uid.isNotBlank()) prefs.getString("buyer_pay:$uid:${order.id}", null) else null
+            val oldPay = knownBuyerPaymentStatuses[order.id] ?: persistedPay
+            knownBuyerPaymentStatuses[order.id] = newPay
+            if (uid.isNotBlank()) editor.putString("buyer_pay:$uid:${order.id}", newPay)
 
             if (oldStatus != null && oldStatus != newStatus) {
+                statusChangedCount++
                 val store = order.sellerStoreName.takeIf { it.isNotBlank() } ?: "Penjual"
                 val roomSuffix = order.pickupRoom.takeIf { it.isNotBlank() }?.let { " di $it" }.orEmpty()
                 val title = when (newStatus) {
@@ -161,6 +202,7 @@ class MainActivity : Activity() {
             }
 
             if (oldPay != null && oldPay != newPay && (newPay == "paid" || newPay == "rejected")) {
+                statusChangedCount++
                 val title = if (newPay == "paid") {
                     "Pembayaran #${order.pickupCode} Diverifikasi"
                 } else {
@@ -180,23 +222,32 @@ class MainActivity : Activity() {
                 )
             }
         }
+        editor.apply()
+        if (statusChangedCount > 0) {
+            ui.unreadOrderNotifCount += statusChangedCount
+            ui.invalidate()
+        }
     }
 
     internal fun detectAndNotifySellerOrderChanges(orders: List<AdminOrder>) {
-        if (!sellerOrdersSeeded) {
-            orders.forEach { order ->
-                knownSellerOrderIds.add(order.id)
-                knownSellerPaymentStatuses[order.id] = order.paymentStatus.lowercase()
-            }
-            sellerOrdersSeeded = true
-            return
-        }
+        val uid = SupabaseRepository.currentUid().orEmpty()
+        val prefs = notifStatePrefs()
+        val editor = prefs.edit()
         orders.forEach { order ->
-            val isNewOrder = knownSellerOrderIds.add(order.id)
-            val newPay = order.paymentStatus.lowercase()
-            val oldPay = knownSellerPaymentStatuses.put(order.id, newPay)
+            val notifKey = "seller_notified:$uid:${order.id}"
+            val alreadyNotified = knownSellerOrderIds.contains(order.id) ||
+                (uid.isNotBlank() && prefs.getBoolean(notifKey, false))
+            knownSellerOrderIds.add(order.id)
+            if (uid.isNotBlank()) editor.putBoolean(notifKey, true)
 
-            if (isNewOrder && !isTerminalStatus(order.status)) {
+            val payKey = "seller_pay:$uid:${order.id}"
+            val newPay = order.paymentStatus.lowercase()
+            val oldPay = knownSellerPaymentStatuses[order.id]
+                ?: (if (uid.isNotBlank()) prefs.getString(payKey, null) else null)
+            knownSellerPaymentStatuses[order.id] = newPay
+            if (uid.isNotBlank()) editor.putString(payKey, newPay)
+
+            if (!alreadyNotified && order.status.equals(STATUS_PENDING, ignoreCase = true)) {
                 val summary = order.itemsSummary.ifBlank { "${order.itemCount} item" }
                 NotificationHelper.showOrderUpdate(
                     context = this,
@@ -205,7 +256,7 @@ class MainActivity : Activity() {
                     title = "Pesanan Baru #${order.pickupCode}",
                     body = "${order.buyerName} memesan $summary (${formatRupiah(order.totalIdr)})",
                 )
-            } else if (!isNewOrder && oldPay != null && oldPay != newPay && newPay == "waiting_verification") {
+            } else if (alreadyNotified && oldPay != null && oldPay != newPay && newPay == "waiting_verification") {
                 NotificationHelper.showOrderUpdate(
                     context = this,
                     notificationKey = "${order.id}:qris_wait",
@@ -215,6 +266,8 @@ class MainActivity : Activity() {
                 )
             }
         }
+        editor.apply()
+        sellerOrdersSeeded = true
     }
 
     internal fun startAutoRefreshLoop() {

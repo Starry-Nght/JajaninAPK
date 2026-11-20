@@ -604,9 +604,7 @@ internal fun MainActivity.placeCartOrder() {
             ui.lastOrderPickup = placed.pickupCode
             ui.lastOrderTotal = placed.totalIdr
             ui.lastOrderMethod = placed.paymentMethod
-            knownBuyerOrderStatuses[placed.id] = placed.status.lowercase()
-            knownBuyerPaymentStatuses[placed.id] = placed.paymentStatus.lowercase()
-            buyerOrdersSeeded = true
+            recordBuyerOrderSeed(placed.id, placed.status, placed.paymentStatus)
             if (method == "qris") {
                 // Ambil QR warung lalu tampilkan layar bayar.
                 ui.lastOrderStatus = placed.status
@@ -731,12 +729,11 @@ internal fun MainActivity.cancelBuyerOrder(orderId: String) {
             authScope.launch {
                 try {
                     OrderRepository.cancelBuyerPendingOrder(orderId)
-                    knownBuyerOrderStatuses.remove(orderId)
-                    knownBuyerPaymentStatuses.remove(orderId)
+                    recordBuyerOrderSeed(orderId, STATUS_CANCELLED, order?.paymentStatus ?: "unpaid")
                     refreshMyOrders()
                     refreshOrderingStatus()
                     refreshProducts()
-                    Toast.makeText(self, "Pesanan #$codeLabel berhasil dibatalkan.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(self, "Pesanan #$codeLabel berhasil dibatalkan & kuota dikembalikan.", Toast.LENGTH_SHORT).show()
                 } catch (error: Throwable) {
                     ui.myOrders = previousOrders
                     ui.invalidate()

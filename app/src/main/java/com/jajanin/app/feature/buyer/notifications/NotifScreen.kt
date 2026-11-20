@@ -71,6 +71,63 @@ internal fun JajaninView.drawNotif(c: Canvas, w: Float, h: Float) {
         }
     }
 
+    if (myRole != "developer" && !seller && myOrders.isNotEmpty()) {
+        kit.text(c, "STATUS PESANAN (${myOrders.size})", 20f, y + 14f, 11f, kit.muted, true)
+        y += 28f
+        myOrders.take(10).forEach { order ->
+            val rowH = 66f
+            if (y + rowH >= 78f && y <= h - 82f) {
+                val st = order.status.lowercase()
+                val isCancelled = st == "cancelled"
+                val isReady = st == "ready"
+                val cardRect = RectF(20f, y, 370f, y + rowH)
+                if (!isTerminalStatus(order.status)) {
+                    kit.rounded(c, cardRect, kit.tint, 12f)
+                } else {
+                    kit.card(c, cardRect, 12f)
+                }
+                val title = when (st) {
+                    STATUS_PENDING -> "Pesanan #${order.pickupCode} · Menunggu Konfirmasi"
+                    STATUS_CONFIRMED -> "Pesanan #${order.pickupCode} · Dikonfirmasi Penjual"
+                    "preparing", "processing" -> "Pesanan #${order.pickupCode} · Sedang Disiapkan"
+                    "ready" -> "Pesanan #${order.pickupCode} · Siap Diambil!"
+                    "completed" -> "Pesanan #${order.pickupCode} · Selesai"
+                    "cancelled" -> "Pesanan #${order.pickupCode} · Dibatalkan"
+                    else -> "Pesanan #${order.pickupCode} · ${statusLabelShort(order.status)}"
+                }
+                val titleColor = when {
+                    isCancelled -> kit.danger
+                    isReady -> kit.success
+                    else -> kit.ink
+                }
+                kit.textEllipsized(c, title, 34f, y + 25f, 260f, 12.5f, titleColor, true)
+                kit.textRight(c, order.timeLabel, 356f, y + 25f, 60f, 10.5f, kit.muted)
+                val subtitle = when {
+                    isCancelled && order.cancelReason.isNotBlank() ->
+                        "Alasan: ${order.cancelReason} · Kuota dikembalikan"
+                    isCancelled ->
+                        "Pesanan dibatalkan · Kuota harian dikembalikan"
+                    isReady ->
+                        "Ambil di ${order.pickupRoom.ifBlank { order.sellerStoreName.ifBlank { "Warung" } }} · ${formatRupiah(order.totalIdr)}"
+                    else ->
+                        "${order.itemsSummary.ifBlank { "Pesanan Kantin" }} · ${formatRupiah(order.totalIdr)}"
+                }
+                kit.textEllipsized(
+                    c,
+                    subtitle,
+                    34f,
+                    y + 47f,
+                    322f,
+                    11f,
+                    if (isCancelled) kit.danger else kit.blue,
+                    isCancelled || isReady,
+                )
+                bounds["buyerOrder:${order.id}"] = cardRect
+            }
+            y += rowH + 10f
+        }
+    }
+
     if (myRole == "developer") {
         val sent = devInvites.filter { it.status == "pending" }
         kit.text(c, "UNDANGAN TERKIRIM · ${sent.size}".uppercase(), 20f, y + 14f, 11f, kit.muted, true)

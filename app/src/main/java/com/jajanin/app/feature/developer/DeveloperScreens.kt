@@ -728,7 +728,7 @@ private fun JajaninView.drawDevAnnouncements(c: Canvas, w: Float, h: Float, off:
 
 internal fun JajaninView.inboxUnreadCount(): Int =
     myWarnings.count { !it.isRead } + myAnnouncements.size +
-        myInvites.count { it.status == "pending" }
+        myInvites.count { it.status == "pending" } + unreadOrderNotifCount
 
 private fun displayLocalPhone(raw: String): String =
     if (raw.startsWith("+62")) "0" + raw.removePrefix("+62") else raw

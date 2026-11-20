@@ -14,16 +14,20 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 internal object NotificationHelper {
-    const val CHANNEL_ID = "jajanin_orders"
+    const val CHANNEL_ID = "jajanin_orders_v2"
     const val EXTRA_ORDER_ID = "order_id"
-    private const val CHANNEL_NAME = "Pesanan masuk"
+    private const val CHANNEL_NAME = "Pesanan & Status Order"
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH)
-        channel.description = "Notifikasi order baru untuk admin"
+        val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH).apply {
+            description = "Notifikasi pesanan masuk untuk penjual & update status pesanan untuk pembeli"
+            enableVibration(true)
+            enableLights(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
         manager.createNotificationChannel(channel)
     }
 
@@ -39,6 +43,9 @@ internal object NotificationHelper {
         body: String,
     ) {
         ensureChannel(context)
+        (context as? MainActivity)?.runOnUiThread {
+            android.widget.Toast.makeText(context, "🔔 $title\n$body", android.widget.Toast.LENGTH_LONG).show()
+        }
         val tap = Intent(context, MainActivity::class.java).apply {
             putExtra(EXTRA_ORDER_ID, orderId)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -54,13 +61,17 @@ internal object NotificationHelper {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(context, CHANNEL_ID)
         } else {
-            Notification.Builder(context)
+            Notification.Builder(context).setPriority(Notification.PRIORITY_HIGH)
         }
+        @Suppress("DEPRECATION")
         val notification = builder
             .setSmallIcon(R.drawable.ic_stat_orders)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(Notification.BigTextStyle().bigText(body))
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setDefaults(Notification.DEFAULT_ALL)
             .setContentIntent(pending)
             .setAutoCancel(true)
             .build()
@@ -68,7 +79,7 @@ internal object NotificationHelper {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(notifId, notification)
         } catch (e: SecurityException) {
-            // POST_NOTIFICATIONS belum diberikan; diamkan agar pipeline pesanan tidak terganggu.
+            // POST_NOTIFICATIONS belum diberikan; Toast in-app di atas tetap tampil.
         }
     }
 

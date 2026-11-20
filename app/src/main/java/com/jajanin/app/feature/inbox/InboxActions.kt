@@ -266,6 +266,7 @@ internal fun MainActivity.openNotif() {
         showAuthForm(false)
         return
     }
+    ui.unreadOrderNotifCount = 0
     ui.go(Screen.NOTIF)
     if (ui.myRole == "developer") {
         // Developer melihat riwayat yang ia kirim + undangan menunggu.
@@ -280,7 +281,7 @@ internal fun MainActivity.openNotif() {
         return
     }
     refreshInbox()
-    if (ui.myRole == "seller") refreshAdminOrders()
+    if (ui.myRole == "seller") refreshAdminOrders() else refreshMyOrders()
 }
 
 /** Detail satu peringatan dari halaman Notifikasi (buka = tandai dibaca). */

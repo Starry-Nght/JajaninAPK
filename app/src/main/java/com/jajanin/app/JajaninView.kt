@@ -215,6 +215,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var otaUpdateAvailable = false
     internal var otaLatestVersion: String? = null
     internal var otaLatestChangelog: String? = null
+    internal var unreadOrderNotifCount = 0
     // --- Live server clock (WIB): offset dihitung dari ordering_status, lalu tick lokal ---
     internal var serverBaseMillis = 0L
     internal var serverBaseElapsed = 0L

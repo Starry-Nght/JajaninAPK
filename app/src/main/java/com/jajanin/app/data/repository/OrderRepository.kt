@@ -546,11 +546,6 @@ internal object OrderRepository {
         }.getOrDefault(false)
         if (updated) return
 
-        runCatching {
-            client.postgrest.from("order_items").delete {
-                filter { eq("order_id", orderId) }
-            }
-        }
         client.postgrest.from("orders").delete {
             filter {
                 eq("id", orderId)
