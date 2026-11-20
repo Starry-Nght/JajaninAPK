@@ -1268,7 +1268,9 @@ internal fun MainActivity.refreshAdminOrders() {
 // ================= Developer Dashboard =================
 
 internal fun MainActivity.cancelAdminOrder(orderId: String) {
-    val order = ui.adminOrders.firstOrNull { it.id == orderId } ?: return
+    val order = ui.adminOrders.firstOrNull { it.id == orderId }
+        ?: ui.adminDetailOrder?.takeIf { it.id == orderId }
+        ?: return
     if (isTerminalStatus(order.status)) return
     android.app.AlertDialog.Builder(this).setTitle("Batalkan pesanan?")
         .setMessage("${order.buyerName} · Kode ${order.pickupCode}")

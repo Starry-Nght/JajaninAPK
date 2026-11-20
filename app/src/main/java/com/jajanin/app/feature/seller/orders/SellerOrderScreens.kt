@@ -229,8 +229,14 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
 
     // Sticky Bottom Order Status Action (Radius 8f)
     val next = statusNextAction(order?.status ?: "")
-    if (next != null) {
-        val cta = RectF(20f, h - 58f, w - 20f, h - 10f)
+    if (next != null && order != null) {
+        val cancelBtn = RectF(20f, h - 58f, 132f, h - 10f)
+        kit.rounded(c, cancelBtn, kit.card, 8f, kit.dangerBorder)
+        kit.centerText(c, "Batalkan", cancelBtn, 13f, kit.danger, true)
+        press(c, "adminCancel:${order.id}", cancelBtn, 8f)
+        bounds["adminCancel:${order.id}"] = RectF(cancelBtn)
+
+        val cta = RectF(142f, h - 58f, w - 20f, h - 10f)
         kit.rounded(c, cta, kit.blue, 8f)
         kit.centerText(c, "${next.first} →", cta, 14f, Color.WHITE, true)
         press(c, "adminSet:${next.second}", cta, 8f)

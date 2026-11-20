@@ -381,23 +381,29 @@ private fun JajaninView.drawCompactOrderRow(
 
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
     val method = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
-    kit.text(c, "$method · $payLabel", 32f, top + 72f, 10.5f, payColor, true)
+    kit.textEllipsized(c, "$method · $payLabel", 32f, top + 72f, 130f, 10.5f, payColor, true)
+
+    bounds.putVisible(
+        "adminOrder:${order.id}",
+        RectF(card.left, card.top, if (statusNextAction(order.status) != null) 164f else card.right, card.bottom),
+        topLimit = HEADER_H,
+        bottomLimit = bottomLimit
+    )
 
     val nextAction = statusNextAction(order.status)
     if (nextAction != null) {
-        val actionBtn = RectF(236f, top + 54f, 358f, top + 82f)
+        val cancelBtn = RectF(168f, top + 54f, 238f, top + 82f)
+        kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
+        kit.centerText(c, "Batal", cancelBtn, 10.5f, kit.danger, true)
+        press(c, "adminCancel:${order.id}", cancelBtn, 6f)
+        bounds.putVisible("adminCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
+
+        val actionBtn = RectF(244f, top + 54f, 358f, top + 82f)
         kit.rounded(c, actionBtn, kit.blue, 6f)
         kit.centerText(c, nextAction.first, actionBtn, 10.5f, Color.WHITE, true)
         press(c, "adminStatus:${order.id}", actionBtn, 6f)
         bounds.putVisible("adminStatus:${order.id}", actionBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
     }
-
-    bounds.putVisible(
-        "adminOrder:${order.id}",
-        RectF(card.left, card.top, if (nextAction != null) 232f else card.right, card.bottom),
-        topLimit = HEADER_H,
-        bottomLimit = bottomLimit
-    )
 }
 
 private fun JajaninView.drawCleanSellerProductRow(
@@ -540,9 +546,10 @@ private fun JajaninView.drawOrderCard(
     if (nextAction != null) {
         kit.line(c, 32f, top + 77f, 358f, top + 77f, kit.divider)
 
-        val cancel = RectF(32f, top + 82f, 112f, top + 112f)
-        kit.text(c, "Batalkan", 32f, top + 101f, 11f, kit.danger, true)
-        press(c, "adminCancel:${order.id}", cancel, 5f)
+        val cancel = RectF(118f, top + 83f, 204f, top + 111f)
+        kit.rounded(c, cancel, kit.card, 6f, kit.dangerBorder)
+        kit.centerText(c, "Batalkan", cancel, 10.5f, kit.danger, true)
+        press(c, "adminCancel:${order.id}", cancel, 6f)
         bounds.putVisible("adminCancel:${order.id}", cancel, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
         val action = RectF(212f, top + 83f, 358f, top + 111f)

@@ -20,6 +20,11 @@ val otaVersionName = providers.gradleProperty("VERSION_NAME").orElse("1.0").get(
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android { namespace = "com.jajanin.app"; compileSdk = 35
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("keystore/debug.keystore")
+        }
+    }
     defaultConfig {
         applicationId = "com.jajanin.app"; minSdk = 24; targetSdk = 35
         versionCode = otaVersionCode; versionName = otaVersionName
