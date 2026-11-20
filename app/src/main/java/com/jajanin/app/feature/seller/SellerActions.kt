@@ -483,12 +483,14 @@ private fun MainActivity.patchAdminOrderLocal(
     orderId: String,
     status: String? = null,
     paymentStatus: String? = null,
+    cancelReason: String? = null,
 ) {
     ui.adminOrders = ui.adminOrders.map { order ->
         if (order.id == orderId) {
             order.copy(
                 status = status ?: order.status,
                 paymentStatus = paymentStatus ?: order.paymentStatus,
+                cancelReason = cancelReason ?: order.cancelReason,
             )
         } else {
             order
@@ -499,6 +501,7 @@ private fun MainActivity.patchAdminOrderLocal(
             ui.adminDetailOrder = detail.copy(
                 status = status ?: detail.status,
                 paymentStatus = paymentStatus ?: detail.paymentStatus,
+                cancelReason = cancelReason ?: detail.cancelReason,
             )
         }
     }
@@ -722,7 +725,12 @@ private fun MainActivity.applyRealtimeOrderToSeller(action: PostgresAction): Boo
         is PostgresAction.Update -> {
             val patch = OrderRepository.decodeOrderPatch(action.record) ?: return false
             if (ui.adminOrders.none { it.id == patch.id }) return false
-            patchAdminOrderLocal(patch.id, status = patch.status, paymentStatus = patch.paymentStatus)
+            patchAdminOrderLocal(
+                patch.id,
+                status = patch.status,
+                paymentStatus = patch.paymentStatus,
+                cancelReason = patch.paymentReference,
+            )
             detectAndNotifySellerOrderChanges(ui.adminOrders)
             true
         }
@@ -1290,15 +1298,69 @@ internal suspend fun MainActivity.silentRefreshSellerTick() {
 // ================= Developer Dashboard =================
 
 internal fun MainActivity.cancelAdminOrder(orderId: String) {
+    val self = this
     val order = ui.adminOrders.firstOrNull { it.id == orderId }
         ?: ui.adminDetailOrder?.takeIf { it.id == orderId }
         ?: return
     if (isTerminalStatus(order.status)) return
-    android.app.AlertDialog.Builder(this).setTitle("Batalkan pesanan?")
-        .setMessage("${order.buyerName} · Kode ${order.pickupCode}")
-        .setPositiveButton("Batalkan") { _, _ -> submitAdminOrderStatus(orderId, STATUS_CANCELLED) }
+
+    val input = EditText(this).apply {
+        hint = "cth. Stok menu habis / Warung tutup"
+        setSingleLine(false)
+        maxLines = 3
+    }
+    val container = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 20, 48, 8)
+        addView(input)
+    }
+
+    val dialog = android.app.AlertDialog.Builder(this)
+        .setTitle("Batalkan pesanan #${order.pickupCode}?")
+        .setMessage("${order.buyerName}\nMasukkan alasan pembatalan (wajib diisi): Jatah pesanan harian pembeli & stok menu akan dikembalikan otomatis.")
+        .setView(container)
+        .setPositiveButton("Batalkan Pesanan", null)
         .setNegativeButton("Kembali", null)
-        .show()
+        .create()
+
+    dialog.setOnShowListener {
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val reason = input.text?.toString()?.trim().orEmpty()
+            if (reason.isBlank()) {
+                input.error = "Alasan pembatalan wajib diisi"
+                Toast.makeText(self, "Wajib mengisi alasan pembatalan pesanan.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            submitAdminOrderCancel(orderId, reason)
+        }
+    }
+    dialog.show()
+    input.requestFocus()
+}
+
+internal fun MainActivity.submitAdminOrderCancel(orderId: String, reason: String) {
+    val self = this
+    if (adminStatusBusy) return
+    adminStatusBusy = true
+    val previousOrders = ui.adminOrders
+    val previousDetail = ui.adminDetailOrder
+    patchAdminOrderLocal(orderId, status = STATUS_CANCELLED, cancelReason = reason)
+    authScope.launch {
+        try {
+            OrderRepository.cancelSellerOrder(orderId, reason)
+            refreshAdminOrders()
+            refreshSellerProducts()
+            Toast.makeText(self, "Pesanan dibatalkan & kuota pembeli dikembalikan.", Toast.LENGTH_SHORT).show()
+        } catch (error: Throwable) {
+            ui.adminOrders = previousOrders
+            ui.adminDetailOrder = previousDetail
+            ui.invalidate()
+            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+        } finally {
+            adminStatusBusy = false
+        }
+    }
 }
 
 internal fun MainActivity.submitAdminOrderStatus(orderId: String, nextStatus: String) {

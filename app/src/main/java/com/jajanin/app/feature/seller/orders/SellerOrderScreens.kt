@@ -245,9 +245,16 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
         val terminal = order.status.lowercase() == STATUS_CANCELLED
         val statusCard = RectF(20f, h - 58f, w - 20f, h - 10f)
         kit.rounded(c, statusCard, kit.card, 8f, if (terminal) kit.dangerBorder else kit.border)
+        val terminalText = if (terminal && order.cancelReason.isNotBlank()) {
+            "Dibatalkan: ${order.cancelReason}"
+        } else if (terminal) {
+            "Pesanan Dibatalkan"
+        } else {
+            "Pesanan Selesai"
+        }
         kit.centerText(
-            c, if (terminal) "Pesanan Dibatalkan" else "Pesanan Selesai",
-            statusCard, 13f, if (terminal) kit.danger else kit.success, true,
+            c, terminalText,
+            statusCard, 12.5f, if (terminal) kit.danger else kit.success, true,
         )
     }
 

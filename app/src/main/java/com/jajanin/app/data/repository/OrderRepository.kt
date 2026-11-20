@@ -47,6 +47,7 @@ internal data class OrderRow(
     @SerialName("created_at") val createdAt: String,
     @SerialName("payment_method") val paymentMethod: String? = null,
     @SerialName("payment_status") val paymentStatus: String = "unpaid",
+    @SerialName("payment_reference") val paymentReference: String? = null,
     @SerialName("order_items") val items: List<OrderItemRow> = emptyList(),
 )
 
@@ -73,6 +74,7 @@ internal data class RealtimeOrderPatch(
     @SerialName("user_id") val userId: String? = null,
     val status: String? = null,
     @SerialName("payment_status") val paymentStatus: String? = null,
+    @SerialName("payment_reference") val paymentReference: String? = null,
 )
 
 /** Model siap-tampil untuk layar admin & pembeli: nama pembeli, jam, ruangan ambil, dan kontak penjual sudah diresolusi saat fetch. */
@@ -93,6 +95,7 @@ internal data class AdminOrder(
     val sellerPhone: String = "",
     val sellerStoreName: String = "",
     val sellerOwnerName: String = "",
+    val cancelReason: String = "",
 ) {
     val itemCount: Int
         get() = items.sumOf { it.quantity }
@@ -115,6 +118,12 @@ internal class OrderObserver internal constructor(
 
 @Serializable
 private data class StatusPatch(val status: String)
+
+@Serializable
+private data class CancelPatch(
+    val status: String,
+    @SerialName("payment_reference") val paymentReference: String,
+)
 
 @Serializable
 private data class PaymentPatch(@SerialName("payment_status") val paymentStatus: String)
@@ -204,7 +213,7 @@ internal object OrderRepository {
     // Kolom eksplisit + embed order_items: respons tidak pernah membawa kolom
     // tak dikenal dan daftar order tidak memicu N+1 query per item.
     private val orderColumns = Columns.raw(
-        "id,user_id,status,total_idr,pickup_code,created_at,payment_method,payment_status," +
+        "id,user_id,status,total_idr,pickup_code,created_at,payment_method,payment_status,payment_reference," +
             "order_items(id,menu_item_id,item_name,unit_price_idr,quantity)"
     )
 
@@ -490,9 +499,22 @@ internal object OrderRepository {
         }
     }
 
+    /** Penjual membatalkan pesanan disertai alasan wajib yang disimpan di payment_reference. */
+    suspend fun cancelSellerOrder(orderId: String, reason: String) {
+        val cleanReason = reason.trim()
+        require(cleanReason.isNotBlank()) { "Alasan pembatalan wajib diisi." }
+        val result = client.postgrest.from("orders")
+            .update(CancelPatch(status = STATUS_CANCELLED, paymentReference = cleanReason)) {
+                select(Columns.raw("id"))
+                filter { eq("id", orderId) }
+            }
+        if (result.decodeList<IdRow>().isEmpty()) {
+            error("Gagal membatalkan pesanan. Pastikan ini pesanan warungmu.")
+        }
+    }
+
     /**
      * Pembeli membatalkan pesanannya sendiri sebelum dikonfirmasi penjual (`status = 'pending'`).
-     * Menggunakan kebijakan RLS delete pada `order_items` & `orders` untuk pemilik saat `pending`.
      */
     suspend fun cancelBuyerPendingOrder(orderId: String) {
         val uid = SupabaseRepository.currentUid() ?: error("Silakan masuk terlebih dahulu.")
@@ -509,6 +531,21 @@ internal object OrderRepository {
         if (!current.status.equals(STATUS_PENDING, ignoreCase = true)) {
             error("Pesanan sudah dikonfirmasi penjual dan tidak bisa dibatalkan.")
         }
+        val updated = runCatching {
+            client.postgrest.from("orders")
+                .update(CancelPatch(status = STATUS_CANCELLED, paymentReference = "Dibatalkan oleh pembeli")) {
+                    select(Columns.raw("id"))
+                    filter {
+                        eq("id", orderId)
+                        eq("user_id", uid)
+                        eq("status", STATUS_PENDING)
+                    }
+                }
+                .decodeList<IdRow>()
+                .isNotEmpty()
+        }.getOrDefault(false)
+        if (updated) return
+
         runCatching {
             client.postgrest.from("order_items").delete {
                 filter { eq("order_id", orderId) }
@@ -776,6 +813,7 @@ internal object OrderRepository {
                 sellerPhone = stall?.sellerPhone.orEmpty(),
                 sellerStoreName = stall?.name.orEmpty(),
                 sellerOwnerName = stall?.ownerRealName.orEmpty(),
+                cancelReason = row.paymentReference?.trim().orEmpty(),
             )
         }
     }

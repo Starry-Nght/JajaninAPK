@@ -156,6 +156,7 @@ private fun MainActivity.applyRealtimeOrderToBuyer(action: PostgresAction): Bool
                     order.copy(
                         status = patch.status ?: order.status,
                         paymentStatus = patch.paymentStatus ?: order.paymentStatus,
+                        cancelReason = patch.paymentReference?.trim() ?: order.cancelReason,
                     )
                 } else {
                     order
@@ -163,6 +164,9 @@ private fun MainActivity.applyRealtimeOrderToBuyer(action: PostgresAction): Bool
             }
             if (ui.lastOrderId == patch.id && patch.status != null) {
                 ui.lastOrderStatus = patch.status
+            }
+            if (patch.status.equals(STATUS_CANCELLED, ignoreCase = true)) {
+                refreshOrderingStatus()
             }
             detectAndNotifyBuyerOrderChanges(ui.myOrders)
             ui.invalidate()

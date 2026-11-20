@@ -91,7 +91,14 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     kit.centerText(c, stLabel, stPill, 10f, stColor, true)
 
     kit.text(c, "#$pickupCode", 34f, ticketTop + 58f, 30f, kit.blue, true)
-    kit.text(c, "Tunjukkan kode ini ke penjual saat mengambil pesanan", 34f, ticketTop + 78f, 11f, kit.muted)
+    val cancelNote = matchedOrder?.cancelReason?.takeIf {
+        it.isNotBlank() && status.equals(STATUS_CANCELLED, ignoreCase = true)
+    }
+    if (cancelNote != null) {
+        kit.textEllipsized(c, "Alasan dibatalkan: $cancelNote", 34f, ticketTop + 78f, 322f, 11f, kit.danger, true)
+    } else {
+        kit.text(c, "Tunjukkan kode ini ke penjual saat mengambil pesanan", 34f, ticketTop + 78f, 11f, kit.muted)
+    }
 
     drawOrderProgressTrack(c, status, 34f, 356f, ticketTop + 94f)
 
@@ -354,7 +361,14 @@ private fun JajaninView.drawBuyerOrderItem(
         // Row 4: Payment method & status + Detail chevron
         val (payLabel, payColor) = paymentLabel(order.paymentStatus)
         val methodName = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
-        kit.text(c, "$methodName · $payLabel", 32f, top + 90f, 10.5f, payColor, true)
+        val cancelInfo = order.cancelReason.takeIf {
+            it.isNotBlank() && order.status.equals(STATUS_CANCELLED, ignoreCase = true)
+        }
+        if (cancelInfo != null) {
+            kit.textEllipsized(c, "Alasan: $cancelInfo", 32f, top + 90f, 248f, 10.5f, kit.danger, true)
+        } else {
+            kit.text(c, "$methodName · $payLabel", 32f, top + 90f, 10.5f, payColor, true)
+        }
         kit.textRight(c, "Detail →", 358f, top + 90f, 70f, 11f, kit.blue, true)
 
         if (active) {

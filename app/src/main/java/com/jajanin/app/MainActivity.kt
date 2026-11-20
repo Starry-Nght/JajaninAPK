@@ -142,8 +142,14 @@ class MainActivity : Activity() {
                     STATUS_PREPARING, "processing" -> "$store sedang menyiapkan pesananmu."
                     STATUS_READY -> "Pesananmu sudah siap diambil$roomSuffix. Tunjukkan kode #${order.pickupCode}."
                     STATUS_COMPLETED -> "Terima kasih! Pesanan #${order.pickupCode} telah selesai."
-                    STATUS_CANCELLED -> "Pesanan #${order.pickupCode} telah dibatalkan oleh $store."
+                    STATUS_CANCELLED -> {
+                        val reasonLine = order.cancelReason.takeIf { it.isNotBlank() }?.let { " Alasan: $it." }.orEmpty()
+                        "Pesanan #${order.pickupCode} dibatalkan oleh $store.$reasonLine Kuota pesananmu telah dikembalikan."
+                    }
                     else -> "Status pesanan #${order.pickupCode} berubah menjadi $newStatus."
+                }
+                if (newStatus == STATUS_CANCELLED) {
+                    refreshOrderingStatus()
                 }
                 NotificationHelper.showOrderUpdate(
                     context = this,
