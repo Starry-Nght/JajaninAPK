@@ -53,13 +53,13 @@ internal fun JajaninView.drawAdminNav(c: Canvas, w: Float, h: Float, active: Str
         listOf(
             FloatNavItem("Dashboard", "grid", true),
             FloatNavItem("Pesanan", "receipt", true),
-            FloatNavItem("Produk", "box", true),
+            FloatNavItem("Produk", "plus", true),
             FloatNavItem("Notifikasi", "bell", true),
             FloatNavItem("Profil", "person", true),
         ),
         active,
         "stab:",
-        variant = NavVariant.HERO,
+        variant = NavVariant.STANDARD,
     )
     navBadge(index = 3, count = adminActionableCount())
 }

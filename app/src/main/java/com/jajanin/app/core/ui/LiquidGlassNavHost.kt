@@ -398,7 +398,8 @@ internal class LiquidGlassNavHost(
             "Pesanan" -> R.drawable.ic_nav_receipt
             "Profile", "Profil", "Users" -> R.drawable.ic_nav_profile
             "Dashboard", "Overview" -> R.drawable.ic_nav_grid
-            "Produk", "Sellers" -> R.drawable.ic_nav_box
+            "Produk" -> R.drawable.ic_nav_plus
+            "Sellers" -> R.drawable.ic_nav_box
             "Notifikasi", "Warn", "Info" -> R.drawable.ic_nav_bell
             else -> return null
         }
