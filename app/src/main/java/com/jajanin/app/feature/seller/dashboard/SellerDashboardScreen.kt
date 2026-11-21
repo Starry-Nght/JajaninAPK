@@ -145,18 +145,16 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
     }
     y += 72f
 
-    // 3. Urgent Action Queue ("PERLU TINDAKAN") — Up to 3 orders needing immediate confirmation/action
+    // 3. Active Orders Queue ("PESANAN AKTIF") — Tampilkan semua pesanan berjalan sampai Selesai/Dibatalkan
     val urgentOrders = today.filter {
-        val s = it.status.lowercase()
-        s == STATUS_PENDING || s == STATUS_CONFIRMED ||
-            (!isTerminalStatus(it.status) && it.paymentStatus == "waiting_verification")
+        !isTerminalStatus(it.status)
     }.sortedWith(compareBy({ statusSortOrder(it.status) }, { it.createdAt }))
 
     if (urgentOrders.isNotEmpty()) {
         if (visible(y, y + 20f)) {
             sellerSection(
                 c,
-                "Perlu Tindakan (${urgentOrders.size})",
+                "Pesanan Aktif (${urgentOrders.size})",
                 y + 12f,
                 trailing = "Semua pesanan →",
                 trailingColor = kit.blue
@@ -170,7 +168,7 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
         }
         y += 20f
 
-        val shownUrgent = urgentOrders.take(3)
+        val shownUrgent = urgentOrders.take(5)
         shownUrgent.forEach { order ->
             val rowH = 92f
             if (visible(y, y + rowH)) {
@@ -381,7 +379,8 @@ private fun JajaninView.drawCompactOrderRow(
 
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
     val method = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
-    kit.textEllipsized(c, "$method · $payLabel", 32f, top + 72f, 130f, 10.5f, payColor, true)
+    val (stLabel, _) = statusLabel(order.status)
+    kit.textEllipsized(c, "$stLabel · $method · $payLabel", 32f, top + 72f, 130f, 10.5f, payColor, true)
 
     bounds.putVisible(
         "adminOrder:${order.id}",
