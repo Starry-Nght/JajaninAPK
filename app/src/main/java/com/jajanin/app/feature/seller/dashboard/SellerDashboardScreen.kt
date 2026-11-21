@@ -59,7 +59,7 @@ internal fun JajaninView.drawAdminNav(c: Canvas, w: Float, h: Float, active: Str
         ),
         active,
         "stab:",
-        variant = NavVariant.STANDARD,
+        variant = NavVariant.HERO,
     )
     navBadge(index = 3, count = adminActionableCount())
 }

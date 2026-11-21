@@ -222,15 +222,31 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     drawIcon(c, "chevronLeft", 27f, 35f, 24f, kit.blue)
     kit.text(c, "Detail Produk", 60f, 45f, 19f, kit.ink, true)
     bounds["headerBack"] = RectF(0f, 0f, 54f, 70f)
-    drawProductImage(c, product, RectF(20f, 86f, 370f, minOf(h * .43f, 335f)), 18f)
-    kit.text(c, normalizeCategory(product.category), 22f, minOf(h * .43f, 335f) + 28f, 12f, kit.blue, true)
-    kit.text(c, product.name.take(31), 22f, minOf(h * .43f, 335f) + 62f, 22f, kit.ink, true)
-    kit.text(c, formatRupiah(product.priceIdr), 22f, minOf(h * .43f, 335f) + 91f, 19f, kit.ink, true)
-    kit.text(c, "Deskripsi", 22f, minOf(h * .43f, 335f) + 131f, 14f, kit.ink, true)
+    val imgBottom = minOf(h * .43f, 335f)
+    drawProductImage(c, product, RectF(20f, 86f, 370f, imgBottom), 18f)
+    kit.text(c, normalizeCategory(product.category), 22f, imgBottom + 28f, 12f, kit.blue, true)
+    kit.text(c, product.name.take(31), 22f, imgBottom + 62f, 22f, kit.ink, true)
+    kit.text(c, formatRupiah(product.priceIdr), 22f, imgBottom + 91f, 19f, kit.ink, true)
+    kit.text(c, "Deskripsi", 22f, imgBottom + 131f, 14f, kit.ink, true)
     val lines = product.description.ifBlank { "Belum ada deskripsi produk." }.chunked(43).take(3)
-    lines.forEachIndexed { index, line -> kit.text(c, line, 22f, minOf(h * .43f, 335f) + 154f + index * 19f, 12f, kit.muted) }
-    if (product.ingredients.isNotBlank()) {
-        kit.text(c, "Bahan: ${product.ingredients.take(80)}", 22f, minOf(h * .43f, 335f) + 154f + lines.size * 19f, 12f, kit.muted)
+    var nextY = imgBottom + 154f
+    lines.forEach { line ->
+        kit.text(c, line, 22f, nextY, 12f, kit.muted)
+        nextY += 19f
+    }
+    val cleanIng = product.cleanIngredients
+    if (cleanIng.isNotBlank()) {
+        kit.textEllipsized(c, "Bahan: $cleanIng", 22f, nextY + 2f, 346f, 12f, kit.muted)
+        nextY += 24f
+    }
+    val room = product.pickupRoom
+    if (room.isNotBlank() && nextY + 40f < h - 166f) {
+        val poiTop = nextY + 4f
+        val poiRect = RectF(20f, poiTop, 370f, poiTop + 36f)
+        kit.rounded(c, poiRect, kit.tint, 8f, kit.border)
+        kit.rect(c, 20f, poiTop + 6f, 23.5f, poiTop + 30f, kit.blue)
+        kit.text(c, "AMBIL DI RUANGAN", 34f, poiTop + 22f, 10f, kit.muted, true)
+        kit.textRight(c, room, 356f, poiTop + 22.5f, 190f, 12.5f, kit.blue, true)
     }
     val available = product.available && (product.stock == null || product.stock > 0)
     kit.text(c, if (available) "Tersedia${product.stock?.let { " · Stok $it" }.orEmpty()}" else "Out of Stock", 22f, h - 158f, 13f, if (available) kit.success else kit.danger, true)
