@@ -159,6 +159,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myStallId: String? = null
     internal var myStallName: String = ""
     internal var myStallRoom: String = ""
+    internal var recentSellerRooms: List<String> = emptyList()
     internal var myStallQris: String = ""
     internal var cart = linkedMapOf<String, Int>()
     // --- Developer dashboard state ---

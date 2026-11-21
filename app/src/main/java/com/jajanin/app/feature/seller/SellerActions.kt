@@ -97,8 +97,35 @@ internal fun MainActivity.showProductEditForm(productId: String) {
     openProductForm(product)
 }
 
+private const val PREFS_SELLER_ROOMS = "jajanin_recent_rooms"
+
+internal fun MainActivity.loadRecentSellerRooms(): List<String> {
+    val uid = SupabaseRepository.currentUid().orEmpty()
+    val prefs = getSharedPreferences(PREFS_SELLER_ROOMS, Context.MODE_PRIVATE)
+    val raw = prefs.getString("rooms:$uid", "").orEmpty()
+    val list = raw.split("||").map { it.trim() }.filter { it.isNotBlank() }.distinct().take(4)
+    ui.recentSellerRooms = list
+    return list
+}
+
+internal fun MainActivity.recordRecentSellerRoom(room: String) {
+    val clean = room.trim()
+    if (clean.isBlank()) return
+    val uid = SupabaseRepository.currentUid().orEmpty()
+    val updated = (listOf(clean) + loadRecentSellerRooms())
+        .distinctBy { it.lowercase() }
+        .take(4)
+    ui.recentSellerRooms = updated
+    getSharedPreferences(PREFS_SELLER_ROOMS, Context.MODE_PRIVATE)
+        .edit()
+        .putString("rooms:$uid", updated.joinToString("||"))
+        .apply()
+}
+
 /** Buka halaman form produk (geser, bukan dialog). */
 internal fun MainActivity.openProductForm(existing: ProductRow?) {
+    val recent = loadRecentSellerRooms()
+    val fallbackRoom = recent.firstOrNull() ?: ui.myStallRoom
     if (existing != null) {
         ui.productEditId = existing.id
         ui.productName = existing.name
@@ -108,7 +135,7 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productStock = existing.stock?.toString().orEmpty()
         ui.productImageUrl = existing.imageUrl.orEmpty()
         ui.productIngredients = existing.cleanIngredients
-        ui.productRoom = existing.pickupRoom.ifBlank { ui.myStallRoom }
+        ui.productRoom = existing.pickupRoom.ifBlank { fallbackRoom }
         ui.productAvailable = existing.available
     } else {
         ui.productEditId = null
@@ -119,7 +146,7 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productStock = ""
         ui.productImageUrl = ""
         ui.productIngredients = ""
-        ui.productRoom = ui.myStallRoom
+        ui.productRoom = fallbackRoom
         ui.productAvailable = true
     }
     ui.productSaving = false
@@ -393,6 +420,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
             val cleanRoom = ui.productRoom.trim()
             if (cleanRoom.isNotBlank()) {
                 ui.myStallRoom = cleanRoom
+                recordRecentSellerRoom(cleanRoom)
                 ui.myStallId?.let { OrderRepository.updateStallLocation(it, cleanRoom) }
             }
             dialog?.dismiss()
@@ -1018,6 +1046,7 @@ internal fun MainActivity.showStallRoomEdit() {
                     OrderRepository.updateStallLocation(stallId, value)
                 }
                 ui.myStallRoom = value
+                recordRecentSellerRoom(value)
                 ui.invalidate()
                 dialog.dismiss()
                 Toast.makeText(self, "Ruangan ambil disimpan: $value", Toast.LENGTH_SHORT).show()

@@ -14,11 +14,6 @@ import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.util.formatRupiah
 
-private val ROOM_PRESETS = listOf(
-    "XII RPL 1", "XII RPL 2", "XI RPL 1", "X RPL 1",
-    "XII TKJ", "XII DKV", "XII AKL", "Kantin Utama"
-)
-
 /**
  * Form tambah/ubah produk sebagai HALAMAN:
  * Mencakup Informasi Produk, Ambil di Ruangan, Harga & Stok, Foto Produk, dan Visibilitas.
@@ -108,32 +103,43 @@ private fun JajaninView.roomPickupSection(c: Canvas, top: Float, bottomLimit: Fl
         top = top,
     )
 
-    kit.text(c, "Pilih cepat ruangan:", 20f, y + 10f, 10f, kit.muted, true)
+    val recentRooms = buildList {
+        addAll(recentSellerRooms)
+        if (myStallRoom.isNotBlank()) add(myStallRoom.trim())
+        sellerProducts.forEach { prod ->
+            val r = prod.pickupRoom.trim()
+            if (r.isNotBlank()) add(r)
+        }
+    }.distinctBy { it.lowercase() }.take(4)
+
+    if (recentRooms.isEmpty()) return y + 4f
+
+    kit.text(c, "Terakhir digunakan:", 20f, y + 10f, 10f, kit.muted, true)
     y += 16f
 
-    // 2 rows of 4 quick room chips
-    val cols = 4
+    var chipX = 20f
+    var chipY = y
+    val chipH = 28f
     val gap = 6f
-    val chipW = (SellerTokens.WIDTH - gap * (cols - 1)) / cols
-    val chipH = 30f
-    ROOM_PRESETS.forEachIndexed { idx, room ->
-        val col = idx % cols
-        val row = idx / cols
-        val left = 20f + col * (chipW + gap)
-        val cTop = y + row * (chipH + gap)
-        val chipRect = RectF(left, cTop, left + chipW, cTop + chipH)
+    recentRooms.forEach { room ->
+        val chipW = (kit.measure(room, 10f, true) + 22f).coerceIn(58f, 170f)
+        if (chipX + chipW > 370f) {
+            chipX = 20f
+            chipY += chipH + gap
+        }
+        val chipRect = RectF(chipX, chipY, chipX + chipW, chipY + chipH)
         val active = productRoom.equals(room, ignoreCase = true)
         if (active) {
             kit.rounded(c, chipRect, kit.blue, 6f)
         } else {
             kit.rounded(c, chipRect, kit.card, 6f, kit.border)
         }
-        kit.centerText(c, room, chipRect, 9.5f, if (active) Color.WHITE else kit.ink, true)
+        kit.centerText(c, room, chipRect, 10f, if (active) Color.WHITE else kit.ink, true)
         bounds.putVisible("pfRoomChip:$room", chipRect, topLimit = 60f, bottomLimit = bottomLimit)
+        chipX += chipW + gap
     }
 
-    val totalRows = (ROOM_PRESETS.size + cols - 1) / cols
-    return y + totalRows * (chipH + gap) + 8f
+    return chipY + chipH + 8f
 }
 
 private fun JajaninView.categoryPicker(c: Canvas, top: Float): Float {
