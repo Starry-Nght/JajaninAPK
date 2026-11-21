@@ -422,9 +422,11 @@ class MainActivity : Activity() {
         val rawDisplay = SupabaseRepository.myRawDisplayName().orEmpty()
         val displayName = SupabaseRepository.extractCleanName(rawDisplay)
         val nis = SupabaseRepository.extractNis(rawDisplay)
+        val kelas = SupabaseRepository.extractClass(rawDisplay)
         ui.myDisplayName = displayName
         ui.myNis = nis
-        if ((role == "buyer" || role == "seller") && (displayName.length < 3 || nis.isBlank())) {
+        ui.myClass = kelas
+        if ((role == "buyer" || role == "seller") && (displayName.length < 3 || nis.isBlank() || kelas.isBlank())) {
             showDisplayNameDialog { authScope.launch { routeSignedInUser() } }
             return
         }
@@ -1065,6 +1067,7 @@ class MainActivity : Activity() {
                 ui.myRole = null
                 ui.myDisplayName = ""
                 ui.myNis = ""
+                ui.myClass = ""
                 ui.selectedRole = "buyer"
                 ui.myOrders = emptyList()
                 ui.myOrdersError = null
@@ -1109,6 +1112,32 @@ class MainActivity : Activity() {
         private val subtitle = dialog.findViewById<TextView>(R.id.authSubtitle)
         private val name = dialog.findViewById<EditText>(R.id.authName)
         private val nis = dialog.findViewById<EditText>(R.id.authNis)
+        private val kelas = EditText(this@MainActivity).apply {
+            hint = "Kelas (cth. XI RPL 1)"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            textSize = 14f
+            setTextColor(nis.currentTextColor)
+            setHintTextColor(nis.currentHintTextColor)
+            background = nis.background?.constantState?.newDrawable()?.mutate()
+            setPadding(nis.paddingLeft, nis.paddingTop, nis.paddingRight, nis.paddingBottom)
+        }.also { kelasView ->
+            val parent = nis.parent as? ViewGroup
+            val nisIdx = parent?.indexOfChild(nis) ?: -1
+            if (parent != null && nisIdx >= 0) {
+                val srcLp = nis.layoutParams as? ViewGroup.MarginLayoutParams
+                val lp = LinearLayout.LayoutParams(
+                    srcLp?.width ?: ViewGroup.LayoutParams.MATCH_PARENT,
+                    srcLp?.height ?: ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    topMargin = srcLp?.topMargin ?: 0
+                    bottomMargin = srcLp?.bottomMargin ?: 0
+                    leftMargin = srcLp?.leftMargin ?: 0
+                    rightMargin = srcLp?.rightMargin ?: 0
+                }
+                parent.addView(kelasView, nisIdx + 1, lp)
+            }
+        }
         private val phone = dialog.findViewById<EditText>(R.id.authPhone)
         private val email = dialog.findViewById<EditText>(R.id.authEmail)
         private val password = dialog.findViewById<EditText>(R.id.authPassword)
@@ -1202,6 +1231,7 @@ class MainActivity : Activity() {
             subtitle.text = if (signup) "Daftar untuk mulai jajan di kampus." else "Lanjutkan jajan favoritmu di kampus."
             name.visibility = if (signup) View.VISIBLE else View.GONE
             nis.visibility = if (signup) View.VISIBLE else View.GONE
+            kelas.visibility = if (signup) View.VISIBLE else View.GONE
             phone.visibility = if (signup) View.VISIBLE else View.GONE
             forgot.visibility = if (signup) View.GONE else View.VISIBLE
             // Jarak atas email menyesuaikan: tanpa kolom nama, email yang paling atas.
@@ -1223,6 +1253,7 @@ class MainActivity : Activity() {
             forgot.isEnabled = !value
             name.isEnabled = !value
             nis.isEnabled = !value
+            kelas.isEnabled = !value
             phone.isEnabled = !value
             email.isEnabled = !value
             password.isEnabled = !value
@@ -1241,6 +1272,7 @@ class MainActivity : Activity() {
             error.visibility = View.GONE
             val nameValue = name.text.toString().trim()
             val nisValue = nis.text.toString().trim()
+            val kelasValue = kelas.text.toString().trim()
             val phoneValue = phone.text.toString().trim()
             val emailValue = email.text.toString().trim()
             val passwordValue = password.text.toString()
@@ -1251,6 +1283,11 @@ class MainActivity : Activity() {
             val normNis = SupabaseRepository.normalizeNis(nisValue)
             if (signup && normNis == null) {
                 fail("NIS (Nomor Induk Siswa) wajib diisi (minimal 4 angka)")
+                return
+            }
+            val normKelas = SupabaseRepository.normalizeClass(kelasValue)
+            if (signup && normKelas == null) {
+                fail("Kelas wajib diisi (cth. XI RPL 1)")
                 return
             }
             if (signup && PhoneRepository.normalizePhone(phoneValue) == null) {
@@ -1270,11 +1307,13 @@ class MainActivity : Activity() {
                 try {
                     if (signup) {
                         val validNis = normNis ?: ""
-                        val packedName = SupabaseRepository.packNameAndNis(nameValue, validNis)
+                        val validKelas = normKelas ?: ""
+                        val packedName = SupabaseRepository.packNameAndNis(nameValue, validNis, validKelas)
                         if (SupabaseRepository.register(emailValue, passwordValue, packedName) == RegisterResult.LOGGED_IN) {
-                            runCatching { SupabaseRepository.setMyName(nameValue, validNis) }
+                            runCatching { SupabaseRepository.setMyName(nameValue, validNis, validKelas) }
                             ui.myDisplayName = SupabaseRepository.extractCleanName(nameValue)
                             ui.myNis = validNis
+                            ui.myClass = validKelas
                             runCatching { ui.myPhone = PhoneRepository.setMyPhone(phoneValue) }
                             dialog.dismiss()
                             routeSignedInUser()

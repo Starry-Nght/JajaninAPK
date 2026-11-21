@@ -558,8 +558,10 @@ internal fun MainActivity.refreshSellerSettings() {
         val rawName = runCatching { SupabaseRepository.myRawDisplayName() }.getOrNull().orEmpty()
         val cleanName = SupabaseRepository.extractCleanName(rawName)
         val nis = SupabaseRepository.extractNis(rawName)
+        val kelas = SupabaseRepository.extractClass(rawName)
         if (cleanName.isNotBlank()) ui.myDisplayName = cleanName
         if (nis.isNotBlank()) ui.myNis = nis
+        if (kelas.isNotBlank()) ui.myClass = kelas
         val phone = runCatching { PhoneRepository.myPhone() }.getOrNull()?.takeIf { it.isNotBlank() }
             ?: stall?.sellerPhone.orEmpty()
         if (phone.isNotBlank()) ui.myPhone = phone
@@ -815,9 +817,11 @@ internal fun MainActivity.ensureSellerStallName(onReady: () -> Unit) {
         val rawName = runCatching { SupabaseRepository.myRawDisplayName() }.getOrNull()?.trim().orEmpty()
         val cleanName = SupabaseRepository.extractCleanName(rawName)
         val nis = SupabaseRepository.extractNis(rawName)
+        val kelas = SupabaseRepository.extractClass(rawName)
         if (cleanName.isNotBlank()) ui.myDisplayName = cleanName
         if (nis.isNotBlank()) ui.myNis = nis
-        if (ui.myDisplayName.length < 3 || ui.myNis.isBlank()) {
+        if (kelas.isNotBlank()) ui.myClass = kelas
+        if (ui.myDisplayName.length < 3 || ui.myNis.isBlank() || ui.myClass.isBlank()) {
             showDisplayNameDialog { ensureSellerStallName(onReady) }
             return@launch
         }
@@ -906,7 +910,7 @@ internal fun MainActivity.showSellerMandatoryPhoneDialog(stallId: String, onSave
     input.requestFocus()
 }
 
-/** Dialog ubah nama asli & NIS pemilik akun dari halaman Profil (Buyer & Seller). */
+/** Dialog ubah nama asli, NIS & Kelas pemilik akun dari halaman Profil (Buyer & Seller). */
 internal fun MainActivity.showRealNameEdit() {
     val self = this
     val container = LinearLayout(this).apply {
@@ -925,10 +929,17 @@ internal fun MainActivity.showRealNameEdit() {
         inputType = android.text.InputType.TYPE_CLASS_NUMBER
         setText(ui.myNis)
     }
+    val inputKelas = EditText(this).apply {
+        hint = "Kelas (cth. XI RPL 1)"
+        setSingleLine(true)
+        inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        setText(ui.myClass)
+    }
     container.addView(inputName)
     container.addView(inputNis)
-    val dialog = android.app.AlertDialog.Builder(this).setTitle("Nama Asli & NIS (Wajib)")
-        .setMessage("Setiap pembeli dan penjual wajib menggunakan nama lengkap asli serta NIS yang valid.")
+    container.addView(inputKelas)
+    val dialog = android.app.AlertDialog.Builder(this).setTitle("Nama Asli, NIS & Kelas (Wajib)")
+        .setMessage("Setiap pembeli dan penjual wajib menggunakan nama lengkap asli, NIS, dan kelas yang valid.")
         .setView(container)
         .setPositiveButton("Simpan", null)
         .setNegativeButton("Batal", null)
@@ -937,6 +948,7 @@ internal fun MainActivity.showRealNameEdit() {
         val value = inputName.text.toString().trim()
         val rawNis = inputNis.text.toString().trim()
         val normNis = SupabaseRepository.normalizeNis(rawNis)
+        val normKelas = SupabaseRepository.normalizeClass(inputKelas.text.toString())
         if (value.length < 3) {
             Toast.makeText(this, "Nama asli minimal 3 karakter.", Toast.LENGTH_SHORT).show()
             return@setOnClickListener
@@ -945,18 +957,23 @@ internal fun MainActivity.showRealNameEdit() {
             Toast.makeText(this, "NIS wajib diisi dengan angka yang valid (min. 4 digit).", Toast.LENGTH_SHORT).show()
             return@setOnClickListener
         }
+        if (normKelas == null) {
+            Toast.makeText(this, "Kelas wajib diisi (cth. XI RPL 1).", Toast.LENGTH_SHORT).show()
+            return@setOnClickListener
+        }
         val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
         saveBtn.isEnabled = false
         authScope.launch {
             try {
-                SupabaseRepository.setMyName(value, normNis)
+                SupabaseRepository.setMyName(value, normNis, normKelas)
                 ui.myDisplayName = value
                 ui.myNis = normNis
+                ui.myClass = normKelas
                 val ownerWithNis = "$value (NIS: $normNis)"
                 ui.myStallId?.let { OrderRepository.syncStallContactMetadata(it, ownerWithNis, ui.myPhone) }
                 ui.invalidate()
                 dialog.dismiss()
-                Toast.makeText(self, "Nama asli & NIS diperbarui.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(self, "Nama asli, NIS & kelas diperbarui.", Toast.LENGTH_SHORT).show()
             } catch (error: Throwable) {
                 saveBtn.isEnabled = true
                 Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
@@ -1030,7 +1047,7 @@ internal fun MainActivity.openDialer(phone: String) {
 }
 
 /**
- * Dialog wajib isi nama asli & NIS; dipakai akun yang belum melengkapi Nama Asli / NIS.
+ * Dialog wajib isi nama asli, NIS & Kelas; dipakai akun yang belum melengkapi identitas.
  * Tidak bisa dilewat: tombol Batal = keluar dari akun.
  */
 internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
@@ -1052,10 +1069,17 @@ internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
         inputType = android.text.InputType.TYPE_CLASS_NUMBER
         setText(ui.myNis)
     }
+    val inputKelas = EditText(this).apply {
+        hint = "Kelas (cth. XI RPL 1)"
+        setSingleLine(true)
+        inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        setText(ui.myClass)
+    }
     container.addView(inputName)
     container.addView(inputNis)
-    val dialog = android.app.AlertDialog.Builder(this).setTitle("Lengkapi Nama Asli & NIS")
-        .setMessage("Setiap akun Pembeli & Penjual wajib mengisi Nama Lengkap Asli serta NIS sebelum menggunakan aplikasi.")
+    container.addView(inputKelas)
+    val dialog = android.app.AlertDialog.Builder(this).setTitle("Lengkapi Nama Asli, NIS & Kelas")
+        .setMessage("Setiap akun Pembeli & Penjual wajib mengisi Nama Lengkap Asli, NIS, dan Kelas sebelum menggunakan aplikasi.")
         .setView(container)
         .setPositiveButton("Simpan", null)
         .setNegativeButton("Keluar Akun") { _, _ -> doLogout() }
@@ -1065,6 +1089,7 @@ internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
         val value = inputName.text.toString().trim()
         val rawNis = inputNis.text.toString().trim()
         val normNis = SupabaseRepository.normalizeNis(rawNis)
+        val normKelas = SupabaseRepository.normalizeClass(inputKelas.text.toString())
         if (value.length < 3) {
             Toast.makeText(this, "Nama asli minimal 3 karakter.", Toast.LENGTH_SHORT).show()
             return@setOnClickListener
@@ -1073,16 +1098,21 @@ internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
             Toast.makeText(this, "NIS wajib diisi dengan angka yang valid (min. 4 digit).", Toast.LENGTH_SHORT).show()
             return@setOnClickListener
         }
+        if (normKelas == null) {
+            Toast.makeText(this, "Kelas wajib diisi (cth. XI RPL 1).", Toast.LENGTH_SHORT).show()
+            return@setOnClickListener
+        }
         val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
         saveBtn.isEnabled = false
         authScope.launch {
             try {
-                SupabaseRepository.setMyName(value, normNis)
+                SupabaseRepository.setMyName(value, normNis, normKelas)
                 ui.myDisplayName = value
                 ui.myNis = normNis
+                ui.myClass = normKelas
                 ui.invalidate()
                 dialog.dismiss()
-                Toast.makeText(self, "Halo, $value (NIS: $normNis)!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(self, "Halo, $value ($normKelas)!", Toast.LENGTH_SHORT).show()
                 onSaved()
             } catch (error: Throwable) {
                 saveBtn.isEnabled = true
@@ -1090,7 +1120,11 @@ internal fun MainActivity.showDisplayNameDialog(onSaved: () -> Unit) {
             }
         }
     }
-    if (ui.myDisplayName.length < 3) inputName.requestFocus() else inputNis.requestFocus()
+    when {
+        ui.myDisplayName.length < 3 -> inputName.requestFocus()
+        ui.myNis.isBlank() -> inputNis.requestFocus()
+        else -> inputKelas.requestFocus()
+    }
 }
 
 /**

@@ -134,6 +134,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myRole: String? = null
     internal var myDisplayName: String = ""
     internal var myNis: String = ""
+    internal var myClass: String = ""
     internal var savedProductId: String? = null
     internal var isSellerProfile = false
     // --- Buyer checkout state (multi-item cart, satu warung per order) ---

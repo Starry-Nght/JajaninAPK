@@ -188,31 +188,49 @@ object SupabaseRepository {
         myRawDisplayName()?.let { extractNis(it) }?.takeIf { it.isNotBlank() }
 
     /**
-     * Menyimpan nama asli (beserta NIS bila ada) milik sendiri (validasi 3-50 karakter di server).
+     * Menyimpan nama asli (beserta NIS & Kelas bila ada) milik sendiri (validasi 3-50 karakter di server).
      */
-    suspend fun setMyName(name: String, nis: String = "") {
-        val packed = if (nis.isNotBlank()) packNameAndNis(name, nis) else name.trim()
+    suspend fun setMyName(name: String, nis: String = "", kelas: String = "") {
+        val packed = if (nis.isNotBlank() || kelas.isNotBlank()) packNameAndNis(name, nis, kelas) else name.trim()
         val params = mapOf("p_name" to kotlinx.serialization.json.JsonPrimitive(packed))
         client.postgrest.rpc("set_my_name", params)
     }
 
-    private val NIS_TAG_REGEX = Regex("\\s*\\[NIS:\\s*([0-9]+)\\]\\s*$")
+    private val NIS_TAG_REGEX = Regex("\\s*\\[NIS:\\s*([0-9]+)\\]", RegexOption.IGNORE_CASE)
+    private val KELAS_TAG_REGEX = Regex("\\s*\\[Kelas:\\s*([^\\]]+)\\]", RegexOption.IGNORE_CASE)
 
     fun extractCleanName(raw: String): String =
-        raw.trim().replace(NIS_TAG_REGEX, "").trim()
+        raw.trim()
+            .replace(KELAS_TAG_REGEX, "")
+            .replace(NIS_TAG_REGEX, "")
+            .trim()
 
     fun extractNis(raw: String): String =
         NIS_TAG_REGEX.find(raw.trim())?.groupValues?.getOrNull(1)?.trim().orEmpty()
+
+    fun extractClass(raw: String): String =
+        KELAS_TAG_REGEX.find(raw.trim())?.groupValues?.getOrNull(1)?.trim().orEmpty()
 
     fun normalizeNis(raw: String): String? {
         val digits = raw.filter(Char::isDigit)
         return if (digits.length in 4..15) digits else null
     }
 
-    fun packNameAndNis(name: String, nis: String): String {
-        val cleanName = extractCleanName(name).take(30)
+    fun normalizeClass(raw: String): String? {
+        val clean = raw.replace("[", "").replace("]", "").trim().replace(Regex("\\s+"), " ")
+        return if (clean.length in 2..15) clean else null
+    }
+
+    fun packNameAndNis(name: String, nis: String, kelas: String = ""): String {
+        val cleanName = extractCleanName(name)
         val cleanNis = nis.filter(Char::isDigit).take(12)
-        return if (cleanNis.isNotBlank()) "$cleanName [NIS:$cleanNis]" else cleanName
+        val cleanKelas = normalizeClass(kelas).orEmpty()
+        val suffix = buildString {
+            if (cleanNis.isNotBlank()) append(" [NIS:$cleanNis]")
+            if (cleanKelas.isNotBlank()) append(" [Kelas:$cleanKelas]")
+        }
+        val maxNameLen = (50 - suffix.length).coerceAtLeast(10)
+        return (cleanName.take(maxNameLen).trim() + suffix).trim()
     }
 
     /**

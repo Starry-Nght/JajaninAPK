@@ -48,8 +48,12 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
         kit.centerText(c, statusText, statusPill, 9.5f, statusColor, true)
 
         kit.textEllipsized(c, titleText, 84f, y + 19f, statusPill.left - 94f, 16.5f, kit.ink, true)
-        val nisText = if (myNis.isNotBlank()) "NIS: $myNis" else "NIS: Belum diisi (Wajib)"
-        val nisColor = if (myNis.isNotBlank()) kit.blue else kit.danger
+        val nisText = buildString {
+            append(if (myNis.isNotBlank()) "NIS: $myNis" else "NIS: Belum diisi")
+            append("  ·  ")
+            append(if (myClass.isNotBlank()) "Kelas: $myClass" else "Kelas: Belum diisi")
+        }
+        val nisColor = if (myNis.isNotBlank() && myClass.isNotBlank()) kit.blue else kit.danger
         kit.textEllipsized(c, nisText, 84f, y + 36f, 280f, 12f, nisColor, true)
         kit.textEllipsized(
             c,
@@ -72,10 +76,10 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     val unread = inboxUnreadCount()
     val accountRows = listOf(
         ProfileRowSpec(
-            title = "Nama Asli & NIS (Wajib)",
-            subtitle = "${myDisplayName.ifBlank { "Belum diisi" }}  ·  NIS: ${myNis.ifBlank { "Wajib diisi" }}",
-            trailing = if (myNis.isBlank() || myDisplayName.isBlank()) "Lengkapi" else "Ubah",
-            trailingColor = if (myNis.isBlank() || myDisplayName.isBlank()) kit.danger else kit.blue,
+            title = "Nama Asli, NIS & Kelas (Wajib)",
+            subtitle = "${myDisplayName.ifBlank { "Belum diisi" }}  ·  NIS: ${myNis.ifBlank { "-" }}  ·  Kelas: ${myClass.ifBlank { "Wajib diisi" }}",
+            trailing = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) "Lengkapi" else "Ubah",
+            trailingColor = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) kit.danger else kit.blue,
             key = "profileNis"
         ),
         ProfileRowSpec(

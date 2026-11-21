@@ -55,7 +55,11 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
         )
         val nameWidth = (statusRect.left - 84f - 10f).coerceAtLeast(90f)
         kit.textEllipsized(c, stall, 84f, y + 19f, nameWidth, 16.5f, kit.ink, true)
-        val ownerWithNis = if (myNis.isNotBlank()) "Pemilik: $ownerName  ·  NIS: $myNis" else "Pemilik: $ownerName"
+        val ownerWithNis = buildString {
+            append("Pemilik: $ownerName")
+            if (myNis.isNotBlank()) append("  ·  NIS: $myNis")
+            if (myClass.isNotBlank()) append("  ·  $myClass")
+        }
         kit.textEllipsized(
             c,
             ownerWithNis,
@@ -105,11 +109,11 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
         c, y,
         listOf(
             SellerSettingRow(
-                title = "Nama Asli & NIS Pemilik (Wajib)",
+                title = "Nama Asli, NIS & Kelas (Wajib)",
                 key = "profileRealName",
-                subtitle = "${myDisplayName.ifBlank { "Belum diisi" }}  ·  NIS: ${myNis.ifBlank { "Wajib diisi" }}",
-                value = if (myNis.isBlank() || myDisplayName.isBlank()) "Lengkapi" else "Ubah",
-                valueColor = if (myNis.isBlank() || myDisplayName.isBlank()) kit.danger else kit.blue,
+                subtitle = "${myDisplayName.ifBlank { "Belum diisi" }}  ·  NIS: ${myNis.ifBlank { "-" }}  ·  Kelas: ${myClass.ifBlank { "Wajib diisi" }}",
+                value = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) "Lengkapi" else "Ubah",
+                valueColor = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) kit.danger else kit.blue,
                 chevron = false,
             ),
             SellerSettingRow(
