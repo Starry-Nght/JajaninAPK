@@ -51,6 +51,7 @@ import com.jajanin.app.data.repository.DevStats
 import com.jajanin.app.data.repository.DevUser
 import com.jajanin.app.data.repository.DevWarningRow
 import com.jajanin.app.data.repository.DeveloperRepository
+import com.jajanin.app.data.repository.OnlinePresenceSession
 import com.jajanin.app.data.repository.OrderObserver
 import com.jajanin.app.data.repository.OrderRepository
 import com.jajanin.app.data.repository.PhoneRepository
@@ -440,6 +441,7 @@ class MainActivity : Activity() {
                 refreshMyOrders()
                 refreshOrderingStatus()
                 startInboxObserver()
+                ensureOnlinePresence("buyer")
                 requirePrivilegedAccess("developer") { enterDeveloper() }
                 return
             }
@@ -459,6 +461,7 @@ class MainActivity : Activity() {
                 refreshMyOrders()
                 refreshOrderingStatus()
                 startInboxObserver()
+                ensureOnlinePresence("buyer")
                 val pending = pendingOrderNotificationId
                 requirePrivilegedAccess("seller") {
                     if (pending != null) {
@@ -480,6 +483,7 @@ class MainActivity : Activity() {
                 refreshMyOrders()
                 refreshInbox()
                 startInboxObserver()
+                ensureOnlinePresence("seller")
                 pendingOrderNotificationId?.let { orderId ->
                     pendingOrderNotificationId = null
                     openOrderDetail(orderId)
@@ -494,6 +498,7 @@ class MainActivity : Activity() {
             refreshOrderingStatus()
             registerMyDevice()
             startInboxObserver()
+            ensureOnlinePresence("buyer")
             pendingOrderNotificationId?.let { orderId ->
                 pendingOrderNotificationId = null
                 ui.selectedBuyerOrderId = orderId
@@ -514,7 +519,10 @@ class MainActivity : Activity() {
         super.onStart()
         // Segarkan akun + katalog pembeli tiap kembali ke aplikasi agar menu tidak tertinggal.
         authScope.launch {
-            if (SupabaseRepository.hasSession()) refreshMyStatus()
+            if (SupabaseRepository.hasSession()) {
+                refreshMyStatus()
+                ensureOnlinePresence()
+            }
         }
         if (ui.myRole == "buyer") {
             refreshProducts()
@@ -526,6 +534,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         autoRefreshJob?.cancel()
         autoRefreshJob = null
+        stopOnlinePresence()
         super.onStop()
     }
 
@@ -612,6 +621,35 @@ class MainActivity : Activity() {
     internal var devObserver: OrderObserver? = null
     internal var devRefreshJob: Job? = null
     internal var inboxRefreshJob: Job? = null
+    internal var onlinePresenceSession: OnlinePresenceSession? = null
+    internal var onlinePresenceCleanupJob: Job? = null
+
+    /** Nyalakan/pertahankan pelacak kehadiran live selama user login dan aplikasi terbuka. */
+    internal fun ensureOnlinePresence(roleOverride: String? = null) {
+        val uid = SupabaseRepository.currentUid() ?: return
+        val role = roleOverride ?: ui.myRole ?: return
+        val cur = onlinePresenceSession
+        if (cur != null && !cur.isClosed() && cur.userId == uid) {
+            cur.updateRole(role)
+            return
+        }
+        stopOnlinePresence()
+        onlinePresenceSession = DeveloperRepository.startOnlinePresence(
+            scope = authScope,
+            userId = uid,
+            role = role,
+            previousCleanup = onlinePresenceCleanupJob,
+        ) { ids ->
+            ui.onlineUserIds = ids
+            ui.invalidate()
+        }
+    }
+
+    internal fun stopOnlinePresence() {
+        val cur = onlinePresenceSession ?: return
+        onlinePresenceSession = null
+        onlinePresenceCleanupJob = cur.close()
+    }
 
     /** Dasbor developer wajib kode akses + login DAN ber-role developer di database. */
     internal var pendingOrderNotificationId: String? = null
@@ -619,6 +657,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         autoRefreshJob?.cancel()
         otaDownloadJob?.cancel()
+        stopOnlinePresence()
         adminObserver?.close()
         productObserver?.close()
         ui.myObserver?.close()
@@ -1049,7 +1088,9 @@ class MainActivity : Activity() {
     internal fun doLogout() {
         authScope.launch {
             try {
-                // Lepas token FCM dulu (sebelum sesi hilang) agar server berhenti mengirim ke perangkat ini.
+                // Lepas kehadiran live & token FCM sebelum sesi logout dihapus.
+                stopOnlinePresence()
+                ui.onlineUserIds = emptySet()
                 runCatching {
                     val uid = SupabaseRepository.currentUid()
                     val token = NotificationHelper.currentFcmToken()

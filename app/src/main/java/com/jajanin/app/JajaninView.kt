@@ -187,6 +187,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myInvites: List<SellerInvite> = emptyList()
     internal var devInvites: List<SellerInvite> = emptyList()
     internal var inboxObserver: OrderObserver? = null
+    internal var onlineUserIds: Set<String> = emptySet()
     // --- Nomor HP sendiri (wajib sebelum memesan) ---
     internal var myPhone: String = ""
     // --- Level & EXP pembeli (saldo dari server, level dihitung lokal) ---

@@ -96,6 +96,7 @@ internal fun MainActivity.startDeveloper() {
     devObserver?.close()
     inboxObserverClose()
     if (!SupabaseRepository.isConfigured()) return
+    ensureOnlinePresence("developer")
     runCatching {
         devObserver = DeveloperRepository.observePlatform(authScope) { refreshDeveloper() }
         ui.inboxObserver = DeveloperRepository.observeInbox(authScope) { refreshInbox() }

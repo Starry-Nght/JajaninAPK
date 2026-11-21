@@ -6,14 +6,20 @@ import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
+import io.github.jan.supabase.realtime.presenceChangeFlow
 import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /** Row mirrors for the developer tables (see 202610080006_developer.sql). */
@@ -501,5 +507,143 @@ internal object DeveloperRepository {
             channel.subscribe()
         }
         return OrderObserver(channel, job, scope)
+    }
+
+    private const val ONLINE_CHANNEL_TOPIC = "jajanin-online-presence"
+
+    /** Pelacak kehadiran live (siapa saja yang sedang membuka aplikasi Jajanin saat ini). */
+    fun startOnlinePresence(
+        scope: CoroutineScope,
+        userId: String,
+        role: String,
+        previousCleanup: Job?,
+        onOnlineChanged: (Set<String>) -> Unit,
+    ): OnlinePresenceSession {
+        val client = SupabaseRepository.client
+        val onlineRefs = HashMap<String, MutableSet<String>>()
+        val session = OnlinePresenceSession(
+            userId = userId,
+            role = role,
+            scope = scope,
+            onClosed = {
+                onlineRefs.clear()
+                onOnlineChanged(emptySet())
+            },
+        )
+        session.job = scope.launch {
+            runCatching { previousCleanup?.join() }
+            client.realtime.subscriptions.values
+                .filter { it.topic.endsWith(ONLINE_CHANNEL_TOPIC) }
+                .toList()
+                .forEach { old -> runCatching { client.realtime.removeChannel(old) } }
+            if (session.isClosed()) return@launch
+
+            val channel = client.realtime.channel(ONLINE_CHANNEL_TOPIC) {
+                presence { key = userId }
+            }
+            session.channel = channel
+            val presenceFlow = channel.presenceChangeFlow()
+
+            fun extractUid(key: String, state: JsonObject): String =
+                state["user_id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: key
+
+            launch {
+                runCatching {
+                    presenceFlow.collect { action ->
+                        var changed = false
+                        action.joins.forEach { (key, presence) ->
+                            val uid = extractUid(key, presence.state)
+                            if (uid.isNotBlank() && onlineRefs.getOrPut(uid) { mutableSetOf() }.add(presence.presenceRef)) {
+                                changed = true
+                            }
+                        }
+                        action.leaves.forEach { (key, presence) ->
+                            val uid = extractUid(key, presence.state)
+                            val refs = onlineRefs[uid]
+                            if (refs != null && refs.remove(presence.presenceRef)) {
+                                if (refs.isEmpty()) onlineRefs.remove(uid)
+                                changed = true
+                            }
+                        }
+                        if (changed) {
+                            onOnlineChanged(onlineRefs.keys.toSet())
+                        }
+                    }
+                }
+            }
+
+            launch {
+                var wasSubscribed = false
+                runCatching {
+                    channel.status.collect { st ->
+                        when (st) {
+                            RealtimeChannel.Status.SUBSCRIBING -> if (wasSubscribed) {
+                                onlineRefs.clear()
+                                onOnlineChanged(emptySet())
+                            }
+                            RealtimeChannel.Status.SUBSCRIBED -> {
+                                wasSubscribed = true
+                                runCatching {
+                                    channel.track(buildJsonObject {
+                                        put("user_id", userId)
+                                        put("role", session.role)
+                                    })
+                                }
+                            }
+                            else -> Unit
+                        }
+                    }
+                }
+            }
+
+            runCatching { client.realtime.connect() }
+            runCatching { channel.subscribe(blockUntilSubscribed = false) }
+        }
+        return session
+    }
+}
+
+internal class OnlinePresenceSession internal constructor(
+    val userId: String,
+    role: String,
+    private val scope: CoroutineScope,
+    private val onClosed: () -> Unit,
+) {
+    var role: String = role
+        private set
+    internal var channel: RealtimeChannel? = null
+    internal var job: Job? = null
+    @Volatile private var closed = false
+
+    fun updateRole(newRole: String) {
+        if (closed || role == newRole) return
+        role = newRole
+        val ch = channel ?: return
+        if (ch.status.value == RealtimeChannel.Status.SUBSCRIBED) {
+            scope.launch {
+                runCatching {
+                    ch.track(buildJsonObject {
+                        put("user_id", userId)
+                        put("role", newRole)
+                    })
+                }
+            }
+        }
+    }
+
+    fun isClosed(): Boolean = closed
+
+    fun close(): Job {
+        closed = true
+        job?.cancel()
+        onClosed()
+        val ch = channel
+        channel = null
+        return scope.launch {
+            if (ch != null) {
+                runCatching { ch.untrack() }
+                runCatching { SupabaseRepository.client.realtime.removeChannel(ch) }
+            }
+        }
     }
 }

@@ -334,7 +334,7 @@ private fun JajaninView.drawDevUsers(
     }
 
     val filters = if (sellersOnly) {
-        listOf("Semua", "Buka", "Tutup", "Ditangguhkan")
+        listOf("Semua", "Aktif", "Buka", "Tutup", "Ditangguhkan")
     } else {
         listOf("Semua", "Aktif", "Ditangguhkan")
     }
@@ -343,7 +343,7 @@ private fun JajaninView.drawDevUsers(
     var chipX = 20f
     filters.forEach { filter ->
         val count = when (filter) {
-            "Aktif" -> rolePool.count { it.accountStatus == "active" }
+            "Aktif" -> rolePool.count { it.id in onlineUserIds }
             "Buka" -> rolePool.count { it.stallOpen == true }
             "Tutup" -> rolePool.count { it.stallOpen == false }
             "Ditangguhkan" -> rolePool.count { it.accountStatus == "suspended" }
@@ -351,6 +351,10 @@ private fun JajaninView.drawDevUsers(
         }
         val label = "$filter ($count)"
         val chipW = kit.measure(label, 10f, true) + 20f
+        if (chipX > 20f && chipX + chipW > 370f) {
+            chipX = 20f
+            y += 32f
+        }
         val chip = RectF(chipX, y, chipX + chipW, y + 26f)
         val isSel = activeFilter == filter
 
@@ -371,7 +375,7 @@ private fun JajaninView.drawDevUsers(
             u.email.contains(devQuery.trim(), true) ||
             u.phone.contains(devQuery.trim())) &&
             when (activeFilter) {
-                "Aktif" -> u.accountStatus == "active"
+                "Aktif" -> u.id in onlineUserIds
                 "Buka" -> u.stallOpen == true
                 "Tutup" -> u.stallOpen == false
                 "Ditangguhkan" -> u.accountStatus == "suspended"
@@ -387,15 +391,18 @@ private fun JajaninView.drawDevUsers(
 
     if (rows.isEmpty()) {
         if (visible(y, y + 50f)) {
-            kit.text(c, "Tidak ada akun yang cocok.", 20f, y + 26f, 12f, kit.muted)
+            val emptyMsg = if (activeFilter == "Aktif") "Belum ada user yang sedang membuka Jajanin." else "Tidak ada akun yang cocok."
+            kit.text(c, emptyMsg, 20f, y + 26f, 12f, kit.muted)
         }
         y += 56f
     } else {
         kit.line(c, 20f, y, 370f, y, kit.divider)
         rows.forEach { u ->
             val isExpanded = u.id == devSelectedUserId
+            val isOnline = u.id in onlineUserIds
+            val hasRow2 = u.stallId != null || u.role == "buyer"
             val baseH = 66f
-            val expandH = if (isExpanded) 86f else 0f
+            val expandH = if (isExpanded) (if (hasRow2) 86f else 50f) else 0f
             val rowH = baseH + expandH
 
             if (visible(y, y + rowH)) {
@@ -406,13 +413,61 @@ private fun JajaninView.drawDevUsers(
 
                 val cleanName = SupabaseRepository.extractCleanName(u.displayName).ifBlank { u.displayName }
                 val nis = SupabaseRepository.extractNis(u.displayName)
+                val kelas = SupabaseRepository.extractClass(u.displayName)
                 val (_, roleFg) = roleBadgeColors(u.role)
 
-                // Clean Soft Avatar
+                // Clean Soft Avatar + live online dot
                 val av = RectF(20f, y + 13f, 56f, y + 49f)
                 kit.rounded(c, av, kit.tint, 8f)
                 val initial = cleanName.trim().firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "U"
                 kit.centerText(c, initial, av, 15f, roleFg, true)
+                if (isOnline) {
+                    kit.rounded(
+                        c,
+                        RectF(av.right - 8f, av.bottom - 8f, av.right + 2f, av.bottom + 2f),
+                        kit.success,
+                        5f,
+                        if (isExpanded) kit.card else kit.bg,
+                    )
+                }
+
+                // Right Column Badges (stack right-to-left before measuring primary title width)
+                val isSuspended = u.accountStatus == "suspended"
+                var badgeRightX = 370f
+                when {
+                    isSuspended -> {
+                        val w = drawRightBadge(c, kit, "Ditangguhkan", badgeRightX, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
+                        badgeRightX -= w + 4f
+                    }
+                    u.warningCount > 0 -> {
+                        val w = drawRightBadge(c, kit, "⚠ ${u.warningCount}", badgeRightX, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
+                        badgeRightX -= w + 4f
+                    }
+                    sellersOnly && u.stallOpen != null -> {
+                        val open = u.stallOpen
+                        val w = drawRightBadge(
+                            c,
+                            kit,
+                            if (open) "Buka" else "Tutup",
+                            badgeRightX,
+                            y + 12f,
+                            if (open) kit.successSoft else kit.tint,
+                            if (open) kit.success else kit.muted,
+                            8.5f,
+                            radius = 4f,
+                        )
+                        badgeRightX -= w + 4f
+                    }
+                    u.role == "developer" -> {
+                        val (devBg, devFg) = roleBadgeColors("developer")
+                        val w = drawRightBadge(c, kit, "Dev", badgeRightX, y + 12f, devBg, devFg, 8.5f, radius = 4f)
+                        badgeRightX -= w + 4f
+                    }
+                }
+                if (isOnline) {
+                    val w = drawRightBadge(c, kit, "Online", badgeRightX, y + 12f, kit.successSoft, kit.success, 8.5f, radius = 4f)
+                    badgeRightX -= w + 4f
+                }
 
                 // Primary Line: Clean Name (+ Store Name for Sellers)
                 val titleText = if (sellersOnly && !u.stallName.isNullOrBlank()) {
@@ -420,35 +475,17 @@ private fun JajaninView.drawDevUsers(
                 } else {
                     cleanName
                 }
-                kit.textEllipsized(c, titleText, 68f, y + 25f, 215f, 13.5f, kit.ink, true)
+                val titleMaxW = (badgeRightX - 76f).coerceIn(130f, 215f)
+                kit.textEllipsized(c, titleText, 68f, y + 25f, titleMaxW, 13.5f, kit.ink, true)
 
-                // Secondary Line: NIS + Phone / Email
+                // Secondary Line: NIS + Kelas + Phone + Email
                 val subParts = mutableListOf<String>()
                 if (nis.isNotBlank()) subParts += "NIS $nis"
+                if (kelas.isNotBlank()) subParts += kelas
                 if (u.phone.isNotBlank()) subParts += displayLocalPhone(u.phone)
                 subParts += u.email
                 kit.textEllipsized(c, subParts.joinToString("  ·  "), 68f, y + 44f, 220f, 10.5f, kit.muted)
 
-                // Right Column: Status / Order Count
-                val isSuspended = u.accountStatus == "suspended"
-                when {
-                    isSuspended -> drawRightBadge(c, kit, "Ditangguhkan", 370f, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
-                    u.warningCount > 0 -> drawRightBadge(c, kit, "⚠ ${u.warningCount}", 370f, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
-                    sellersOnly && u.stallOpen != null -> {
-                        val open = u.stallOpen
-                        drawRightBadge(
-                            c,
-                            kit,
-                            if (open) "Buka" else "Tutup",
-                            370f,
-                            y + 12f,
-                            if (open) kit.successSoft else kit.tint,
-                            if (open) kit.success else kit.muted,
-                            8.5f,
-                            radius = 4f
-                        )
-                    }
-                }
                 kit.textRight(c, "${u.orderCount} pesanan", 370f, y + 44f, 80f, 10.5f, kit.muted)
 
                 bounds.putVisible("devUser:${u.id}", rowRect, HEADER_H, navClear)

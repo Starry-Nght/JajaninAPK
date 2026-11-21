@@ -1306,6 +1306,7 @@ internal fun MainActivity.enterSellerDashboard() {
             registerMyDevice()
             refreshInbox()
             startInboxObserver()
+            ensureOnlinePresence("seller")
         }
     }
 }
