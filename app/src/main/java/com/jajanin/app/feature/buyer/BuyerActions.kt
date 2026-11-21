@@ -103,6 +103,8 @@ internal fun MainActivity.refreshMyOrders() {
     }
 }
 
+private var buyerTopSellingTick = 0
+
 /** Auto-refresh pembeli setiap 1 detik di latar belakang tanpa kedipan indikator loading. */
 internal suspend fun MainActivity.silentRefreshBuyerTick() {
     if (!SupabaseRepository.isConfigured()) return
@@ -112,6 +114,15 @@ internal suspend fun MainActivity.silentRefreshBuyerTick() {
             ui.products = freshProducts
             ui.productsLoading = false
             ui.invalidate()
+        }
+    }
+    if (buyerTopSellingTick++ % 5 == 0) {
+        runCatching {
+            val freshStats = OrderRepository.fetchTopSellingStats()
+            if (freshStats != ui.topSellingStats) {
+                ui.topSellingStats = freshStats
+                ui.invalidate()
+            }
         }
     }
     if (SupabaseRepository.hasSession() && !ui.placingOrder) {
@@ -301,22 +312,8 @@ internal fun MainActivity.refreshProducts(manual: Boolean = false) {
             ui.productsLoading = false
             ui.invalidate()
 
-            val remoteTop = runCatching { OrderRepository.fetchTopSelling3Days() }.getOrDefault(emptyMap())
-            val merged = HashMap(remoteTop)
-            ui.myOrders.forEach { o ->
-                if (o.status != STATUS_CANCELLED) {
-                    o.items.forEach { item ->
-                        item.menuItemId?.takeIf { it.isNotBlank() }?.let { id ->
-                            merged[id] = maxOf(merged[id] ?: 0, item.quantity)
-                        }
-                        val nameKey = item.itemName.trim().lowercase()
-                        if (nameKey.isNotBlank()) {
-                            merged[nameKey] = maxOf(merged[nameKey] ?: 0, item.quantity)
-                        }
-                    }
-                }
-            }
-            ui.topSelling3d = merged
+            val freshStats = OrderRepository.fetchTopSellingStats()
+            ui.topSellingStats = freshStats
             if (manual) {
                 refreshOrderingStatus()
                 Toast.makeText(this@refreshProducts, "Menu diperbarui", Toast.LENGTH_SHORT).show()

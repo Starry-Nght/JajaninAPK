@@ -15,6 +15,7 @@ import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.ui.statusLabel
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.model.ProductRow
+import com.jajanin.app.data.repository.SalesStat
 import com.jajanin.app.feature.developer.inboxUnreadCount
 
 private const val NAV_HEIGHT = 82f
@@ -112,12 +113,12 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
     bounds.putVisible("search", search, topLimit = HEADER_H, bottomLimit = bottomClip)
     y += 56f
 
-    // 4. "Paling Laris · 3 Hari Terakhir" (Open borderless editorial tiles — no outer card boxes)
-    val rankedTrending = computeTrendingTop3(products, topSelling3d)
+    // 4. "Paling Laris · Penjualan terbanyak" (Hanya menu yang benar-benar sudah pernah terjual)
+    val rankedTrending = computeTrendingTop3(products, topSellingStats)
     if (rankedTrending.isNotEmpty() && activeCategory == "All" && query.isBlank()) {
         if (isVisible(y, y + 22f)) {
             kit.text(c, "Paling Laris", 20f, y + 15f, 15f, kit.ink, true)
-            kit.textRight(c, "3 hari terakhir", 370f, y + 15f, 120f, 11f, kit.muted)
+            kit.textRight(c, "Penjualan terbanyak", 370f, y + 15f, 150f, 11f, kit.muted)
         }
         y += 24f
 
@@ -125,7 +126,7 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
         val imgH = 86f
         val tileH = imgH + 54f
         if (isVisible(y, y + tileH)) {
-            rankedTrending.forEachIndexed { idx, (product, soldCount) ->
+            rankedTrending.forEachIndexed { idx, (product, stat) ->
                 val left = 20f + idx * (tileW + 10f)
                 val imgRect = RectF(left, y, left + tileW, y + imgH)
                 drawProductImage(c, product, imgRect, 8f)
@@ -152,7 +153,7 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                 // Open typography below image (no card box!)
                 kit.textEllipsized(c, product.name, left, y + imgH + 17f, tileW, 12.5f, kit.ink, true)
                 kit.textEllipsized(c, formatRupiah(product.priceIdr), left, y + imgH + 34f, tileW, 12f, kit.blue, true)
-                val soldText = if (soldCount > 0) "${soldCount}x terjual" else "Populer"
+                val soldText = "${stat.totalQty}x terjual"
                 kit.textEllipsized(c, soldText, left, y + imgH + 49f, tileW, 10f, kit.muted)
 
                 val tileHit = RectF(left, y, left + tileW, y + tileH)
@@ -401,17 +402,17 @@ private fun JajaninView.drawCleanTopHeader(c: Canvas, cartCount: Int) {
 
 private fun computeTrendingTop3(
     products: List<ProductRow>,
-    counts: Map<String, Int>
-): List<Pair<ProductRow, Int>> {
-    if (products.isEmpty()) return emptyList()
+    stats: Map<String, SalesStat>
+): List<Pair<ProductRow, SalesStat>> {
+    if (products.isEmpty() || stats.isEmpty()) return emptyList()
     return products
-        .map { product ->
-            val soldById = counts[product.id] ?: 0
-            val soldByName = counts[product.name.trim().lowercase()] ?: 0
-            product to maxOf(soldById, soldByName)
+        .mapNotNull { product ->
+            val stat = stats[product.id] ?: stats[product.name.trim().lowercase()]
+            if (stat == null || stat.totalQty <= 0) null else product to stat
         }
         .sortedWith(
-            compareByDescending<Pair<ProductRow, Int>> { it.second }
+            compareByDescending<Pair<ProductRow, SalesStat>> { it.second.totalQty }
+                .thenByDescending { it.second.orderCount }
                 .thenByDescending { it.first.available }
                 .thenBy { it.first.name.lowercase() }
         )

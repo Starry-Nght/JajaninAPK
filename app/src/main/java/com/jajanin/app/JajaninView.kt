@@ -38,6 +38,7 @@ import com.jajanin.app.data.repository.DevStats
 import com.jajanin.app.data.repository.DevUser
 import com.jajanin.app.data.repository.DevWarningRow
 import com.jajanin.app.data.repository.OrderObserver
+import com.jajanin.app.data.repository.SalesStat
 import com.jajanin.app.data.repository.PlacedOrder
 import com.jajanin.app.data.repository.SellerInvite
 import com.jajanin.app.data.repository.SupabaseRepository
@@ -81,7 +82,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var products: List<ProductRow> = emptyList()
     internal var sellerProducts: List<ProductRow> = emptyList()
     internal var favoriteIds = linkedSetOf<String>()
-    internal var topSelling3d: Map<String, Int> = emptyMap()
+    internal var topSellingStats: Map<String, SalesStat> = emptyMap()
     internal var selectedProduct: ProductRow? = null
     internal val selected: MenuItem
         get() = selectedProduct?.let { MenuItem(it.name, "Kantin Jajanin", formatRupiah(it.priceIdr), "-", 0, it.category) }

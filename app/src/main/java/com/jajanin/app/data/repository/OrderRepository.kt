@@ -69,6 +69,19 @@ internal data class ProfileRow(
 )
 
 @Serializable
+internal data class TopSellingRow(
+    @SerialName("menu_item_id") val menuItemId: String? = null,
+    @SerialName("norm_name") val normName: String = "",
+    @SerialName("total_qty") val totalQty: Int = 0,
+    @SerialName("order_count") val orderCount: Int = 0,
+)
+
+internal data class SalesStat(
+    val totalQty: Int = 0,
+    val orderCount: Int = 0,
+)
+
+@Serializable
 internal data class RealtimeOrderPatch(
     val id: String,
     @SerialName("user_id") val userId: String? = null,
@@ -827,47 +840,28 @@ internal object OrderRepository {
     }
 
     /**
-     * Hitung jumlah pembelian per menu dalam 3 hari terakhir (72 jam).
-     * Mengembalikan peta key (menu_item_id & nama lowercase) -> total quantity.
+     * Ambil statistik penjualan terbanyak & paling sering dibeli dari semua pembeli lewat RPC server
+     * (`top_selling_items`) agar tidak terblokir RLS `orders` per-pembeli.
      */
-    suspend fun fetchTopSelling3Days(): Map<String, Int> = runCatching {
-        val sinceIso = daysAgoIso(3)
-        val rows = client.postgrest.from("orders")
-            .select(orderColumns) {
-                filter {
-                    gte("created_at", sinceIso)
-                    neq("status", STATUS_CANCELLED)
-                }
-                order("created_at", Order.DESCENDING)
-                limit(120)
-            }
-            .decodeList<OrderRow>()
-
-        val counts = HashMap<String, Int>()
-        rows.forEach { order ->
-            order.items.forEach { item ->
-                val qty = item.quantity.coerceAtLeast(1)
-                item.menuItemId?.takeIf { it.isNotBlank() }?.let { id ->
-                    counts[id] = (counts[id] ?: 0) + qty
-                }
-                val nameKey = item.itemName.trim().lowercase()
-                if (nameKey.isNotBlank()) {
-                    counts[nameKey] = (counts[nameKey] ?: 0) + qty
-                }
+    suspend fun fetchTopSellingStats(limit: Int = 20): Map<String, SalesStat> = runCatching {
+        val rows = client.postgrest.rpc(
+            "top_selling_items",
+            buildJsonObject { put("p_limit", limit) },
+        ).decodeList<TopSellingRow>()
+        val stats = HashMap<String, SalesStat>()
+        rows.forEach { row ->
+            if (row.totalQty <= 0) return@forEach
+            val key = row.menuItemId?.takeIf { it.isNotBlank() } ?: row.normName.trim().lowercase()
+            if (key.isNotBlank()) {
+                val prev = stats[key]
+                stats[key] = SalesStat(
+                    totalQty = (prev?.totalQty ?: 0) + row.totalQty,
+                    orderCount = (prev?.orderCount ?: 0) + row.orderCount,
+                )
             }
         }
-        counts
+        stats
     }.getOrDefault(emptyMap())
-
-    private fun daysAgoIso(days: Int): String {
-        val cal = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, -days)
-        }
-        val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
-        return format.format(cal.time)
-    }
 
     private suspend fun resolveBuyerNames(rows: List<OrderRow>): Map<String, String> {
         val userIds = rows.map { it.userId }.distinct()
