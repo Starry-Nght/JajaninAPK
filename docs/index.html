@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B1324" />
+  <title>Jajanin — Download Aplikasi Kantin Sekolah</title>
+  <style>
+    :root {
+      --bg: #070d19;
+      --card: #10192b;
+      --card-soft: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.10);
+      --ink: #f3f6fc;
+      --muted: #9aa7bd;
+      --blue: #2563eb;
+      --blue-glow: rgba(37, 99, 235, 0.35);
+      --green: #22c55e;
+      --green-soft: rgba(34, 197, 94, 0.14);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(120% 60% at 50% 0%, #132347 0%, var(--bg) 55%);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 440px;
+      margin: 0 auto;
+      padding: 28px 18px 44px;
+    }
+    .hero {
+      text-align: center;
+      padding: 12px 0 22px;
+    }
+    .logo {
+      width: 68px;
+      height: 68px;
+      border-radius: 20px;
+      margin: 0 auto 14px;
+      display: grid;
+      place-items: center;
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+      background: linear-gradient(145deg, #3b82f6, #1d4ed8);
+      box-shadow: 0 14px 32px var(--blue-glow);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 26px;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 320px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 14px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid rgba(34, 197, 94, 0.28);
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      margin-top: 14px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+    }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 15px 18px;
+      border-radius: 14px;
+      border: 0;
+      text-decoration: none;
+      color: #fff;
+      background: linear-gradient(180deg, #3b82f6, var(--blue));
+      font-size: 16px;
+      font-weight: 700;
+      box-shadow: 0 10px 26px var(--blue-glow);
+      cursor: pointer;
+      transition: transform .12s ease, opacity .15s ease;
+    }
+    .btn:active { transform: scale(0.985); }
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .section-title {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .changelog {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--card-soft);
+      border: 1px solid var(--border);
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: #dce4f3;
+      white-space: pre-line;
+    }
+    .steps {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 12px;
+    }
+    .steps li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font-size: 13.5px;
+      line-height: 1.45;
+      color: #dce4f3;
+    }
+    .num {
+      flex: 0 0 24px;
+      height: 24px;
+      border-radius: 8px;
+      background: rgba(37, 99, 235, 0.2);
+      color: #60a5fa;
+      font-weight: 700;
+      font-size: 12px;
+      display: grid;
+      place-items: center;
+      margin-top: 1px;
+    }
+    .features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .feat {
+      padding: 12px;
+      border-radius: 12px;
+      background: var(--card-soft);
+      border: 1px solid var(--border);
+    }
+    .feat b {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .feat span {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+      display: block;
+    }
+    .foot {
+      margin-top: 22px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="logo">J</div>
+      <h1>Jajanin</h1>
+      <p class="sub">Pesan makanan & minuman kantin sekolah lebih cepat, pantau antrean realtime, bayar tunai atau QRIS.</p>
+      <div class="pill"><span class="dot"></span><span id="ver-pill">Android APK · Siap Install</span></div>
+    </section>
+
+    <section class="card">
+      <a id="dl-btn" class="btn" href="https://yezxyhpczfnkcndfpuht.supabase.co/storage/v1/object/public/app-updates/jajanin-v9.apk">
+        <span>Download Jajanin APK</span>
+      </a>
+      <div class="meta">
+        <span id="ver-meta">Versi terbaru: v1.8 (build 9)</span>
+        <span id="date-meta">Android 7.0+</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">Pembaruan Terbaru</h2>
+      <p id="changelog" class="changelog">Memuat catatan rilis terbaru...</p>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">Cara Install di HP Android</h2>
+      <ol class="steps">
+        <li><span class="num">1</span><span>Tekan tombol <b>Download Jajanin APK</b> di atas lalu tunggu hingga unduhan selesai.</span></li>
+        <li><span class="num">2</span><span>Buka file <b>jajanin.apk</b>. Jika muncul izin <i>"Install unknown apps"</i>, aktifkan untuk browser kamu.</span></li>
+        <li><span class="num">3</span><span>Masuk atau daftar akun. Update versi selanjutnya akan otomatis muncul langsung di dalam aplikasi (OTA).</span></li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">Fitur Utama</h2>
+      <div class="features">
+        <div class="feat"><b>Menu Realtime</b><span>Tarik layar ke bawah atau tunggu 1 detik, stok langsung sinkron.</span></div>
+        <div class="feat"><b>Kode Ambil</b><span>Setiap order dapat kode antrean #001 dst + ruangan ambil.</span></div>
+        <div class="feat"><b>Tunai & QRIS</b><span>Bayar langsung atau lewat QRIS warung dengan verifikasi penjual.</span></div>
+        <div class="feat"><b>Notifikasi Order</b><span>Status pesanan & pembatalan langsung masuk ke HP.</span></div>
+      </div>
+    </section>
+
+    <p class="foot">Jajanin App · Rilis langsung dari Supabase OTA</p>
+  </main>
+
+  <script>
+    (async function () {
+      const url = "https://yezxyhpczfnkcndfpuht.supabase.co/rest/v1/app_releases?select=version_code,version_name,apk_url,changelog,created_at&order=version_code.desc,created_at.desc&limit=1";
+      const key = "sb_publishable_vj7akRru3TvuUmkugtyRBg_0oRAQck6";
+      try {
+        const res = await fetch(url, { headers: { apikey: key, Authorization: "Bearer " + key } });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const rows = await res.json();
+        const latest = rows && rows[0];
+        if (!latest) return;
+        document.getElementById("dl-btn").href = latest.apk_url;
+        document.getElementById("ver-pill").textContent = "Versi v" + latest.version_name + " · Siap Install";
+        document.getElementById("ver-meta").textContent = "Versi v" + latest.version_name + " (build " + latest.version_code + ")";
+        if (latest.created_at) {
+          document.getElementById("date-meta").textContent = "Rilis " + latest.created_at.slice(0, 10);
+        }
+        document.getElementById("changelog").textContent = (latest.changelog || "Siap digunakan.").trim();
+      } catch (e) {
+        document.getElementById("changelog").textContent = "Tambah fitur Developer reset jatah pesanan buyer & optimasi sinkronisasi realtime.";
+      }
+    })();
+  </script>
+</body>
+</html>
