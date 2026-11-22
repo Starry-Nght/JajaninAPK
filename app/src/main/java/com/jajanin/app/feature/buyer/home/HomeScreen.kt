@@ -47,7 +47,7 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
         val reopen = blackoutReopen()
         val rightText = when {
             suspended -> "Akun ditangguhkan"
-            reopen != null -> "Buka %02d:00 (%d mnt)".format(reopen.first, reopen.second)
+            reopen != null -> "Buka %s (%d mnt)".format(reopen.first, reopen.second)
             orderingStatusLoading -> "Memuat..."
             else -> "Kuota harian $ordersToday/2"
         }

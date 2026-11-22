@@ -96,37 +96,38 @@ internal fun JajaninView.drawQr(c: Canvas, r: RectF) {
 }
 
 /**
- * Hitung mundur blackout dari jam server WIB: (jam buka kembali, sisa menit).
+ * Hitung mundur blackout dari jam server WIB: (label jam buka kembali "HH:mm", sisa menit).
  * Null bila tidak blackout atau jam server belum sinkron.
  */
-internal fun JajaninView.blackoutReopen(): Pair<Int, Int>? {
+internal fun JajaninView.blackoutReopen(): Pair<String, Int>? {
     if (!orderingBlocked) return null
     val now = serverNowMillis()
     if (now == 0L) return null
     val tz = java.util.TimeZone.getTimeZone("Asia/Jakarta")
-    val hour = java.util.Calendar.getInstance(tz).apply { timeInMillis = now }
-        .get(java.util.Calendar.HOUR_OF_DAY)
-    val endHour = when (hour) {
-        9 -> 10
-        12 -> 13
+    val cal = java.util.Calendar.getInstance(tz).apply { timeInMillis = now }
+    val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+    val minute = cal.get(java.util.Calendar.MINUTE)
+    val (endHour, endMinute) = when {
+        hour == 9 -> 10 to 0
+        hour == 12 && minute < 30 -> 12 to 30
         else -> return null
     }
     val end = java.util.Calendar.getInstance(tz).apply {
         timeInMillis = now
         set(java.util.Calendar.HOUR_OF_DAY, endHour)
-        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.MINUTE, endMinute)
         set(java.util.Calendar.SECOND, 0)
         set(java.util.Calendar.MILLISECOND, 0)
     }.timeInMillis
     val mins = ((end - now).coerceAtLeast(0) / 60000).toInt()
-    return endHour to mins
+    return "%02d:%02d".format(endHour, endMinute) to mins
 }
 
 /**
- * Hitung mundur blackout dari jam server WIB: "Buka kembali pukul 10:00 WIB
+ * Hitung mundur blackout dari jam server WIB: "Buka kembali pukul 12:30 WIB
  * · 12 mnt lagi". Null bila tidak blackout atau jam server belum sinkron.
  */
 internal fun JajaninView.blackoutReopenLabel(): String? {
-    val (endHour, mins) = blackoutReopen() ?: return null
-    return "Buka kembali pukul %02d:00 WIB · %d mnt lagi".format(endHour, mins)
+    val (endTime, mins) = blackoutReopen() ?: return null
+    return "Buka kembali pukul %s WIB · %d mnt lagi".format(endTime, mins)
 }
