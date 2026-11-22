@@ -399,6 +399,7 @@ internal class LiquidGlassNavHost(
             "Profile", "Profil", "Users" -> R.drawable.ic_nav_profile
             "Dashboard", "Overview" -> R.drawable.ic_nav_grid
             "Produk" -> R.drawable.ic_nav_plus
+            "Chat" -> R.drawable.ic_nav_chat
             "Sellers" -> R.drawable.ic_nav_box
             "Notifikasi", "Warn", "Info" -> R.drawable.ic_nav_bell
             else -> return null

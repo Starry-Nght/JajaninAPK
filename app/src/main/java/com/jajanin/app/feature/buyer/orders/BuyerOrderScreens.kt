@@ -132,9 +132,11 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
 
     y = ticketBottom + 12f
 
-    // 2. Section: Ambil di Ruangan & Kontak Penjual (Visible to Buyer!)
+    // 2. Section: Ambil di Ruangan & Kontak / Chat Penjual (Visible to Buyer!)
+    val targetOrderId = matchedOrder?.id ?: lastOrderId
+    val unreadForOrder = targetOrderId?.let { unreadChatByOrder[it] ?: 0 } ?: 0
     val hasSellerPhone = sellerPhone.isNotBlank()
-    val roomCardH = if (hasSellerPhone) 114f else 78f
+    val roomCardH = 114f
     val roomCard = RectF(20f, y, 370f, y + roomCardH)
     kit.rounded(c, roomCard, kit.card, 8f, kit.border)
     kit.rect(c, 20f, y + 8f, 23.5f, y + roomCardH - 8f, kit.blue)
@@ -145,21 +147,28 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     val sellerIdentity = if (sellerOwner.isNotBlank()) "$storeName  ·  $sellerOwner" else storeName
     kit.textEllipsized(c, sellerIdentity, 34f, y + 60f, 320f, 12f, kit.ink, true)
 
+    kit.line(c, 34f, y + 70f, 356f, y + 70f, kit.divider)
     if (hasSellerPhone) {
         val localPhone = displayBuyerPhone(sellerPhone)
-        kit.line(c, 34f, y + 70f, 356f, y + 70f, kit.divider)
-        drawIcon(c, "phone", 41f, y + 91f, 14f, kit.blue)
-        kit.textEllipsized(c, localPhone, 54f, y + 95f, 150f, 12.5f, kit.ink, true)
+        drawIcon(c, "phone", 41f, y + 91f, 13.5f, kit.blue)
+        kit.textEllipsized(c, localPhone, 53f, y + 95f, 128f, 11.5f, kit.ink, true)
 
-        val copyBtn = RectF(214f, y + 78f, 280f, y + 104f)
-        kit.rounded(c, copyBtn, kit.bg, 6f, kit.border)
-        kit.centerText(c, "Salin", copyBtn, 11f, kit.ink, true)
-        bounds.putVisible("copyPhone:$sellerPhone", copyBtn, topLimit = HEADER_H, bottomLimit = h - 70f)
-
-        val callBtn = RectF(286f, y + 78f, 356f, y + 104f)
-        kit.rounded(c, callBtn, kit.tint, 6f, kit.blue)
-        kit.centerText(c, "Hubungi", callBtn, 11f, kit.blue, true)
+        val callBtn = RectF(184f, y + 78f, 244f, y + 104f)
+        kit.rounded(c, callBtn, kit.bg, 6f, kit.border)
+        kit.centerText(c, "Telepon", callBtn, 10.5f, kit.ink, true)
         bounds.putVisible("dialPhone:$sellerPhone", callBtn, topLimit = HEADER_H, bottomLimit = h - 70f)
+    } else {
+        drawIcon(c, "chat", 42f, y + 91f, 14f, kit.blue)
+        kit.textEllipsized(c, "Koordinasi langsung via chat", 55f, y + 95f, 180f, 11f, kit.muted)
+    }
+
+    if (!targetOrderId.isNullOrBlank()) {
+        val chatBtn = RectF(250f, y + 78f, 356f, y + 104f)
+        kit.rounded(c, chatBtn, kit.blue, 6f)
+        val chatLabel = if (unreadForOrder > 0) "Chat ($unreadForOrder)" else "Chat Penjual"
+        kit.centerText(c, chatLabel, chatBtn, 10.5f, Color.WHITE, true)
+        bounds.putVisible("chatOrder:$targetOrderId", chatBtn, topLimit = HEADER_H, bottomLimit = h - 70f)
+        press(c, "chatOrder:$targetOrderId", chatBtn, 6f)
     }
 
     y += roomCardH + 12f
@@ -199,7 +208,6 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     bounds["headerBack"] = RectF(12f, 10f, 64f, HEADER_H)
 
     // Bottom Action CTA
-    val targetOrderId = matchedOrder?.id ?: lastOrderId
     val canBuyerCancel = status.equals(STATUS_PENDING, ignoreCase = true) && !targetOrderId.isNullOrBlank()
     if (canBuyerCancel && targetOrderId != null) {
         val cancelBtn = RectF(20f, h - 62f, 134f, h - 14f)
@@ -365,11 +373,26 @@ private fun JajaninView.drawBuyerOrderItem(
             it.isNotBlank() && order.status.equals(STATUS_CANCELLED, ignoreCase = true)
         }
         if (cancelInfo != null) {
-            kit.textEllipsized(c, "Alasan: $cancelInfo", 32f, top + 90f, 248f, 10.5f, kit.danger, true)
+            kit.textEllipsized(c, "Alasan: $cancelInfo", 32f, top + 90f, 200f, 10.5f, kit.danger, true)
         } else {
             kit.text(c, "$methodName · $payLabel", 32f, top + 90f, 10.5f, payColor, true)
         }
-        kit.textRight(c, "Detail →", 358f, top + 90f, 70f, 11f, kit.blue, true)
+        val unreadOrder = unreadChatByOrder[order.id] ?: 0
+        val chatLabel = if (unreadOrder > 0) "Chat ($unreadOrder)" else "Chat"
+        val chatW = kit.measure(chatLabel, 10f, true) + 18f
+        val chatPill = RectF(302f - chatW, top + 76f, 302f, top + 96f)
+        kit.rounded(
+            c,
+            chatPill,
+            if (unreadOrder > 0) kit.blue else kit.tint,
+            5f,
+            if (unreadOrder > 0) null else kit.blue,
+        )
+        kit.centerText(c, chatLabel, chatPill, 9.5f, if (unreadOrder > 0) Color.WHITE else kit.blue, true)
+        bounds.putVisible("chatOrder:${order.id}", chatPill, topLimit = HEADER_H, bottomLimit = bottomClip)
+        press(c, "chatOrder:${order.id}", chatPill, 5f)
+
+        kit.textRight(c, "Detail →", 358f, top + 90f, 52f, 11f, kit.blue, true)
 
         if (active) {
             kit.line(c, 32f, top + 100f, 358f, top + 100f, kit.divider)

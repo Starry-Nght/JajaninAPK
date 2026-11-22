@@ -54,6 +54,7 @@ internal fun JajaninView.drawAdminNav(c: Canvas, w: Float, h: Float, active: Str
             FloatNavItem("Dashboard", "grid", true),
             FloatNavItem("Pesanan", "receipt", true),
             FloatNavItem("Produk", "plus", true),
+            FloatNavItem("Chat", "chat", true),
             FloatNavItem("Notifikasi", "bell", true),
             FloatNavItem("Profil", "person", true),
         ),
@@ -61,7 +62,12 @@ internal fun JajaninView.drawAdminNav(c: Canvas, w: Float, h: Float, active: Str
         "stab:",
         variant = NavVariant.STANDARD,
     )
-    navBadge(index = 3, count = adminActionableCount())
+    val notifCount = adminActionableCount()
+    if (unreadChatTotal > 0) {
+        navBadge(index = 3, count = unreadChatTotal)
+    } else if (notifCount > 0) {
+        navBadge(index = 4, count = notifCount)
+    }
 }
 
 internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
@@ -541,9 +547,23 @@ private fun JajaninView.drawOrderCard(
     val payment = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
     kit.text(c, "$payment · $payLabel", 32f, top + 67f, 10.5f, payColor, true)
 
+    val unreadOrder = unreadChatByOrder[order.id] ?: 0
+    val chatLabel = if (unreadOrder > 0) "Chat ($unreadOrder)" else "Chat"
     val nextAction = statusNextAction(order.status)
     if (nextAction != null) {
         kit.line(c, 32f, top + 77f, 358f, top + 77f, kit.divider)
+
+        val chatBtn = RectF(32f, top + 83f, 110f, top + 111f)
+        kit.rounded(
+            c,
+            chatBtn,
+            if (unreadOrder > 0) kit.blue else kit.tint,
+            6f,
+            if (unreadOrder > 0) null else kit.blue,
+        )
+        kit.centerText(c, chatLabel, chatBtn, 10.5f, if (unreadOrder > 0) Color.WHITE else kit.blue, true)
+        press(c, "chatOrder:${order.id}", chatBtn, 6f)
+        bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
         val cancel = RectF(118f, top + 83f, 204f, top + 111f)
         kit.rounded(c, cancel, kit.card, 6f, kit.dangerBorder)
@@ -556,6 +576,18 @@ private fun JajaninView.drawOrderCard(
         kit.centerText(c, "${nextAction.first} →", action, 11f, Color.WHITE, true)
         press(c, "adminStatus:${order.id}", action, 6f)
         bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
+    } else {
+        val chatBtn = RectF(286f, top + 52f, 358f, top + 74f)
+        kit.rounded(
+            c,
+            chatBtn,
+            if (unreadOrder > 0) kit.blue else kit.tint,
+            5f,
+            if (unreadOrder > 0) null else kit.blue,
+        )
+        kit.centerText(c, chatLabel, chatBtn, 10f, if (unreadOrder > 0) Color.WHITE else kit.blue, true)
+        press(c, "chatOrder:${order.id}", chatBtn, 5f)
+        bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
     }
 
     val bodyHitBottom = if (nextAction != null) top + 77f else top + height

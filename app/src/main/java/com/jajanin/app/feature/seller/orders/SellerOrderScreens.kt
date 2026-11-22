@@ -78,7 +78,7 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 height = 22f, size = 9.5f,
             )
 
-            kit.textEllipsized(c, order.buyerName, 20f, y + 70f, 250f, 15f, kit.ink, true)
+            kit.textEllipsized(c, order.buyerName, 20f, y + 70f, 232f, 15f, kit.ink, true)
             val phone = order.buyerPhone.takeIf { it.isNotBlank() }
             val phoneLine = if (phone != null) "HP: ${displayPhone(phone)}" else "Nomor HP belum diisi"
             kit.textEllipsized(
@@ -86,10 +86,24 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 "$phoneLine  ·  Masuk ${order.timeLabel}",
                 20f,
                 y + 89f,
-                340f,
+                234f,
                 11.5f,
                 kit.muted
             )
+
+            val unreadForOrder = unreadChatByOrder[order.id] ?: 0
+            val chatBtn = RectF(258f, y + 58f, 370f, y + 90f)
+            kit.rounded(
+                c,
+                chatBtn,
+                if (unreadForOrder > 0) kit.blue else kit.tint,
+                6f,
+                if (unreadForOrder > 0) null else kit.blue,
+            )
+            val chatLabel = if (unreadForOrder > 0) "Chat ($unreadForOrder)" else "Chat Pembeli"
+            kit.centerText(c, chatLabel, chatBtn, 11f, if (unreadForOrder > 0) Color.WHITE else kit.blue, true)
+            press(c, "chatOrder:${order.id}", chatBtn, 6f)
+            bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = 60f, bottomLimit = h - 68f)
             y += 104f
 
             // 2. Horizontal 5-Step Status Track

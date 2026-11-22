@@ -15,6 +15,7 @@ import com.jajanin.app.core.ui.blackoutReopenLabel
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawProductImage
+import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.drawQr
 import com.jajanin.app.core.ui.summaryRow
 import com.jajanin.app.core.util.formatRupiah
@@ -257,7 +258,14 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     kit.centerText(c, "+", RectF(319f, h - 145f, 368f, h - 95f), 22f, kit.blue, true)
     bounds["minus"] = RectF(220f, h - 145f, 269f, h - 95f)
     bounds["plus"] = RectF(319f, h - 145f, 368f, h - 95f)
-    val action = RectF(20f, h - 74f, 370f, h - 18f)
+    val askBtn = RectF(20f, h - 74f, 148f, h - 18f)
+    kit.rounded(c, askBtn, kit.card, 14f, kit.blue)
+    drawIcon(c, "chat", 39f, askBtn.centerY(), 14f, kit.blue)
+    kit.text(c, "Tanya Penjual", 53f, askBtn.centerY() + 4.5f, 12f, kit.blue, true)
+    bounds["askSeller:${product.id}"] = askBtn
+    press(c, "askSeller:${product.id}", askBtn, 14f)
+
+    val action = RectF(158f, h - 74f, 370f, h - 18f)
     kit.button(c, if (available) "Tambah ke keranjang" else "Stok habis", action, if (available) kit.blue else kit.muted)
     if (available) bounds["detailAdd"] = action
 }

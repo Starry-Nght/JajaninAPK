@@ -30,8 +30,16 @@ import com.jajanin.app.core.update.showDevOtaPublishForm
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
 import com.jajanin.app.core.util.statusSortOrder
+import com.jajanin.app.data.model.ConversationSummary
 import com.jajanin.app.data.model.MenuItem
 import com.jajanin.app.data.model.ProductRow
+import com.jajanin.app.feature.chat.drawChatList
+import com.jajanin.app.feature.chat.loadMoreConversations
+import com.jajanin.app.feature.chat.openChatList
+import com.jajanin.app.feature.chat.openConversationById
+import com.jajanin.app.feature.chat.openOrderChat
+import com.jajanin.app.feature.chat.openProductInquiryChat
+import com.jajanin.app.feature.chat.refreshChatList
 import com.jajanin.app.data.repository.AdminOrder
 import com.jajanin.app.data.repository.DevAnnouncementRow
 import com.jajanin.app.data.repository.DevStats
@@ -189,6 +197,15 @@ internal class JajaninView(context: Context) : View(context) {
     internal var devInvites: List<SellerInvite> = emptyList()
     internal var inboxObserver: OrderObserver? = null
     internal var onlineUserIds: Set<String> = emptySet()
+    // --- Real-time chat & DM state ---
+    internal var chatConversations: List<ConversationSummary> = emptyList()
+    internal var chatListLoading = false
+    internal var chatLoadingMore = false
+    internal var chatHasMore = false
+    internal var chatListError: String? = null
+    internal var chatListFilter = "Semua"
+    internal var unreadChatTotal = 0
+    internal var unreadChatByOrder: Map<String, Int> = emptyMap()
     // --- Nomor HP sendiri (wajib sebelum memesan) ---
     internal var myPhone: String = ""
     // --- Level & EXP pembeli (saldo dari server, level dihitung lokal) ---
@@ -313,8 +330,8 @@ internal class JajaninView(context: Context) : View(context) {
     }
 
     private fun swipeableTabSpec(): Pair<String, List<String>>? = when {
-        navSpec?.prefix == "tab:" -> "tab:" to listOf("Home", "Explore", "Orders", "Profile")
-        navSpec?.prefix == "stab:" -> "stab:" to listOf("Dashboard", "Pesanan", "Notifikasi", "Profil")
+        navSpec?.prefix == "tab:" -> "tab:" to listOf("Home", "Explore", "Chat", "Orders", "Profile")
+        navSpec?.prefix == "stab:" -> "stab:" to listOf("Dashboard", "Pesanan", "Chat", "Notifikasi", "Profil")
         navSpec?.prefix == "dtab:" -> "dtab:" to listOf("Overview", "Users", "Sellers", "Orders", "Warn", "Info")
         else -> null
     }
@@ -327,12 +344,13 @@ internal class JajaninView(context: Context) : View(context) {
         val (prefix, order) = swipeableTabSpec() ?: return null
         val currentLabel = when (prefix) {
             "stab:" -> when (screen) {
+                Screen.CHAT_LIST -> "Chat"
                 Screen.NOTIF -> "Notifikasi"
                 Screen.PROFILE -> if (isSellerProfile) "Profil" else sellerTab
                 else -> sellerTab
             }
             "dtab:" -> devTab
-            else -> navSpec?.active ?: tab
+            else -> if (screen == Screen.CHAT_LIST) "Chat" else (navSpec?.active ?: tab)
         }
         val idx = order.indexOf(currentLabel)
         return if (idx >= 0) idx to (order.size - 1) else null
@@ -425,7 +443,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal fun selectBuyerTab(nextTab: String) {
         navAnimAt = SystemClock.uptimeMillis()
         // Arah geser mengikuti urutan tab (kiri/kanan).
-        val tabOrder = listOf("Home", "Explore", "Orders", "Profile")
+        val tabOrder = listOf("Home", "Explore", "Chat", "Orders", "Profile")
         val beforeTabScreen = screen
         val beforeTabScroll = scroll
         val beforeTabKey = "$screen:$tab"
@@ -451,6 +469,16 @@ internal class JajaninView(context: Context) : View(context) {
                 if (screen != Screen.EXPLORE) go(Screen.EXPLORE)
                 activity()?.refreshProducts()
             }
+            "Chat" -> {
+                isSellerProfile = false
+                if (SupabaseRepository.hasSession()) {
+                    tab = "Chat"
+                    activity()?.openChatList()
+                } else {
+                    android.widget.Toast.makeText(context, "Masuk dulu untuk membuka chat.", android.widget.Toast.LENGTH_SHORT).show()
+                    activity()?.showAuthForm(false)
+                }
+            }
             "Orders" -> { tab = "Orders"; go(Screen.ORDERS); activity()?.refreshMyOrders() }
             "Profile" -> {
                 tab = "Profile"
@@ -475,10 +503,11 @@ internal class JajaninView(context: Context) : View(context) {
 
     /** Logika tab penjual dengan halaman Dashboard & Pesanan terpisah + transisi geser. */
     internal fun selectSellerTab(label: String) {
-        val tabOrder = listOf("Dashboard", "Pesanan", "Produk", "Notifikasi", "Profil")
+        val tabOrder = listOf("Dashboard", "Pesanan", "Produk", "Chat", "Notifikasi", "Profil")
         val currentLabel = when {
             screen == Screen.ADMIN -> sellerTab
             screen == Screen.PRODUCT_FORM -> "Produk"
+            screen == Screen.CHAT_LIST -> "Chat"
             screen == Screen.NOTIF -> "Notifikasi"
             screen == Screen.PROFILE && isSellerProfile -> "Profil"
             else -> sellerTab
@@ -507,6 +536,10 @@ internal class JajaninView(context: Context) : View(context) {
                 activity()?.refreshAdminOrders()
             }
             "Produk" -> activity()?.showProductForm()
+            "Chat" -> {
+                activity()?.openChatList()
+                if (tabDir != 0f) beginSlide(tabDir)
+            }
             "Notifikasi" -> {
                 activity()?.openNotif()
                 if (tabDir != 0f) beginSlide(tabDir)
@@ -612,7 +645,8 @@ internal class JajaninView(context: Context) : View(context) {
             // --- Developer ---
             Screen.DEV -> drawDeveloper(canvas, 390f, height / s)
 
-            // --- Notifikasi & informasi (semua peran) ---
+            // --- Notifikasi, chat & informasi (semua peran) ---
+            Screen.CHAT_LIST -> drawChatList(canvas, 390f, height / s)
             Screen.NOTIF -> drawNotif(canvas, 390f, height / s)
             Screen.HELP -> drawHelp(canvas, 390f, height / s)
             Screen.ABOUT -> drawAbout(canvas, 390f, height / s)
@@ -635,7 +669,8 @@ internal class JajaninView(context: Context) : View(context) {
 
     private fun canPullRefresh(): Boolean =
         screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
-            screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL
+            screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
+            screen == Screen.CHAT_LIST
 
     private fun drawPullRefreshBanner(c: Canvas) {
         if (!canPullRefresh()) return
@@ -676,6 +711,10 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.ADMIN_DETAIL -> {
                 adminDetailId?.let { act.loadAdminOrderDetail(it) }
             }
+            Screen.CHAT_LIST -> {
+                act.refreshChatList(silent = false)
+                android.widget.Toast.makeText(context, "Daftar chat diperbarui", android.widget.Toast.LENGTH_SHORT).show()
+            }
             else -> {}
         }
     }
@@ -684,7 +723,8 @@ internal class JajaninView(context: Context) : View(context) {
     private fun isSellerScreen(): Boolean =
         screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
             (screen == Screen.PROFILE && isSellerProfile) ||
-            (screen == Screen.NOTIF && myRole == "seller")
+            (screen == Screen.NOTIF && myRole == "seller") ||
+            (screen == Screen.CHAT_LIST && myRole == "seller")
 
     /**
      * Dukungan font scaling Android untuk kanvas penjual. Perubahan dibatasi
@@ -739,7 +779,8 @@ internal class JajaninView(context: Context) : View(context) {
                 val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
                     screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
                     screen == Screen.PRODUCT_FORM || screen == Screen.DEV || screen == Screen.CHECKOUT ||
-                    screen == Screen.NOTIF || screen == Screen.EXP_HISTORY || screen == Screen.PROFILE
+                    screen == Screen.NOTIF || screen == Screen.EXP_HISTORY || screen == Screen.PROFILE ||
+                    screen == Screen.CHAT_LIST
                 val touchInPinnedHeader = touchStartY <= 68f
                 val dx = x - touchStartX
                 val dy = y - touchStartY
@@ -883,6 +924,26 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "detailAdd" -> {
                         selectedProduct?.let { product -> activity()?.addToCart(product.id, quantity) }
                         goBack()
+                    }
+                    hit.startsWith("askSeller:") -> {
+                        activity()?.openProductInquiryChat(hit.substringAfter(':'))
+                    }
+                    hit.startsWith("chatOrder:") -> {
+                        activity()?.openOrderChat(hit.substringAfter(':'))
+                    }
+                    hit.startsWith("chatConvo:") -> {
+                        activity()?.openConversationById(hit.substringAfter(':'))
+                    }
+                    hit.startsWith("chatFilter:") -> {
+                        chatListFilter = hit.substringAfter(':')
+                        scroll = 0f
+                        invalidate()
+                    }
+                    hit == "chatRefresh" || hit == "chatRetry" -> {
+                        activity()?.refreshChatList(silent = false)
+                    }
+                    hit == "chatLoadMore" -> {
+                        activity()?.loadMoreConversations()
                     }
                     hit.startsWith("cartPlus:") -> activity()?.setCartQty(hit.substringAfter(':'), (cart[hit.substringAfter(':')] ?: 0) + 1)
                     hit.startsWith("cartMinus:") -> activity()?.setCartQty(hit.substringAfter(':'), (cart[hit.substringAfter(':')] ?: 0) - 1)

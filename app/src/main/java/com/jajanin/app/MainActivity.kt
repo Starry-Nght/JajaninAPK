@@ -4,6 +4,7 @@ import com.jajanin.app.feature.buyer.*
 import com.jajanin.app.feature.seller.*
 import com.jajanin.app.feature.developer.*
 import com.jajanin.app.feature.inbox.*
+import com.jajanin.app.feature.chat.*
 
 import android.app.Activity
 import android.app.Dialog
@@ -441,6 +442,7 @@ class MainActivity : Activity() {
                 refreshMyOrders()
                 refreshOrderingStatus()
                 startInboxObserver()
+                startChatObserver()
                 ensureOnlinePresence("buyer")
                 requirePrivilegedAccess("developer") { enterDeveloper() }
                 return
@@ -461,6 +463,7 @@ class MainActivity : Activity() {
                 refreshMyOrders()
                 refreshOrderingStatus()
                 startInboxObserver()
+                startChatObserver()
                 ensureOnlinePresence("buyer")
                 val pending = pendingOrderNotificationId
                 requirePrivilegedAccess("seller") {
@@ -483,10 +486,15 @@ class MainActivity : Activity() {
                 refreshMyOrders()
                 refreshInbox()
                 startInboxObserver()
+                startChatObserver()
                 ensureOnlinePresence("seller")
                 pendingOrderNotificationId?.let { orderId ->
                     pendingOrderNotificationId = null
                     openOrderDetail(orderId)
+                }
+                pendingChatConversationId?.let { cid ->
+                    pendingChatConversationId = null
+                    openConversationById(cid)
                 }
             }
         } else {
@@ -498,12 +506,17 @@ class MainActivity : Activity() {
             refreshOrderingStatus()
             registerMyDevice()
             startInboxObserver()
+            startChatObserver()
             ensureOnlinePresence("buyer")
             pendingOrderNotificationId?.let { orderId ->
                 pendingOrderNotificationId = null
                 ui.selectedBuyerOrderId = orderId
                 ui.lastOrderId = orderId
                 ui.go(Screen.READY)
+            }
+            pendingChatConversationId?.let { cid ->
+                pendingChatConversationId = null
+                openConversationById(cid)
             }
         }
     }
@@ -621,6 +634,10 @@ class MainActivity : Activity() {
     internal var devObserver: OrderObserver? = null
     internal var devRefreshJob: Job? = null
     internal var inboxRefreshJob: Job? = null
+    internal var chatObserver: OrderObserver? = null
+    internal var chatListJob: Job? = null
+    internal var activeChatDialog: ChatRoomDialog? = null
+    internal var pendingChatConversationId: String? = null
     internal var onlinePresenceSession: OnlinePresenceSession? = null
     internal var onlinePresenceCleanupJob: Job? = null
 
@@ -641,6 +658,7 @@ class MainActivity : Activity() {
             previousCleanup = onlinePresenceCleanupJob,
         ) { ids ->
             ui.onlineUserIds = ids
+            activeChatDialog?.refreshPresenceIndicator()
             ui.invalidate()
         }
     }
@@ -657,6 +675,10 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         autoRefreshJob?.cancel()
         otaDownloadJob?.cancel()
+        chatListJob?.cancel()
+        activeChatDialog?.dismiss()
+        activeChatDialog = null
+        stopChatObserver()
         stopOnlinePresence()
         adminObserver?.close()
         productObserver?.close()
@@ -1088,9 +1110,16 @@ class MainActivity : Activity() {
     internal fun doLogout() {
         authScope.launch {
             try {
-                // Lepas kehadiran live & token FCM sebelum sesi logout dihapus.
+                // Lepas kehadiran live, observer chat & token FCM sebelum sesi logout dihapus.
+                activeChatDialog?.dismiss()
+                activeChatDialog = null
+                stopChatObserver()
+                ChatDraftStore.clearAll()
                 stopOnlinePresence()
                 ui.onlineUserIds = emptySet()
+                ui.chatConversations = emptyList()
+                ui.unreadChatTotal = 0
+                ui.unreadChatByOrder = emptyMap()
                 runCatching {
                     val uid = SupabaseRepository.currentUid()
                     val token = NotificationHelper.currentFcmToken()

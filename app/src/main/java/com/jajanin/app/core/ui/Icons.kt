@@ -272,6 +272,25 @@ internal fun drawIcon(c: Canvas, name: String, cx: Float, cy: Float, size: Float
             iconPath.close()
             c.drawPath(iconPath, iconFill)
         }
+        "chat" -> {
+            iconPath.reset()
+            iconPath.moveTo(x(4.5f), y(5f))
+            iconPath.lineTo(x(15.5f), y(5f))
+            iconPath.cubicTo(x(16.6f), y(5f), x(17.5f), y(5.9f), x(17.5f), y(7f))
+            iconPath.lineTo(x(17.5f), y(12.5f))
+            iconPath.cubicTo(x(17.5f), y(13.6f), x(16.6f), y(14.5f), x(15.5f), y(14.5f))
+            iconPath.lineTo(x(8.5f), y(14.5f))
+            iconPath.lineTo(x(4.5f), y(17.2f))
+            iconPath.lineTo(x(4.5f), y(14.5f))
+            iconPath.cubicTo(x(3.4f), y(14.5f), x(2.5f), y(13.6f), x(2.5f), y(12.5f))
+            iconPath.lineTo(x(2.5f), y(7f))
+            iconPath.cubicTo(x(2.5f), y(5.9f), x(3.4f), y(5f), x(4.5f), y(5f))
+            iconPath.close()
+            c.drawPath(iconPath, iconStroke)
+            c.drawCircle(x(7.2f), y(9.8f), 0.7f * u, iconFill)
+            c.drawCircle(x(10f), y(9.8f), 0.7f * u, iconFill)
+            c.drawCircle(x(12.8f), y(9.8f), 0.7f * u, iconFill)
+        }
         else -> Unit
     }
 }

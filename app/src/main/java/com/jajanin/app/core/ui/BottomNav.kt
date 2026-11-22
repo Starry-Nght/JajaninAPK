@@ -86,11 +86,15 @@ internal fun JajaninView.drawBottomNav(c: Canvas, w: Float, h: Float, active: St
         listOf(
             FloatNavItem("Home", "home", true),
             FloatNavItem("Explore", "explore", true),
+            FloatNavItem("Chat", "chat", true),
             FloatNavItem("Orders", "orders", true),
             FloatNavItem("Profile", "profile", true),
         ),
         active, "tab:",
     )
+    if (unreadChatTotal > 0) {
+        navBadge(index = 2, count = unreadChatTotal)
+    }
 }
 
 /** Lencana jumlah pada tab indeks [index] (dipakai nav penjual). */

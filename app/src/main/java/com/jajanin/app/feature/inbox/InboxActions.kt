@@ -59,6 +59,7 @@ import com.jajanin.app.feature.buyer.exp.ExpEntry
 import com.jajanin.app.feature.buyer.exp.ExpRepository
 import com.jajanin.app.feature.buyer.exp.expLevel
 import com.jajanin.app.feature.buyer.exp.expNextAt
+import com.jajanin.app.feature.chat.openConversationById
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -311,6 +312,29 @@ internal fun MainActivity.showNotifAnn(annId: String) {
 
 /** Editor nomor HP sendiri (validasi + normalisasi server). */
 internal fun MainActivity.handleOrderNotification(intent: Intent?) {
+    val chatConvoId = intent?.getStringExtra(NotificationHelper.EXTRA_CONVERSATION_ID)
+        ?.takeIf { it.isNotBlank() }
+    if (chatConvoId != null) {
+        intent.removeExtra(NotificationHelper.EXTRA_CONVERSATION_ID)
+        intent.removeExtra(NotificationHelper.EXTRA_ORDER_ID)
+        pendingChatConversationId = chatConvoId
+        authScope.launch {
+            if (!SupabaseRepository.awaitLoggedIn()) return@launch
+            if (pendingChatConversationId != chatConvoId) return@launch
+            val role = SupabaseRepository.currentRole()
+            if (role == "seller" && !isSellerAdmitted()) {
+                requirePrivilegedAccess("seller") {
+                    pendingChatConversationId = chatConvoId
+                    enterSellerDashboard()
+                }
+                return@launch
+            }
+            pendingChatConversationId = null
+            openConversationById(chatConvoId)
+        }
+        return
+    }
+
     val orderId = intent?.getStringExtra(NotificationHelper.EXTRA_ORDER_ID) ?: return
     intent.removeExtra(NotificationHelper.EXTRA_ORDER_ID)
     pendingOrderNotificationId = orderId

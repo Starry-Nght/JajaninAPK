@@ -4,6 +4,8 @@ import com.jajanin.app.MainActivity
 import com.jajanin.app.feature.buyer.*
 import com.jajanin.app.feature.seller.*
 import com.jajanin.app.feature.developer.*
+import com.jajanin.app.feature.chat.openConversationById
+import com.jajanin.app.feature.chat.startChatObserver
 import com.jajanin.app.feature.inbox.*
 
 import android.app.Activity
@@ -1306,7 +1308,12 @@ internal fun MainActivity.enterSellerDashboard() {
             registerMyDevice()
             refreshInbox()
             startInboxObserver()
+            startChatObserver()
             ensureOnlinePresence("seller")
+            pendingChatConversationId?.let { cid ->
+                pendingChatConversationId = null
+                openConversationById(cid)
+            }
         }
     }
 }

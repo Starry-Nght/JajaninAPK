@@ -18,6 +18,6 @@ internal enum class Screen {
     // Developer / super admin
     DEV,
 
-    // Notifikasi & halaman informasi (dipakai semua peran)
-    NOTIF, HELP, ABOUT, INFO
+    // Notifikasi, chat & halaman informasi (dipakai semua peran)
+    CHAT_LIST, NOTIF, HELP, ABOUT, INFO
 }
