@@ -276,12 +276,14 @@ class MainActivity : Activity() {
         autoRefreshJob?.cancel()
         autoRefreshJob = authScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(1_000L)
+                kotlinx.coroutines.delay(400L)
                 if (!SupabaseRepository.isConfigured()) continue
                 if (ui.myRole == "seller" && SupabaseRepository.hasSession()) {
                     silentRefreshSellerTick()
+                    silentRefreshChatTick()
                 } else if (ui.myRole == "buyer" || ui.myRole == null) {
                     silentRefreshBuyerTick()
+                    silentRefreshChatTick()
                 }
             }
         }

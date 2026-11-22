@@ -92,6 +92,12 @@ internal data class TypingBroadcastPayload(
     @SerialName("is_typing") val isTyping: Boolean = false,
 )
 
+@Serializable
+internal data class ReadReceiptBroadcastPayload(
+    @SerialName("reader_id") val readerId: String = "",
+    @SerialName("read_at") val readAt: String = "",
+)
+
 internal data class ChatProductContext(
     val id: String?,
     val name: String,

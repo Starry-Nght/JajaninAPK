@@ -82,6 +82,36 @@ internal fun MainActivity.loadMoreConversations() {
     }
 }
 
+/** Sinkronisasi cepat daftar chat & lencana unread di latar belakang tanpa kedipan loading. */
+internal suspend fun MainActivity.silentRefreshChatTick() {
+    if (!SupabaseRepository.isConfigured() || !SupabaseRepository.hasSession()) return
+    if (ui.currentScreen == Screen.CHAT_LIST && !ui.chatListLoading && !ui.chatLoadingMore) {
+        runCatching {
+            val list = ChatRepository.listMyConversations(limit = CHAT_PAGE_SIZE, beforeIso = null)
+            val unreadTotal = list.sumOf { it.unreadCount }
+            val byOrder = list.mapNotNull { c ->
+                val oid = c.orderId
+                if (!oid.isNullOrBlank() && c.unreadCount > 0) oid to c.unreadCount else null
+            }.toMap()
+            if (list != ui.chatConversations || unreadTotal != ui.unreadChatTotal || byOrder != ui.unreadChatByOrder) {
+                ui.chatConversations = list
+                ui.unreadChatTotal = unreadTotal
+                ui.unreadChatByOrder = byOrder
+                ui.invalidate()
+            }
+        }
+    } else {
+        runCatching {
+            val snap = ChatRepository.fetchUnreadSnapshot()
+            if (ui.unreadChatTotal != snap.totalUnread || ui.unreadChatByOrder != snap.byOrder) {
+                ui.unreadChatTotal = snap.totalUnread
+                ui.unreadChatByOrder = snap.byOrder
+                ui.invalidate()
+            }
+        }
+    }
+}
+
 internal fun MainActivity.refreshUnreadChats() {
     if (!SupabaseRepository.hasSession()) return
     authScope.launch {

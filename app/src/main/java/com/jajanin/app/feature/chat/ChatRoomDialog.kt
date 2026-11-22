@@ -61,6 +61,7 @@ internal class ChatRoomDialog(
     private var roomSession: ChatRoomSession? = null
     private var previousRoomCleanup: Job? = null
     private var loadJob: Job? = null
+    private var fastSyncJob: Job? = null
     private var typingExpiryJob: Job? = null
 
     private var isLoadingInitial = true
@@ -113,6 +114,7 @@ internal class ChatRoomDialog(
 
         startRoomRealtime()
         loadInitialMessages()
+        startFastSyncLoop()
     }
 
     fun dismiss() {
@@ -140,6 +142,7 @@ internal class ChatRoomDialog(
             NotificationHelper.activeOpenConversationId = null
         }
         typingExpiryJob?.cancel()
+        fastSyncJob?.cancel()
         loadJob?.cancel()
         previousRoomCleanup = roomSession?.close()
         roomSession = null
@@ -748,6 +751,9 @@ internal class ChatRoomDialog(
             onMessageUpdated = { updated ->
                 onRealtimeMessageUpdated(updated)
             },
+            onPartnerReadAll = { readAtIso ->
+                onPartnerReadAllMessages(readAtIso)
+            },
             onPartnerTyping = { isTyping ->
                 onPartnerTypingEvent(isTyping)
             },
@@ -756,6 +762,82 @@ internal class ChatRoomDialog(
                 updateStateBanner()
             },
         )
+    }
+
+    /**
+     * Sinkronisasi latar belakang berkecepatan tinggi secara berurutan (non-overlapping)
+     * selama ruang chat terbuka, agar pesan baru dan status dibaca (`✓✓`) selalu
+     * sinkron seketika tanpa kedipan UI maupun antrean request menumpuk.
+     */
+    private fun startFastSyncLoop() {
+        fastSyncJob?.cancel()
+        fastSyncJob = activity.authScope.launch {
+            while (dialog.isShowing) {
+                delay(350L)
+                if (!dialog.isShowing || isLoadingInitial || isLoadingOlder) continue
+                runCatching {
+                    val latest = ChatRepository.fetchMessages(
+                        conversationId = conversationId,
+                        limit = 45,
+                        beforeIso = null,
+                    )
+                    var hasNewMessage = false
+                    var hasReadUpdate = false
+                    var hasUnreadIncoming = false
+
+                    latest.forEach { msg ->
+                        if (msg.senderId != myUid && !msg.isRead) {
+                            hasUnreadIncoming = true
+                        }
+                        val existing = messagesById[msg.id]
+                        if (existing == null) {
+                            // Cek apakah pesan ini adalah hasil konfirmasi pesan optimistik
+                            val tempKey = messagesById.entries.firstOrNull { (_, cur) ->
+                                cur.deliveryState == MessageDeliveryState.SENDING &&
+                                    cur.senderId == msg.senderId &&
+                                    cur.body == msg.body
+                            }?.key
+                            if (tempKey != null) {
+                                messagesById.remove(tempKey)
+                            }
+                            messagesById[msg.id] = msg
+                            hasNewMessage = true
+                        } else if (existing.isRead != msg.isRead || existing.readAt != msg.readAt) {
+                            messagesById[msg.id] = msg
+                            hasReadUpdate = true
+                        }
+                    }
+
+                    if (hasNewMessage) {
+                        renderMessageList(scrollToBottom = true)
+                    } else if (hasReadUpdate) {
+                        renderMessageList(scrollToBottom = false)
+                    }
+                    if (hasUnreadIncoming) {
+                        markIncomingAsReadIfNeeded()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun onPartnerReadAllMessages(readAtIso: String) {
+        if (!dialog.isShowing) return
+        var changed = false
+        val effectiveReadAt = readAtIso.ifBlank {
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.format(Date())
+        }
+        messagesById.entries.toList().forEach { (id, msg) ->
+            if (msg.senderId == myUid && !msg.isRead && msg.deliveryState == MessageDeliveryState.SENT) {
+                messagesById[id] = msg.copy(isRead = true, readAt = effectiveReadAt)
+                changed = true
+            }
+        }
+        if (changed) {
+            renderMessageList(scrollToBottom = false)
+        }
     }
 
     private fun onRealtimeMessageInserted(incoming: ChatMessage) {
@@ -811,6 +893,10 @@ internal class ChatRoomDialog(
         activity.authScope.launch {
             val marked = ChatRepository.markConversationRead(conversationId)
             if (marked > 0) {
+                val nowIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }.format(Date())
+                roomSession?.broadcastReadReceipt(myUid, nowIso)
                 activity.refreshUnreadChats()
                 activity.refreshChatList(silent = true)
             }
@@ -859,7 +945,9 @@ internal class ChatRoomDialog(
                     localTempId = key,
                 )
                 messagesById.remove(key)
-                messagesById[confirmed.id] = confirmed.copy(deliveryState = MessageDeliveryState.SENT)
+                val sentMsg = confirmed.copy(deliveryState = MessageDeliveryState.SENT)
+                messagesById[confirmed.id] = sentMsg
+                roomSession?.broadcastNewMessage(sentMsg)
                 renderMessageList(scrollToBottom = true)
                 activity.refreshChatList(silent = true)
             } catch (t: Throwable) {

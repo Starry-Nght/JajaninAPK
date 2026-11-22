@@ -4,6 +4,7 @@ import com.jajanin.app.data.model.ChatMessage
 import com.jajanin.app.data.model.ChatMessageDto
 import com.jajanin.app.data.model.ConversationSummary
 import com.jajanin.app.data.model.ConversationSummaryDto
+import com.jajanin.app.data.model.ReadReceiptBroadcastPayload
 import com.jajanin.app.data.model.TypingBroadcastPayload
 import com.jajanin.app.data.model.UnreadByOrderDto
 import com.jajanin.app.data.model.toDomain
@@ -59,6 +60,48 @@ internal class ChatRoomSession internal constructor(
                     message = buildJsonObject {
                         put("user_id", currentUserId)
                         put("is_typing", isTyping)
+                    },
+                )
+            }
+        }
+    }
+
+    /** Broadcast instan (< 30ms) pesan yang baru tersimpan ke lawan bicara di ruang chat yang sama. */
+    fun broadcastNewMessage(msg: ChatMessage) {
+        if (closed) return
+        val ch = channel ?: return
+        if (ch.status.value != RealtimeChannel.Status.SUBSCRIBED) return
+        scope.launch {
+            runCatching {
+                ch.broadcast(
+                    event = "new_message",
+                    message = buildJsonObject {
+                        put("id", msg.id)
+                        put("conversation_id", msg.conversationId)
+                        put("sender_id", msg.senderId)
+                        put("body", msg.body)
+                        put("message_type", msg.messageType)
+                        put("is_read", msg.isRead)
+                        if (msg.readAt != null) put("read_at", msg.readAt)
+                        put("created_at", msg.createdAt)
+                    },
+                )
+            }
+        }
+    }
+
+    /** Broadcast instan tanda terima baca (`✓✓ Dibaca`) ke pengirim di ruang chat yang sama. */
+    fun broadcastReadReceipt(readerId: String, readAtIso: String) {
+        if (closed || readerId.isBlank()) return
+        val ch = channel ?: return
+        if (ch.status.value != RealtimeChannel.Status.SUBSCRIBED) return
+        scope.launch {
+            runCatching {
+                ch.broadcast(
+                    event = "messages_read",
+                    message = buildJsonObject {
+                        put("reader_id", readerId)
+                        put("read_at", readAtIso)
                     },
                 )
             }
@@ -244,6 +287,7 @@ internal object ChatRepository {
         previousCleanup: Job? = null,
         onMessageInserted: (ChatMessage) -> Unit,
         onMessageUpdated: (ChatMessage) -> Unit,
+        onPartnerReadAll: (String) -> Unit = {},
         onPartnerTyping: (Boolean) -> Unit,
         onConnectionStatusChanged: (RealtimeChannel.Status) -> Unit = {},
     ): ChatRoomSession {
@@ -269,6 +313,8 @@ internal object ChatRepository {
                 filter("conversation_id", FilterOperator.EQ, conversationId)
             }
             val typingFlow = channel.broadcastFlow<TypingBroadcastPayload>("typing")
+            val directMsgFlow = channel.broadcastFlow<ChatMessageDto>("new_message")
+            val directReadFlow = channel.broadcastFlow<ReadReceiptBroadcastPayload>("messages_read")
 
             launch {
                 runCatching {
@@ -283,10 +329,30 @@ internal object ChatRepository {
 
             launch {
                 runCatching {
+                    directMsgFlow.collect { dto ->
+                        if (dto.conversationId == conversationId && dto.id.isNotBlank()) {
+                            onMessageInserted(dto.toDomain())
+                        }
+                    }
+                }
+            }
+
+            launch {
+                runCatching {
                     updateFlow.collect { action ->
                         val dto = runCatching { action.decodeRecord<ChatMessageDto>() }.getOrNull() ?: return@collect
                         if (dto.conversationId == conversationId) {
                             onMessageUpdated(dto.toDomain())
+                        }
+                    }
+                }
+            }
+
+            launch {
+                runCatching {
+                    directReadFlow.collect { payload ->
+                        if (payload.readerId.isNotBlank() && payload.readerId != currentUserId) {
+                            onPartnerReadAll(payload.readAt)
                         }
                     }
                 }
