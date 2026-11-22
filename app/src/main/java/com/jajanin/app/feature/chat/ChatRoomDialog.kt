@@ -97,6 +97,10 @@ internal class ChatRoomDialog(
             setBackgroundDrawable(ColorDrawable(kit.bg))
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             @Suppress("DEPRECATION")
+            statusBarColor = kit.card
+            @Suppress("DEPRECATION")
+            navigationBarColor = kit.card
+            @Suppress("DEPRECATION")
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
         }
 
@@ -390,7 +394,57 @@ internal class ChatRoomDialog(
         updateMuteButtonUI()
         updateHeaderStatusText()
         updateComposerState(inputField.text?.toString().orEmpty())
+        applyWindowInsets(root, header, composerWrap)
         return root
+    }
+
+    private fun applyWindowInsets(root: View, header: View, composerWrap: View) {
+        val fallbackStatusTop = runCatching {
+            val resId = activity.resources.getIdentifier("status_bar_height", "dimen", "android")
+            if (resId > 0) activity.resources.getDimensionPixelSize(resId) else dp(28)
+        }.getOrDefault(dp(28))
+
+        val fallbackNavBottom = runCatching {
+            val resId = activity.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+            if (resId > 0) activity.resources.getDimensionPixelSize(resId) else dp(48)
+        }.getOrDefault(dp(48))
+
+        header.setPadding(dp(12), fallbackStatusTop + dp(10), dp(14), dp(12))
+        composerWrap.setPadding(dp(12), dp(8), dp(12), fallbackNavBottom + dp(10))
+
+        var lastImeBottom = 0
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val topInset: Int
+            val navBottom: Int
+            val imeBottom: Int
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                val sysBars = insets.getInsets(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.displayCutout()
+                )
+                val navBars = insets.getInsets(android.view.WindowInsets.Type.navigationBars())
+                val ime = insets.getInsets(android.view.WindowInsets.Type.ime())
+                topInset = maxOf(sysBars.top, fallbackStatusTop)
+                navBottom = navBars.bottom
+                imeBottom = ime.bottom
+            } else {
+                @Suppress("DEPRECATION")
+                topInset = maxOf(insets.systemWindowInsetTop, fallbackStatusTop)
+                @Suppress("DEPRECATION")
+                navBottom = insets.systemWindowInsetBottom
+                imeBottom = 0
+            }
+            val effectiveBottom = maxOf(navBottom, imeBottom)
+            header.setPadding(dp(12), topInset + dp(10), dp(14), dp(12))
+            composerWrap.setPadding(dp(12), dp(8), dp(12), effectiveBottom + dp(10))
+
+            if (imeBottom > lastImeBottom && messagesById.isNotEmpty()) {
+                scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+            }
+            lastImeBottom = imeBottom
+            insets
+        }
+        root.post { root.requestApplyInsets() }
     }
 
     private fun renderContextBanner() {
