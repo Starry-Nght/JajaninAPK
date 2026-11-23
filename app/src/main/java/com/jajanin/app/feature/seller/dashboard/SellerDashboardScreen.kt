@@ -30,6 +30,7 @@ import com.jajanin.app.core.ui.statusNextAction
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusSortOrder
 import com.jajanin.app.data.repository.AdminOrder
+import com.jajanin.app.data.repository.OrderRepository
 import com.jajanin.app.feature.seller.SellerTokens
 import com.jajanin.app.feature.seller.loadProductImage
 import com.jajanin.app.feature.seller.sellerDivider
@@ -109,21 +110,26 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
         kit.textFitted(c, formatRupiah(revenue), 20f, y + 44f, 220f, 28f, 18f, kit.ink, true)
         kit.text(c, "$completed selesai  ·  ${today.size} total pesanan", 20f, y + 64f, 11f, kit.muted)
 
-        // Vertical divider + Live Stall Queue Capacity Gauge
-        kit.line(c, 254f, y + 4f, 254f, y + 66f, kit.divider)
-        kit.text(c, "ANTREAN AKTIF", 268f, y + 12f, 9.5f, kit.muted, true)
-        val capColor = if (active >= 10) kit.danger else if (active >= 7) kit.star else kit.blue
-        kit.text(c, "$active", 268f, y + 42f, 24f, capColor, true)
+        // Vertical divider + Active Orders & Pre-Order Breakdown (tanpa batas 10 maks)
+        val todayStr = OrderRepository.todayWibDateString()
+        val activeOrders = today.filter { !isTerminalStatus(it.status) }
+        val poActive = activeOrders.count { it.isPreOrder && (it.pickupDate.isBlank() || it.pickupDate > todayStr) }
+        val todayActive = (activeOrders.size - poActive).coerceAtLeast(0)
+        kit.line(c, 246f, y + 4f, 246f, y + 66f, kit.divider)
+        kit.text(c, "PESANAN AKTIF", 260f, y + 12f, 9.5f, kit.muted, true)
+        kit.text(c, "$active", 260f, y + 42f, 24f, kit.blue, true)
         val activeW = kit.measure("$active", 24f, true)
-        kit.text(c, "/ 10 maks", 268f + activeW + 4f, y + 40f, 11f, kit.muted, true)
-
-        val gaugeTrack = RectF(268f, y + 52f, 370f, y + 57f)
-        kit.rounded(c, gaugeTrack, kit.divider, 2.5f)
-        val fillFrac = (active / 10f).coerceIn(0f, 1f)
-        if (fillFrac > 0f) {
-            val fillW = (gaugeTrack.width() * fillFrac).coerceAtLeast(6f)
-            kit.rounded(c, RectF(gaugeTrack.left, gaugeTrack.top, gaugeTrack.left + fillW, gaugeTrack.bottom), capColor, 2.5f)
-        }
+        kit.text(c, "aktif", 260f + activeW + 5f, y + 40f, 11f, kit.muted, true)
+        kit.textEllipsized(
+            c,
+            "$todayActive hari ini · $poActive PO",
+            260f,
+            y + 62f,
+            110f,
+            10f,
+            if (poActive > 0) Color.rgb(183, 116, 0) else kit.muted,
+            poActive > 0,
+        )
     }
     y += 78f
 
@@ -176,7 +182,7 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
 
         val shownUrgent = urgentOrders.take(5)
         shownUrgent.forEach { order ->
-            val rowH = 92f
+            val rowH = 104f
             if (visible(y, y + rowH)) {
                 drawCompactOrderRow(c, order, y, rowH, bottomLimit)
             }
@@ -229,6 +235,7 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
                     priceIdr = product.priceIdr,
                     stock = product.stock,
                     available = product.available,
+                    scheduleLabel = product.scheduleBadgeLabel,
                     imageUrl = product.imageUrl,
                     top = rowTop,
                     height = productRowH,
@@ -269,15 +276,26 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
     val completed = today.count { it.status.equals(STATUS_COMPLETED, true) }
     val active = pending + confirmed + preparing + ready
 
+    val todayStr = OrderRepository.todayWibDateString()
+    val poCount = today.count { it.isPreOrder && (it.pickupDate.isBlank() || it.pickupDate > todayStr) }
+    val sameDayCount = (today.size - poCount).coerceAtLeast(0)
+
     val filtered = today.filter { order ->
         val s = order.status.lowercase()
-        when (adminFilter) {
+        val statusOk = when (adminFilter) {
             "Baru" -> s == STATUS_PENDING
             "Disiapkan" -> s == STATUS_CONFIRMED || s == STATUS_PREPARING || s == STATUS_PROCESSING_LEGACY
             "Siap" -> s == STATUS_READY
             "Selesai" -> s == STATUS_COMPLETED || s == STATUS_CANCELLED
             else -> true
         }
+        val isPoTomorrow = order.isPreOrder && (order.pickupDate.isBlank() || order.pickupDate > todayStr)
+        val schedOk = when (adminScheduleFilter) {
+            "Hari Ini" -> !isPoTomorrow
+            "PO Besok" -> isPoTomorrow
+            else -> true
+        }
+        statusOk && schedOk
     }.sortedWith(compareBy({ statusSortOrder(it.status) }, { it.createdAt }))
 
     val off = -scroll
@@ -320,7 +338,43 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
             tx += lw + 16f
         }
     }
-    y += 44f
+    y += 40f
+
+    // 1b. Schedule Filter Pills (Semua / Hari Ini / PO Besok)
+    if (visible(y, y + 32f)) {
+        val schedSpecs = listOf(
+            "Semua" to "Semua Jadwal",
+            "Hari Ini" to "Hari Ini ($sameDayCount)",
+            "PO Besok" to "PO Besok ($poCount)",
+        )
+        var sx = 20f
+        schedSpecs.forEach { (key, label) ->
+            val active = adminScheduleFilter == key
+            val sw = kit.measure(label, 10.5f, true) + 20f
+            val pill = RectF(sx, y + 2f, sx + sw, y + 28f)
+            val isPoPill = key == "PO Besok"
+            val bg = when {
+                active && isPoPill -> kit.warnBox
+                active -> kit.tint
+                else -> kit.card
+            }
+            val border = when {
+                active && isPoPill -> Color.rgb(183, 116, 0)
+                active -> kit.blue
+                else -> kit.border
+            }
+            val fg = when {
+                active && isPoPill -> Color.rgb(183, 116, 0)
+                active -> kit.blue
+                else -> kit.muted
+            }
+            kit.rounded(c, pill, bg, 7f, border)
+            kit.centerText(c, label, pill, 10.5f, fg, active)
+            bounds.putVisible("adminSchedule:$key", pill, topLimit = HEADER_H, bottomLimit = bottomLimit)
+            sx += sw + 8f
+        }
+    }
+    y += 38f
 
     // 2. POS Order Rows
     if (filtered.isEmpty()) {
@@ -329,7 +383,7 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
     } else {
         filtered.forEach { order ->
             val hasNext = statusNextAction(order.status) != null
-            val rowH = if (hasNext) 118f else 86f
+            val rowH = if (hasNext) 132f else 98f
             if (visible(y, y + rowH)) {
                 drawOrderCard(c, order, y, rowH, bottomLimit)
             }
@@ -377,16 +431,19 @@ private fun JajaninView.drawCompactOrderRow(
         c,
         "${order.itemCount} item · ${order.itemsSummary}",
         32f,
-        top + 44f,
+        top + 43f,
         320f,
         11f,
         kit.muted
     )
 
+    val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.blue
+    kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 32f, top + 59f, 320f, 10f, schedColor, true)
+
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
     val method = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
     val (stLabel, _) = statusLabel(order.status)
-    kit.textEllipsized(c, "$stLabel · $method · $payLabel", 32f, top + 72f, 130f, 10.5f, payColor, true)
+    kit.textEllipsized(c, "$stLabel · $method · $payLabel", 32f, top + 84f, 130f, 10.5f, payColor, true)
 
     bounds.putVisible(
         "adminOrder:${order.id}",
@@ -397,13 +454,13 @@ private fun JajaninView.drawCompactOrderRow(
 
     val nextAction = statusNextAction(order.status)
     if (nextAction != null) {
-        val cancelBtn = RectF(168f, top + 54f, 238f, top + 82f)
+        val cancelBtn = RectF(168f, top + 66f, 238f, top + 94f)
         kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
         kit.centerText(c, "Batal", cancelBtn, 10.5f, kit.danger, true)
         press(c, "adminCancel:${order.id}", cancelBtn, 6f)
         bounds.putVisible("adminCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
-        val actionBtn = RectF(244f, top + 54f, 358f, top + 82f)
+        val actionBtn = RectF(244f, top + 66f, 358f, top + 94f)
         kit.rounded(c, actionBtn, kit.blue, 6f)
         kit.centerText(c, nextAction.first, actionBtn, 10.5f, Color.WHITE, true)
         press(c, "adminStatus:${order.id}", actionBtn, 6f)
@@ -418,6 +475,7 @@ private fun JajaninView.drawCleanSellerProductRow(
     priceIdr: Int,
     stock: Int?,
     available: Boolean,
+    scheduleLabel: String,
     imageUrl: String?,
     top: Float,
     height: Float,
@@ -428,17 +486,17 @@ private fun JajaninView.drawCleanSellerProductRow(
     drawProductImageUrl(c, imageUrl, thumbnail)
 
     val textX = 92f
-    val textWidth = 182f
-    kit.textEllipsized(c, name, textX, top + 29f, textWidth, 14f, kit.ink, true)
+    val textWidth = 210f
+    kit.textEllipsized(c, name, textX, top + 28f, textWidth, 14f, kit.ink, true)
     val stockLabel = stock?.let { "Stok $it" } ?: "Stok bebas"
     val statusText = if (available) stockLabel else "Nonaktif"
     kit.textEllipsized(
         c,
-        "${formatRupiah(priceIdr)}  ·  $statusText",
+        "${formatRupiah(priceIdr)} · $statusText · $scheduleLabel",
         textX,
-        top + 48f,
+        top + 47f,
         textWidth,
-        11.5f,
+        11f,
         if (available) kit.muted else kit.danger,
         !available
     )
@@ -542,18 +600,22 @@ private fun JajaninView.drawOrderCard(
     )
     kit.textRight(c, total, 358f, top + 48f, totalWidth + 16f, 13f, kit.ink, true)
 
-    // Row 3: Payment method & status
+    // Row 3: Jadwal & Sesi Pengambilan
+    val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.blue
+    kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 32f, top + 64f, 320f, 10.5f, schedColor, true)
+
+    // Row 4: Payment method & status
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
     val payment = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
-    kit.text(c, "$payment · $payLabel", 32f, top + 67f, 10.5f, payColor, true)
+    kit.text(c, "$payment · $payLabel", 32f, top + 81f, 10.5f, payColor, true)
 
     val unreadOrder = unreadChatByOrder[order.id] ?: 0
     val chatLabel = if (unreadOrder > 0) "Chat ($unreadOrder)" else "Chat"
     val nextAction = statusNextAction(order.status)
     if (nextAction != null) {
-        kit.line(c, 32f, top + 77f, 358f, top + 77f, kit.divider)
+        kit.line(c, 32f, top + 91f, 358f, top + 91f, kit.divider)
 
-        val chatBtn = RectF(32f, top + 83f, 110f, top + 111f)
+        val chatBtn = RectF(32f, top + 97f, 110f, top + 125f)
         kit.rounded(
             c,
             chatBtn,
@@ -565,19 +627,19 @@ private fun JajaninView.drawOrderCard(
         press(c, "chatOrder:${order.id}", chatBtn, 6f)
         bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
-        val cancel = RectF(118f, top + 83f, 204f, top + 111f)
+        val cancel = RectF(118f, top + 97f, 204f, top + 125f)
         kit.rounded(c, cancel, kit.card, 6f, kit.dangerBorder)
         kit.centerText(c, "Batalkan", cancel, 10.5f, kit.danger, true)
         press(c, "adminCancel:${order.id}", cancel, 6f)
         bounds.putVisible("adminCancel:${order.id}", cancel, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
-        val action = RectF(212f, top + 83f, 358f, top + 111f)
+        val action = RectF(212f, top + 97f, 358f, top + 125f)
         kit.rounded(c, action, kit.blue, 6f)
         kit.centerText(c, "${nextAction.first} →", action, 11f, Color.WHITE, true)
         press(c, "adminStatus:${order.id}", action, 6f)
         bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
     } else {
-        val chatBtn = RectF(286f, top + 52f, 358f, top + 74f)
+        val chatBtn = RectF(286f, top + 66f, 358f, top + 88f)
         kit.rounded(
             c,
             chatBtn,
@@ -590,7 +652,7 @@ private fun JajaninView.drawOrderCard(
         bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
     }
 
-    val bodyHitBottom = if (nextAction != null) top + 77f else top + height
+    val bodyHitBottom = if (nextAction != null) top + 91f else top + height
     bounds.putVisible(
         "adminOrder:${order.id}",
         RectF(card.left, card.top, card.right, bodyHitBottom),

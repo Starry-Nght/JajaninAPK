@@ -11,14 +11,15 @@ import com.jajanin.app.JajaninView
 import com.jajanin.app.core.constants.SERVICE_FEE
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.ProductImageCache
-import com.jajanin.app.core.ui.blackoutReopenLabel
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawProductImage
 import com.jajanin.app.core.ui.press
+import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.ui.drawQr
 import com.jajanin.app.core.ui.summaryRow
 import com.jajanin.app.core.util.formatRupiah
+import com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
 import com.jajanin.app.feature.buyer.home.normalizeCategory
 
 internal fun JajaninView.drawDetail(c: Canvas, w: Float, h: Float) {
@@ -55,27 +56,31 @@ internal fun JajaninView.drawDetail(c: Canvas, w: Float, h: Float) {
 
 internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     c.drawColor(kit.bg)
-    header(c, "Checkout")
     val off = -scroll
+    val bodyTop = 74f
+    val bodyBottom = h - 84f
     val lines = cart.entries.mapNotNull { (id, qty) ->
         val p = products.firstOrNull { it.id == id } ?: sellerProducts.firstOrNull { it.id == id }
         if (p == null || qty <= 0) null else p to qty
     }
     if (lines.isEmpty()) {
+        header(c, "Checkout")
         kit.centerText(c, "Keranjang kosong.", RectF(24f, 280f, 366f, 340f), 14f, kit.muted)
         kit.centerText(c, "Kembali dan pilih menu dulu.", RectF(24f, 310f, 366f, 360f), 12f, kit.muted)
         contentHeight = 0f
         return
     }
-    kit.text(c, cartStallName.take(30), 22f, 112f + off, 18f, kit.ink, true)
-    kit.text(c, "${lines.sumOf { it.second }} item di keranjang", 22f, 134f + off, 12f, kit.muted)
-    var y = 150f + off
+
+    val bodySave = c.save()
+    c.clipRect(0f, bodyTop, w, bodyBottom)
+
+    kit.text(c, cartStallName.take(30), 22f, 108f + off, 18f, kit.ink, true)
+    kit.text(c, "${lines.sumOf { it.second }} item (${lines.size} menu) di keranjang", 22f, 130f + off, 12f, kit.muted)
+    var y = 146f + off
     lines.forEach { (p, qty) ->
-        if (y + 76f < 78f || y > h - 78f) {
-            // Lewati gambar di luar layar, tapi hitung tingginya.
-        } else {
+        if (y + 76f >= bodyTop && y <= bodyBottom) {
             kit.card(c, RectF(18f, y, 372f, y + 76f), 14f)
-            kit.text(c, p.name.take(22), 32f, y + 27f, 13f, kit.ink, true)
+            kit.textEllipsized(c, p.name, 32f, y + 27f, 210f, 13f, kit.ink, true)
             kit.text(c, "${formatRupiah(p.priceIdr)}  ×  $qty", 32f, y + 51f, 11f, kit.muted)
             val sub = formatRupiah(p.priceIdr * qty)
             kit.text(c, sub, 358f - kit.measure(sub, 12f, true), y + 30f, 12f, kit.ink, true)
@@ -88,89 +93,144 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
             kit.rounded(c, plus, kit.bg, 8f, kit.border)
             kit.centerText(c, "+", plus, 15f, kit.blue, true)
             kit.centerText(c, "Hapus", rm, 10f, kit.danger, true)
-            bounds["cartMinus:${p.id}"] = RectF(minus)
-            bounds["cartPlus:${p.id}"] = RectF(plus)
-            bounds["cartRemove:${p.id}"] = RectF(rm)
+            bounds.putVisible("cartMinus:${p.id}", minus, topLimit = bodyTop, bottomLimit = bodyBottom)
+            bounds.putVisible("cartPlus:${p.id}", plus, topLimit = bodyTop, bottomLimit = bodyBottom)
+            bounds.putVisible("cartRemove:${p.id}", rm, topLimit = bodyTop, bottomLimit = bodyBottom)
         }
         y += 86f
     }
 
-    kit.text(c, "Metode pembayaran", 22f, y + 26f, 15f, kit.ink, true)
-    // QRIS hanya ditawarkan bila warung sudah benar-benar memasang gambar QRIS.
+    // 1. Jadwal Pengambilan (Hari Ini vs PO Besok)
+    val canSameDay = lines.all { it.first.allowsSameDay }
+    val canNextDay = lines.all { it.first.allowsNextDay }
+    val activeMode = when {
+        checkoutOrderMode == "pre_order" && canNextDay -> "pre_order"
+        checkoutOrderMode == "same_day" && canSameDay -> "same_day"
+        canSameDay -> "same_day"
+        else -> "pre_order"
+    }
+    kit.text(c, "Jadwal pengambilan", 22f, y + 22f, 15f, kit.ink, true)
+    val sameBox = RectF(18f, y + 34f, 190f, y + 92f)
+    val poBox = RectF(198f, y + 34f, 372f, y + 92f)
+
+    val sameSelected = activeMode == "same_day"
+    kit.rounded(
+        c,
+        sameBox,
+        if (sameSelected) kit.tint else kit.card,
+        13f,
+        if (sameSelected) kit.blue else kit.border,
+    )
+    kit.text(c, "Hari Ini", 34f, y + 59f, 13f, if (canSameDay) kit.ink else kit.muted, true)
+    kit.text(
+        c,
+        if (canSameDay) "Ambil hari ini" else "Khusus PO besok",
+        34f,
+        y + 79f,
+        10f,
+        kit.muted,
+    )
+    if (sameSelected) kit.centerText(c, "●", RectF(158f, y + 52f, 182f, y + 76f), 13f, kit.blue, true)
+    bounds.putVisible("orderMode:same_day", sameBox, topLimit = bodyTop, bottomLimit = bodyBottom)
+
+    val poSelected = activeMode == "pre_order"
+    kit.rounded(
+        c,
+        poBox,
+        if (poSelected) kit.warnBox else kit.card,
+        13f,
+        if (poSelected) Color.rgb(183, 116, 0) else kit.border,
+    )
+    kit.text(c, "PO Besok", 214f, y + 59f, 13f, if (canNextDay) kit.ink else kit.muted, true)
+    kit.text(
+        c,
+        if (canNextDay) "Pre-Order untuk besok" else "Khusus hari ini",
+        214f,
+        y + 79f,
+        10f,
+        kit.muted,
+    )
+    if (poSelected) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, Color.rgb(183, 116, 0), true)
+    bounds.putVisible("orderMode:pre_order", poBox, topLimit = bodyTop, bottomLimit = bodyBottom)
+
+    y += 108f
+
+    // 2. Sesi Pengambilan (Istirahat 1 / Istirahat 2 / Pulang)
+    var commonSessions: Set<String>? = null
+    lines.forEach { (p, _) ->
+        val s = p.parsedPickupSessions.toSet()
+        commonSessions = if (commonSessions == null) s else commonSessions?.intersect(s)
+    }
+    val sessionList = DEFAULT_PICKUP_SESSIONS.filter { commonSessions?.contains(it) == true }
+        .ifEmpty { commonSessions?.toList()?.takeIf { it.isNotEmpty() } ?: DEFAULT_PICKUP_SESSIONS }
+    val activeSession = if (checkoutPickupSession in sessionList) checkoutPickupSession else sessionList.first()
+
+    kit.text(c, "Sesi pengambilan", 22f, y + 14f, 13f, kit.muted, true)
+    val chipGap = 8f
+    val chipW = (354f - chipGap * (sessionList.size - 1).coerceAtLeast(0)) / sessionList.size.coerceAtLeast(1)
+    sessionList.forEachIndexed { idx, sess ->
+        val left = 18f + idx * (chipW + chipGap)
+        val chip = RectF(left, y + 24f, left + chipW, y + 58f)
+        val on = sess == activeSession
+        kit.rounded(c, chip, if (on) kit.tint else kit.card, 10f, if (on) kit.blue else kit.border)
+        kit.centerText(c, sess, chip, 11.5f, if (on) kit.blue else kit.ink, on)
+        bounds.putVisible("pickupSession:$sess", chip, topLimit = bodyTop, bottomLimit = bodyBottom)
+    }
+    y += 72f
+
+    // 3. Metode Pembayaran
+    kit.text(c, "Metode pembayaran", 22f, y + 22f, 15f, kit.ink, true)
     val stallQris = cartStallQris
     val qrisOffered = !stallQris.isNullOrBlank()
-    val cashBox = if (qrisOffered) RectF(18f, y + 38f, 190f, y + 96f) else RectF(18f, y + 38f, 372f, y + 96f)
+    val cashBox = if (qrisOffered) RectF(18f, y + 34f, 190f, y + 92f) else RectF(18f, y + 34f, 372f, y + 92f)
     val cashOn = checkoutPayment == "cash" || !qrisOffered
     kit.rounded(c, cashBox, kit.card, 13f, if (cashOn) kit.blue else kit.border)
-    kit.text(c, "Tunai", 34f, y + 63f, 13f, kit.ink, true)
+    kit.text(c, "Tunai", 34f, y + 59f, 13f, kit.ink, true)
     val cashSub = when {
         stallQris == null -> "Bayar saat ambil · memeriksa QRIS warung..."
         qrisOffered -> "Bayar saat ambil"
         else -> "Bayar saat ambil · toko belum pasang QRIS"
     }
-    kit.text(c, cashSub, 34f, y + 83f, 10f, kit.muted)
-    if (cashOn) kit.centerText(c, "●", RectF(cashBox.right - 32f, y + 56f, cashBox.right - 8f, y + 80f), 13f, kit.blue, true)
-    bounds["payMethod:cash"] = RectF(cashBox)
+    kit.text(c, cashSub, 34f, y + 79f, 10f, kit.muted)
+    if (cashOn) kit.centerText(c, "●", RectF(cashBox.right - 32f, y + 52f, cashBox.right - 8f, y + 76f), 13f, kit.blue, true)
+    bounds.putVisible("payMethod:cash", cashBox, topLimit = bodyTop, bottomLimit = bodyBottom)
     if (qrisOffered) {
-        val qrisBox = RectF(198f, y + 38f, 372f, y + 96f)
+        val qrisBox = RectF(198f, y + 34f, 372f, y + 92f)
         kit.rounded(c, qrisBox, kit.card, 13f, if (!cashOn) kit.blue else kit.border)
-        kit.text(c, "QRIS", 214f, y + 63f, 13f, kit.ink, true)
-        kit.text(c, "Scan lalu konfirmasi", 214f, y + 83f, 10f, kit.muted)
-        if (!cashOn) kit.centerText(c, "●", RectF(338f, y + 56f, 362f, y + 80f), 13f, kit.blue, true)
-        bounds["payMethod:qris"] = RectF(qrisBox)
+        kit.text(c, "QRIS", 214f, y + 59f, 13f, kit.ink, true)
+        kit.text(c, "Scan lalu konfirmasi", 214f, y + 79f, 10f, kit.muted)
+        if (!cashOn) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, kit.blue, true)
+        bounds.putVisible("payMethod:qris", qrisBox, topLimit = bodyTop, bottomLimit = bodyBottom)
     }
 
     val subtotal = lines.sumOf { (p, qty) -> p.priceIdr * qty }
-    val totalY = y + 134f
+    val totalY = y + 128f
     kit.text(c, "Ringkasan", 22f, totalY, 15f, kit.ink, true)
-    summaryRow(c, "Subtotal", formatRupiah(subtotal), totalY + 28f)
-    summaryRow(c, "Biaya layanan", formatRupiah(SERVICE_FEE), totalY + 56f)
-    kit.line(c, 22f, totalY + 76f, 368f, totalY + 76f)
-    summaryRow(c, "Total", formatRupiah(subtotal + SERVICE_FEE), totalY + 105f, true)
-    kit.text(c, "Harga final dihitung ulang server dari database.", 22f, totalY + 127f, 10f, kit.muted)
-    val counterText = if (orderingStatusLoading) "Memuat jatah pesanan..." else "Pesanan hari ini: $ordersToday/2"
-    kit.text(c, counterText, 22f, totalY + 149f, 11f, kit.blue, true)
-    // Jam server live (WIB): ticking tiap detik dari offset terakhir, bukan jam perangkat.
-    kit.text(c, "Jam server: ${serverClockLabel()} · live", 22f, totalY + 171f, 11f, kit.muted)
-    // Antrean aktif warung (maksimal 10); backend tetap sumber kebenaran.
-    val queueText = if (stallLoading) "Memuat antrean warung..." else if (stallActiveOrders < 0) "" else "Antrean warung: $stallActiveOrders/10"
-    if (queueText.isNotBlank()) kit.text(c, queueText, 22f, totalY + 193f, 11f, if (stallFull) kit.danger else kit.muted, stallFull)
-    contentHeight = totalY + 206f
+    val scheduleText = if (activeMode == "pre_order") "PO Besok · $activeSession" else "Hari Ini · $activeSession"
+    summaryRow(c, "Jadwal ambil", scheduleText, totalY + 28f)
+    summaryRow(c, "Subtotal", formatRupiah(subtotal), totalY + 54f)
+    summaryRow(c, "Biaya layanan", formatRupiah(SERVICE_FEE), totalY + 80f)
+    kit.line(c, 22f, totalY + 98f, 368f, totalY + 98f)
+    summaryRow(c, "Total", formatRupiah(subtotal + SERVICE_FEE), totalY + 126f, true)
+    kit.text(c, "Harga final dihitung ulang server dari database.", 22f, totalY + 148f, 10f, kit.muted)
+    kit.text(c, "Jam server: ${serverClockLabel()} · live", 22f, totalY + 168f, 11f, kit.muted)
+
+    c.restoreToCount(bodySave)
+    contentHeight = (totalY - off) + 280f
     if (currentScreen == Screen.CHECKOUT) postInvalidateDelayed(1000)
 
+    header(c, "Checkout")
+
+    kit.rect(c, 0f, h - 84f, w, h, kit.bg)
+    kit.line(c, 20f, h - 84f, 370f, h - 84f, kit.divider)
     val cta = RectF(20f, h - 72f, 370f, h - 18f)
-    if (orderingBlocked) {
-        // Blackout WIB (status dari server): tombol checkout nonaktif + alasan jelas.
-        val blockedLines = ArrayList((orderingBlockMessage ?: "Pesanan sementara ditutup.").chunked(38))
-        blackoutReopenLabel()?.let { blockedLines.add(it) }
-        val boxTop = cta.top - 20f - blockedLines.size * 20f
-        kit.rounded(c, RectF(20f, boxTop, 370f, cta.top - 8f), kit.warnBox, 12f, kit.border)
-        blockedLines.forEachIndexed { index, line -> kit.text(c, line, 32f, boxTop + 25f + index * 20f, 11f, kit.ink) }
-        kit.rounded(c, cta, kit.muted, 14f)
-        kit.centerText(c, "Pemesanan ditutup", cta, 14f, Color.WHITE, true)
-        // Tanpa bounds["pay"]: tombol sengaja tidak bisa diketuk.
-    } else if (stallFull) {
-        // Kapasitas warung penuh (status dari server): checkout nonaktif.
-        val fullMsg = "Warung sedang penuh. Maksimal 10 pesanan aktif. Silakan coba lagi beberapa saat."
-        val fullLines = fullMsg.chunked(38)
-        val fullTop = cta.top - 20f - fullLines.size * 20f
-        kit.rounded(c, RectF(20f, fullTop, 370f, cta.top - 8f), kit.warnBox, 12f, kit.border)
-        fullLines.forEachIndexed { index, line -> kit.text(c, line, 32f, fullTop + 25f + index * 20f, 11f, kit.ink) }
-        kit.rounded(c, cta, kit.muted, 14f)
-        kit.centerText(c, "Warung penuh", cta, 14f, Color.WHITE, true)
-        // Tanpa bounds["pay"]: tombol sengaja tidak bisa diketuk.
-    } else if (!orderingStatusLoading && ordersToday >= 2) {
-        // Jatah harian habis (2/2): kunci tombol, server juga menolak.
-        kit.text(c, "Jatah pesananmu hari ini habis (2/2). Balik lagi besok.", 22f, cta.top - 20f, 11f, kit.danger, true)
-        kit.rounded(c, cta, kit.muted, 14f)
-        kit.centerText(c, "Jatah habis", cta, 14f, Color.WHITE, true)
-        // Tanpa bounds["pay"]: tombol sengaja tidak bisa diketuk.
-    } else if (placingOrder) {
+    if (placingOrder) {
         kit.rounded(c, cta, kit.muted, 14f)
         kit.centerText(c, "Membuat pesanan...", cta, 14f, Color.WHITE, true)
     } else {
         val activeMethod = if (qrisOffered && checkoutPayment == "qris") "qris" else "cash"
-        kit.button(c, if (activeMethod == "cash") "Buat pesanan · bayar tunai" else "Buat pesanan · bayar QRIS", cta)
+        val prefix = if (activeMode == "pre_order") "Buat Pre-Order" else "Buat pesanan"
+        kit.button(c, if (activeMethod == "cash") "$prefix · bayar tunai" else "$prefix · bayar QRIS", cta)
         bounds["pay"] = RectF(cta)
     }
 }
@@ -223,14 +283,31 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     drawIcon(c, "chevronLeft", 27f, 35f, 24f, kit.blue)
     kit.text(c, "Detail Produk", 60f, 45f, 19f, kit.ink, true)
     bounds["headerBack"] = RectF(0f, 0f, 54f, 70f)
-    val imgBottom = minOf(h * .43f, 335f)
+    val imgBottom = minOf(h * .38f, 295f)
     drawProductImage(c, product, RectF(20f, 86f, 370f, imgBottom), 18f)
     kit.text(c, normalizeCategory(product.category), 22f, imgBottom + 28f, 12f, kit.blue, true)
-    kit.text(c, product.name.take(31), 22f, imgBottom + 62f, 22f, kit.ink, true)
-    kit.text(c, formatRupiah(product.priceIdr), 22f, imgBottom + 91f, 19f, kit.ink, true)
-    kit.text(c, "Deskripsi", 22f, imgBottom + 131f, 14f, kit.ink, true)
+    val schedBadge = product.scheduleBadgeLabel
+    val schedW = (kit.measure(schedBadge, 10f, true) + 16f).coerceAtMost(170f)
+    val schedPill = RectF(370f - schedW, imgBottom + 13f, 370f, imgBottom + 33f)
+    val nextOnly = product.orderSchedule == "next_day"
+    kit.rounded(c, schedPill, if (nextOnly) kit.warnBox else kit.tint, 6f)
+    kit.centerText(c, schedBadge, schedPill, 10f, if (nextOnly) Color.rgb(183, 116, 0) else kit.blue, true)
+
+    kit.text(c, product.name.take(31), 22f, imgBottom + 58f, 22f, kit.ink, true)
+    kit.text(c, formatRupiah(product.priceIdr), 22f, imgBottom + 86f, 19f, kit.ink, true)
+    kit.textEllipsized(
+        c,
+        "Sesi ambil: ${product.parsedPickupSessions.joinToString(" · ")}",
+        22f,
+        imgBottom + 108f,
+        346f,
+        11.5f,
+        kit.blue,
+        true,
+    )
+    kit.text(c, "Deskripsi", 22f, imgBottom + 136f, 14f, kit.ink, true)
     val lines = product.description.ifBlank { "Belum ada deskripsi produk." }.chunked(43).take(3)
-    var nextY = imgBottom + 154f
+    var nextY = imgBottom + 158f
     lines.forEach { line ->
         kit.text(c, line, 22f, nextY, 12f, kit.muted)
         nextY += 19f

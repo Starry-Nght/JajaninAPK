@@ -100,6 +100,19 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
     }
     y += 70f
 
+    // 2b. Switch back to Buyer Mode (1 Akun Dual-Mode)
+    val buyerModeCard = RectF(20f, y, 370f, y + 54f)
+    if (visible(buyerModeCard.top, buyerModeCard.bottom)) {
+        kit.rounded(c, buyerModeCard, kit.tint, 10f, kit.blue)
+        kit.rect(c, 20f, y + 10f, 24f, y + 44f, kit.blue)
+        kit.textEllipsized(c, "Beralih ke Mode Pembeli", 36f, y + 23f, 240f, 13.5f, kit.blue, true)
+        kit.textEllipsized(c, "Belanja & pesan menu dari warung lain", 36f, y + 40f, 240f, 10.5f, kit.muted)
+        kit.textRight(c, "Belanja →", 356f, y + 31f, 76f, 11.5f, kit.blue, true)
+        bounds.putVisible("switchToBuyer", buyerModeCard, topLimit = HEADER_H, bottomLimit = navClear)
+        press(c, "switchToBuyer", buyerModeCard, 10f)
+    }
+    y += 68f
+
     // 3. Identitas Penjual & Pengaturan Warung (Nama Asli + Nama Toko + Nomor Telepon Wajib + Ruangan Ambil)
     if (visible(y, y + 20f)) {
         sellerSection(c, "Identitas & Warung", y + 12f)

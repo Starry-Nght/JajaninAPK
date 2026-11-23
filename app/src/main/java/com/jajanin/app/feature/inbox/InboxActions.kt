@@ -321,14 +321,6 @@ internal fun MainActivity.handleOrderNotification(intent: Intent?) {
         authScope.launch {
             if (!SupabaseRepository.awaitLoggedIn()) return@launch
             if (pendingChatConversationId != chatConvoId) return@launch
-            val role = SupabaseRepository.currentRole()
-            if (role == "seller" && !isSellerAdmitted()) {
-                requirePrivilegedAccess("seller") {
-                    pendingChatConversationId = chatConvoId
-                    enterSellerDashboard()
-                }
-                return@launch
-            }
             pendingChatConversationId = null
             openConversationById(chatConvoId)
         }
@@ -340,7 +332,12 @@ internal fun MainActivity.handleOrderNotification(intent: Intent?) {
     pendingOrderNotificationId = orderId
     authScope.launch {
         if (!SupabaseRepository.awaitLoggedIn()) return@launch
-        if (SupabaseRepository.currentRole() != "seller") {
+        val prof = SupabaseRepository.fetchMyAccountProfile()
+        val isSeller = prof?.isSellerVerified == true || prof?.role == "seller" || ui.myIsSellerVerified
+        ui.myIsSellerVerified = isSeller
+        // Bila user sedang di Mode Pembeli atau bukan penjual, cek dulu apakah order ini miliknya sebagai pembeli.
+        val openAsSeller = isSeller && (ui.myRole == "seller" || ui.myOrders.none { it.id == orderId })
+        if (!openAsSeller) {
             if (pendingOrderNotificationId != orderId) return@launch
             pendingOrderNotificationId = null
             ui.selectedBuyerOrderId = orderId
@@ -352,17 +349,7 @@ internal fun MainActivity.handleOrderNotification(intent: Intent?) {
         // Bila routeSignedInUser sudah lebih dulu mengonsumsi id ini, jangan navigasi ulang.
         if (pendingOrderNotificationId != orderId) return@launch
         pendingOrderNotificationId = null
-        if (!isSellerAdmitted()) {
-            requirePrivilegedAccess("seller") {
-                pendingOrderNotificationId = orderId
-                enterSellerDashboard()
-                pendingOrderNotificationId?.let { id ->
-                    pendingOrderNotificationId = null
-                    openOrderDetail(id)
-                }
-            }
-            return@launch
-        }
+        ui.myRole = "seller"
         if (ui.currentScreen != Screen.ADMIN_DETAIL) ui.showAdmin()
         ensureSellerStallName {
             if (ui.currentScreen != Screen.ADMIN_DETAIL) ui.showAdmin()

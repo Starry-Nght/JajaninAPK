@@ -3,6 +3,8 @@ package com.jajanin.app.data.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+internal val DEFAULT_PICKUP_SESSIONS = listOf("Istirahat 1", "Istirahat 2", "Pulang")
+
 internal data class MenuItem(val name: String, val stall: String, val price: String, val rating: String, val image: Int, val category: String) {
     val priceInRupiah: Int
         get() = price.filter(Char::isDigit).toIntOrNull() ?: 0
@@ -20,6 +22,8 @@ internal data class ProductRow(
     @SerialName("stock") val stock: Int? = null,
     @SerialName("stall_id") val stallId: String,
     @SerialName("ingredients") val ingredients: String = "",
+    @SerialName("order_schedule") val orderSchedule: String = "both",
+    @SerialName("pickup_sessions") val pickupSessions: String = "Istirahat 1,Istirahat 2,Pulang",
 ) {
     /** Ruangan pengambilan yang disematkan pada produk (jika ada). */
     val pickupRoom: String
@@ -28,6 +32,26 @@ internal data class ProductRow(
     /** Bahan produk bersih tanpa tag ruangan internal. */
     val cleanIngredients: String
         get() = stripRoomTag(ingredients)
+
+    val allowsSameDay: Boolean
+        get() = orderSchedule == "same_day" || orderSchedule == "both"
+
+    val allowsNextDay: Boolean
+        get() = orderSchedule == "next_day" || orderSchedule == "both"
+
+    val scheduleBadgeLabel: String
+        get() = when (orderSchedule) {
+            "same_day" -> "Hari Ini"
+            "next_day" -> "PO Besok"
+            else -> "Hari Ini / PO Besok"
+        }
+
+    val parsedPickupSessions: List<String>
+        get() = pickupSessions
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .ifEmpty { DEFAULT_PICKUP_SESSIONS }
 }
 
 private val ROOM_TAG_REGEX = Regex("^\\[Ruang:\\s*([^\\]]+)\\]\\s*")

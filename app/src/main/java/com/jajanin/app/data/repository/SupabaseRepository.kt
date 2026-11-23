@@ -11,14 +11,25 @@ import io.github.jan.supabase.gotrue.exception.AuthRestException
 import io.github.jan.supabase.gotrue.exception.AuthWeakPasswordException
 import io.github.jan.supabase.gotrue.handleDeeplinks
 import io.github.jan.supabase.gotrue.providers.builtin.Email
+import io.github.jan.supabase.gotrue.providers.builtin.OTP
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.realtime.Realtime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 
 /** Hasil dari [SupabaseRepository.register]. */
 enum class RegisterResult {
@@ -148,6 +159,212 @@ object SupabaseRepository {
                 }
                 .decodeSingleOrNull<RoleRow>()?.role
         }.getOrNull()
+    }
+
+    @Serializable
+    internal data class StudentNisLookupResult(
+        val found: Boolean = false,
+        val nis: String = "",
+        @SerialName("full_name") val fullName: String = "",
+        @SerialName("class_name") val className: String = "",
+        val registered: Boolean = false,
+        @SerialName("auth_email") val authEmail: String = "",
+    )
+
+    @Serializable
+    internal data class AccountProfileRow(
+        val id: String = "",
+        val role: String = "buyer",
+        val nis: String = "",
+        @SerialName("display_name") val displayName: String = "",
+        val email: String = "",
+        @SerialName("account_status") val accountStatus: String = "active",
+        @SerialName("is_seller_verified") val isSellerVerified: Boolean = false,
+        @SerialName("seller_verified_email") val sellerVerifiedEmail: String = "",
+        @SerialName("stall_id") val stallId: String? = null,
+        @SerialName("stall_name") val stallName: String = "",
+    )
+
+    internal data class SellerOtpRequestResult(
+        val provider: String,
+        val message: String,
+    )
+
+    private val edgeJson = Json { ignoreUnknownKeys = true }
+
+    /** Lookup 1 NIS eksak di tabel master `public.students` untuk auto-fill Nama & Kelas saat login/daftar. */
+    internal suspend fun lookupStudentNis(nis: String): StudentNisLookupResult {
+        check(configured) { NOT_CONFIGURED }
+        val clean = nis.filter(Char::isDigit)
+        if (clean.length < 3) return StudentNisLookupResult(found = false)
+        return client.postgrest.rpc(
+            "lookup_student_nis",
+            buildJsonObject { put("p_nis", clean) },
+        ).decodeAs<StudentNisLookupResult>()
+    }
+
+    /** Membaca profil & status verifikasi dual-mode (Buyer <-> Seller) pemilik sesi. */
+    internal suspend fun fetchMyAccountProfile(): AccountProfileRow? {
+        if (!hasSession()) return null
+        return runCatching {
+            client.postgrest.rpc("my_account_profile").decodeAsOrNull<AccountProfileRow>()
+        }.getOrNull()
+    }
+
+    /** Aktivasi akun baru berbasis NIS resmi via Edge Function `register-nis`, lalu langsung login. */
+    internal suspend fun registerWithNis(nis: String, password: String, phone: String): StudentNisLookupResult {
+        check(configured) { NOT_CONFIGURED }
+        val cleanNis = nis.filter(Char::isDigit)
+        val payload = buildJsonObject {
+            put("nis", cleanNis)
+            put("password", password)
+            put("phone", phone.trim())
+        }.toString()
+        val (status, body) = postEdgeFunction("register-nis", payload, bearerToken = null)
+        val parsed = runCatching { edgeJson.parseToJsonElement(body).jsonObject }.getOrNull()
+        if (status !in 200..299) {
+            val err = parsed?.get("error")?.jsonPrimitive?.contentOrNull ?: "Gagal mendaftarkan akun NIS ($status)."
+            throw IllegalStateException(err)
+        }
+        val authEmail = parsed?.get("auth_email")?.jsonPrimitive?.contentOrNull
+            ?: "nis.$cleanNis@siswa.jajanin.app"
+        login(authEmail, password)
+        return StudentNisLookupResult(
+            found = true,
+            nis = parsed?.get("nis")?.jsonPrimitive?.contentOrNull ?: cleanNis,
+            fullName = parsed?.get("full_name")?.jsonPrimitive?.contentOrNull.orEmpty(),
+            className = parsed?.get("class_name")?.jsonPrimitive?.contentOrNull.orEmpty(),
+            registered = true,
+            authEmail = authEmail,
+        )
+    }
+
+    /** Minta kode OTP 6 digit ke email aktif untuk mengaktifkan Mode Penjual (Resend atau fallback Supabase Auth). */
+    internal suspend fun requestSellerEmailOtp(email: String): SellerOtpRequestResult {
+        check(configured) { NOT_CONFIGURED }
+        val cleanEmail = email.trim().lowercase()
+        require(cleanEmail.contains("@") && !cleanEmail.endsWith("@siswa.jajanin.app")) {
+            "Gunakan alamat email aktif milikmu (mis. Gmail) untuk menerima kode OTP."
+        }
+        val token = currentAccessToken() ?: error("Masuk dulu untuk mengaktifkan Mode Penjual.")
+        val payload = buildJsonObject {
+            put("action", "request")
+            put("email", cleanEmail)
+        }.toString()
+        val (status, body) = postEdgeFunction("seller-otp", payload, bearerToken = token)
+        val parsed = runCatching { edgeJson.parseToJsonElement(body).jsonObject }.getOrNull()
+        if (status !in 200..299) {
+            val err = parsed?.get("error")?.jsonPrimitive?.contentOrNull ?: "Gagal mengirim kode OTP ($status)."
+            throw IllegalStateException(err)
+        }
+        val provider = parsed?.get("provider")?.jsonPrimitive?.contentOrNull ?: "supabase_auth"
+        if (provider == "resend") {
+            return SellerOtpRequestResult(
+                provider = "resend",
+                message = parsed?.get("message")?.jsonPrimitive?.contentOrNull
+                    ?: "Kode OTP 6 digit telah dikirim ke $cleanEmail.",
+            )
+        }
+        // Fallback: built-in Email OTP Supabase Auth
+        val curEmail = currentEmail()?.trim()?.lowercase().orEmpty()
+        if (curEmail == cleanEmail) {
+            client.auth.signInWith(OTP) {
+                this.email = cleanEmail
+                createUser = false
+            }
+        } else {
+            client.auth.updateUser(redirectUrl = AUTH_REDIRECT_URL) {
+                this.email = cleanEmail
+            }
+        }
+        return SellerOtpRequestResult(
+            provider = "supabase_auth",
+            message = "Kode OTP verifikasi dikirim ke $cleanEmail. Cek kotak masuk / folder Spam.",
+        )
+    }
+
+    /** Verifikasi kode OTP 6 digit & aktifkan Mode Penjual + simpan nomor WA & warung. */
+    suspend fun verifySellerEmailOtpAndActivate(
+        provider: String,
+        email: String,
+        code: String,
+        stallName: String,
+        phone: String,
+        room: String,
+    ) {
+        check(configured) { NOT_CONFIGURED }
+        val cleanEmail = email.trim().lowercase()
+        val cleanCode = code.filter(Char::isDigit).trim()
+        require(cleanCode.length == 6) { "Kode OTP harus 6 digit angka." }
+        val token = currentAccessToken() ?: error("Sesi berakhir. Silakan masuk ulang.")
+
+        if (provider == "resend") {
+            val payload = buildJsonObject {
+                put("action", "verify")
+                put("email", cleanEmail)
+                put("code", cleanCode)
+                put("stall_name", stallName.trim())
+                put("phone", phone.trim())
+                put("room", room.trim())
+            }.toString()
+            val (status, body) = postEdgeFunction("seller-otp", payload, bearerToken = token)
+            val parsed = runCatching { edgeJson.parseToJsonElement(body).jsonObject }.getOrNull()
+            if (status !in 200..299) {
+                val err = parsed?.get("error")?.jsonPrimitive?.contentOrNull ?: "Verifikasi OTP gagal ($status)."
+                throw IllegalStateException(err)
+            }
+            return
+        }
+
+        // Jalur fallback Supabase Auth Email OTP
+        val curEmail = currentEmail()?.trim()?.lowercase().orEmpty()
+        val verifyType = if (curEmail == cleanEmail) OtpType.Email.EMAIL else OtpType.Email.EMAIL_CHANGE
+        try {
+            client.auth.verifyEmailOtp(type = verifyType, email = cleanEmail, token = cleanCode)
+        } catch (firstErr: Throwable) {
+            // Coba tipe MAGIC_LINK bila template Supabase mengirim token magiclink/otp
+            if (verifyType == OtpType.Email.EMAIL) {
+                client.auth.verifyEmailOtp(type = OtpType.Email.MAGIC_LINK, email = cleanEmail, token = cleanCode)
+            } else {
+                throw firstErr
+            }
+        }
+        client.postgrest.rpc(
+            "complete_seller_activation",
+            buildJsonObject {
+                put("p_email", cleanEmail)
+                put("p_stall_name", stallName.trim())
+                put("p_phone", phone.trim())
+                put("p_room", room.trim())
+            },
+        )
+    }
+
+    private suspend fun postEdgeFunction(
+        slug: String,
+        jsonBody: String,
+        bearerToken: String?,
+    ): Pair<Int, String> = withContext(Dispatchers.IO) {
+        val conn = (URL("$projectUrl/functions/v1/$slug").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 12_000
+            readTimeout = 15_000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("apikey", publishableKey)
+            if (!bearerToken.isNullOrBlank()) {
+                setRequestProperty("Authorization", "Bearer $bearerToken")
+            }
+        }
+        try {
+            conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            code to text
+        } finally {
+            conn.disconnect()
+        }
     }
 
     /** True bila akun ini jadi seller lewat undangan developer (bebas kode akses). */

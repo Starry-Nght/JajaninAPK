@@ -44,6 +44,12 @@ internal fun JajaninView.drawProductForm(c: Canvas, w: Float, h: Float) {
     y += 24f
     y = roomPickupSection(c, y, h - 72f)
 
+    // --- 2b. Jadwal Pemesanan & Sesi Pengambilan (Pre-Order / Hari Ini) ---
+    y += 8f
+    sellerSection(c, "Jadwal & Sesi Pengambilan", y + 12f, trailing = "Atur Hari Ini / PO Besok", trailingColor = kit.blue)
+    y += 24f
+    y = scheduleAndSessionPicker(c, y, h - 72f)
+
     // --- 3. Harga & stok ---
     y += 8f
     sellerSection(c, "Harga & Stok", y + 12f)
@@ -140,6 +146,58 @@ private fun JajaninView.roomPickupSection(c: Canvas, top: Float, bottomLimit: Fl
     }
 
     return chipY + chipH + 8f
+}
+
+private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLimit: Float): Float {
+    var y = top
+    kit.text(c, "Tersedia untuk", 20f, y + 10f, SellerTokens.T_LABEL, kit.muted, true)
+    val schedules = listOf(
+        "same_day" to "Hari Ini",
+        "next_day" to "PO Besok",
+        "both" to "Keduanya",
+    )
+    val gap = 8f
+    val schedW = (SellerTokens.WIDTH - gap * 2f) / 3f
+    schedules.forEachIndexed { idx, (value, label) ->
+        val left = SellerTokens.PAD + idx * (schedW + gap)
+        val chip = RectF(left, y + 16f, left + schedW, y + 54f)
+        val active = productOrderSchedule == value
+        val isPo = value == "next_day"
+        if (active) {
+            kit.rounded(
+                c,
+                chip,
+                if (isPo) kit.warnBox else kit.tint,
+                SellerTokens.RADIUS_CONTROL,
+                if (isPo) Color.rgb(183, 116, 0) else kit.blue,
+            )
+        } else {
+            kit.rounded(c, chip, kit.card, SellerTokens.RADIUS_CONTROL, kit.border)
+        }
+        val fg = if (!active) kit.muted else if (isPo) Color.rgb(183, 116, 0) else kit.blue
+        kit.centerText(c, label, chip, 11.5f, fg, active)
+        press(c, "pfSchedule:$value", chip, SellerTokens.RADIUS_CONTROL)
+        bounds.putVisible("pfSchedule:$value", chip, topLimit = 60f, bottomLimit = bottomLimit)
+    }
+    y += 66f
+
+    kit.text(c, "Sesi pengambilan (bisa pilih lebih dari 1)", 20f, y + 10f, SellerTokens.T_LABEL, kit.muted, true)
+    val sessions = com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
+    val sessW = (SellerTokens.WIDTH - gap * (sessions.size - 1)) / sessions.size
+    sessions.forEachIndexed { idx, sess ->
+        val left = SellerTokens.PAD + idx * (sessW + gap)
+        val chip = RectF(left, y + 16f, left + sessW, y + 50f)
+        val active = sess in productPickupSessions
+        if (active) {
+            kit.rounded(c, chip, kit.blue, SellerTokens.RADIUS_CONTROL)
+        } else {
+            kit.rounded(c, chip, kit.card, SellerTokens.RADIUS_CONTROL, kit.border)
+        }
+        kit.centerText(c, sess, chip, 10.5f, if (active) Color.WHITE else kit.ink, active)
+        press(c, "pfSession:$sess", chip, SellerTokens.RADIUS_CONTROL)
+        bounds.putVisible("pfSession:$sess", chip, topLimit = 60f, bottomLimit = bottomLimit)
+    }
+    return y + 62f
 }
 
 private fun JajaninView.categoryPicker(c: Canvas, top: Float): Float {

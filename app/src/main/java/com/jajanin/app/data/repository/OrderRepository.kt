@@ -48,6 +48,9 @@ internal data class OrderRow(
     @SerialName("payment_method") val paymentMethod: String? = null,
     @SerialName("payment_status") val paymentStatus: String = "unpaid",
     @SerialName("payment_reference") val paymentReference: String? = null,
+    @SerialName("order_mode") val orderMode: String = "same_day",
+    @SerialName("pickup_date") val pickupDate: String = "",
+    @SerialName("pickup_session") val pickupSession: String = "Istirahat 1",
     @SerialName("order_items") val items: List<OrderItemRow> = emptyList(),
 )
 
@@ -109,12 +112,35 @@ internal data class AdminOrder(
     val sellerStoreName: String = "",
     val sellerOwnerName: String = "",
     val cancelReason: String = "",
+    val orderMode: String = "same_day",
+    val pickupDate: String = "",
+    val pickupSession: String = "Istirahat 1",
 ) {
     val itemCount: Int
         get() = items.sumOf { it.quantity }
 
     val itemsSummary: String
         get() = items.joinToString("  ·  ") { "${it.quantity}× ${it.itemName}" }
+
+    val isPreOrder: Boolean
+        get() = orderMode.equals("pre_order", ignoreCase = true)
+
+    /** Label ringkas jadwal ambil, mis. "Hari Ini · Istirahat 1" atau "PO Besok (24 Nov) · Istirahat 2". */
+    val pickupScheduleLabel: String
+        get() {
+            val today = OrderRepository.todayWibDateString()
+            val tomorrow = OrderRepository.tomorrowWibDateString()
+            val dateTag = when {
+                pickupDate == today -> "Hari Ini"
+                pickupDate == tomorrow -> "Besok"
+                pickupDate.isNotBlank() -> formatShortIdDate(pickupDate)
+                isPreOrder -> "Besok"
+                else -> "Hari Ini"
+            }
+            val prefix = if (isPreOrder) "PO $dateTag" else "Ambil $dateTag"
+            val sess = pickupSession.trim()
+            return if (sess.isNotBlank()) "$prefix · $sess" else prefix
+        }
 }
 
 /** Penanda bahwa aliran Realtime untuk order admin sedang aktif; tutup saat logout. */
@@ -149,6 +175,9 @@ internal data class PlacedOrder(
     @SerialName("payment_method") val paymentMethod: String,
     @SerialName("payment_status") val paymentStatus: String = "unpaid",
     val status: String = "pending",
+    @SerialName("order_mode") val orderMode: String = "same_day",
+    @SerialName("pickup_date") val pickupDate: String = "",
+    @SerialName("pickup_session") val pickupSession: String = "Istirahat 1",
 )
 
 @Serializable
@@ -205,6 +234,8 @@ internal data class ProductDraft(
     val stock: Int?,
     val ingredients: String = "",
     val available: Boolean = true,
+    val orderSchedule: String = "both",
+    val pickupSessions: String = "Istirahat 1,Istirahat 2,Pulang",
 )
 
 @Serializable
@@ -227,11 +258,12 @@ internal object OrderRepository {
     // tak dikenal dan daftar order tidak memicu N+1 query per item.
     private val orderColumns = Columns.raw(
         "id,user_id,status,total_idr,pickup_code,created_at,payment_method,payment_status,payment_reference," +
+            "order_mode,pickup_date,pickup_session," +
             "order_items(id,menu_item_id,item_name,unit_price_idr,quantity)"
     )
 
     private val productColumns = Columns.raw(
-        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients"
+        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions"
     )
 
     private val realtimeJson = Json {
@@ -309,6 +341,8 @@ internal object OrderRepository {
             put("image_url", draft.imageUrl)
             put("is_available", draft.available)
             put("ingredients", draft.ingredients)
+            put("order_schedule", draft.orderSchedule)
+            put("pickup_sessions", draft.pickupSessions)
             draft.stock?.let { put("stock", it) }
         }
         return client.postgrest.from("menu_items").insert(payload) {
@@ -325,6 +359,8 @@ internal object OrderRepository {
             put("image_url", draft.imageUrl)
             put("is_available", draft.available)
             put("ingredients", draft.ingredients)
+            put("order_schedule", draft.orderSchedule)
+            put("pickup_sessions", draft.pickupSessions)
             put("stock", draft.stock)
         }
         val result = client.postgrest.from("menu_items").update(patch) {
@@ -430,7 +466,12 @@ internal object OrderRepository {
      * ketersediaan, dan stok + hitung harga dari database, snapshot item,
      * kurangi stok, tulis order + items atomis. Total client tidak dipercaya.
      */
-    suspend fun placeOrder(lines: List<Pair<String, Int>>, paymentMethod: String): PlacedOrder {
+    suspend fun placeOrder(
+        lines: List<Pair<String, Int>>,
+        paymentMethod: String,
+        orderMode: String = "same_day",
+        pickupSession: String = "Istirahat 1",
+    ): PlacedOrder {
         val method = paymentMethod.lowercase()
         require(method == "cash" || method == "qris") { "Metode bayar tidak valid." }
         require(lines.isNotEmpty()) { "Keranjang masih kosong." }
@@ -445,10 +486,11 @@ internal object OrderRepository {
         val params = mapOf(
             "p_items" to array,
             "p_payment_method" to kotlinx.serialization.json.JsonPrimitive(method),
+            "p_order_mode" to kotlinx.serialization.json.JsonPrimitive(orderMode),
+            "p_pickup_session" to kotlinx.serialization.json.JsonPrimitive(pickupSession.trim().ifBlank { "Istirahat 1" }),
         )
         return try {
-            // place_order mengembalikan satu objek jsonb telanjang (bukan array).
-            client.postgrest.rpc("place_order", params).decodeAs<PlacedOrder>()
+            client.postgrest.rpc("place_order_v2", params).decodeAs<PlacedOrder>()
         } catch (t: Throwable) {
             throw IllegalStateException(parseDbError(t), t)
         }
@@ -822,8 +864,27 @@ internal object OrderRepository {
                 sellerStoreName = stall?.name.orEmpty(),
                 sellerOwnerName = stall?.ownerRealName.orEmpty(),
                 cancelReason = row.paymentReference?.trim().orEmpty(),
+                orderMode = row.orderMode,
+                pickupDate = row.pickupDate,
+                pickupSession = row.pickupSession,
             )
         }
+    }
+
+    internal fun todayWibDateString(): String {
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Jakarta"))
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("Asia/Jakarta")
+        }.format(cal.time)
+    }
+
+    internal fun tomorrowWibDateString(): String {
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Jakarta")).apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+        }
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("Asia/Jakarta")
+        }.format(cal.time)
     }
 
     /** Riwayat order pembeli yang sedang masuk (dipakai layar Pesanan pembeli). */
@@ -911,4 +972,11 @@ internal object OrderRepository {
         if (parsed != null) return SimpleDateFormat("HH:mm", Locale.US).format(parsed)
         return createdAt.substringAfter('T', "").take(5)
     }
+}
+
+internal fun formatShortIdDate(isoDate: String): String {
+    val parsed = runCatching {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(isoDate.take(10))
+    }.getOrNull() ?: return isoDate.take(10)
+    return SimpleDateFormat("d MMM", Locale("id", "ID")).format(parsed)
 }

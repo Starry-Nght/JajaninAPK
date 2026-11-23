@@ -20,14 +20,14 @@ internal fun JajaninView.drawWelcome(c: Canvas, w: Float, h: Float) {
 
 internal fun JajaninView.drawRole(c: Canvas, w: Float, h: Float) {
     c.drawColor(kit.bg)
-    kit.text(c, "Beta", 24f, 54f, 16f, kit.blue, true)
-    kit.text(c, "Kamu mau jajan", 24f, 133f, 28f, kit.ink, true)
-    kit.text(c, "sebagai siapa?", 24f, 168f, 28f, kit.ink, true)
-    roleCard(c, "Pembeli", "Cari makanan dan pesan dari kantin", 190f, "buyer", selectedRole == "buyer")
-    roleCard(c, "Penjual", "Kelola menu dan pesanan kantin ", 296f, "seller", selectedRole == "seller")
-    kit.text(c, "Pilih mode aplikasi.", 24f, h - 104f, 13f, kit.muted)
+    kit.text(c, "v2.0", 24f, 54f, 16f, kit.blue, true)
+    kit.text(c, "1 Akun,", 24f, 133f, 28f, kit.ink, true)
+    kit.text(c, "dua mode bebas!", 24f, 168f, 28f, kit.ink, true)
+    roleCard(c, "Mode Pembeli (Default)", "Pesan menu hari ini atau Pre-Order besok", 190f, "buyer", true)
+    roleCard(c, "Buka Mode Penjual", "Bisa diaktifkan kapan saja di Profil pakai OTP Email", 296f, "seller", false)
+    kit.text(c, "Masuk pakai NIS — nama & kelas terisi otomatis.", 24f, h - 104f, 12.5f, kit.muted)
     val cta = RectF(24f, h - 78f, w - 24f, h - 22f)
-    kit.button(c, "Gas \uD83D\uDE0B\n", cta)
+    kit.button(c, "Lanjut Masuk NIS →", cta)
     bounds["role"] = RectF(cta)
 }
 
@@ -40,10 +40,10 @@ internal fun JajaninView.drawLogin(c: Canvas, w: Float, h: Float) {
     kit.rounded(c, RectF(238f, 36f, 290f, 88f), Color.argb(14, 0, 99, 214), 26f)
 
     kit.text(c, "JAJANIN", 24f, 58f, 17f, kit.blue, true)
-    kit.text(c, "Masuk ke akunmu", 24f, 140f, 27f, kit.ink, true)
-    kit.text(c, "Lanjutkan jajan favoritmu di kampus.", 24f, 168f, 13f, kit.muted)
+    kit.text(c, "Masuk dengan NIS", 24f, 136f, 27f, kit.ink, true)
+    kit.text(c, "Nama & kelas terisi otomatis. 1 akun bisa Pembeli & Penjual.", 24f, 165f, 12f, kit.muted)
 
-    authField(c, "emailField", "Email", "nama@kampus.ac.id", 202f)
+    authField(c, "emailField", "NIS Siswa", "Ketik NIS (contoh: 11855)", 202f)
     authField(c, "passwordField", "Kata sandi", "Minimal 6 karakter", 280f)
 
     val forgot = RectF(216f, 344f, 366f, 372f)
@@ -51,11 +51,11 @@ internal fun JajaninView.drawLogin(c: Canvas, w: Float, h: Float) {
     bounds["forgotPassword"] = RectF(forgot)
 
     val submit = RectF(24f, 382f, 366f, 436f)
-    kit.button(c, "Masuk dengan email", submit)
+    kit.button(c, "Masuk / Aktivasi dengan NIS", submit)
     bounds["emailLogin"] = RectF(submit)
 
     val toggle = RectF(24f, 456f, 366f, 494f)
-    kit.centerText(c, "Belum punya akun?  Daftar", toggle, 13f, kit.blue, true)
+    kit.centerText(c, "Siswa baru atau masuk pakai Email?  Ketuk di sini", toggle, 12.5f, kit.blue, true)
     bounds["toggleAuth"] = RectF(toggle)
 
     kit.centerText(c, "Dengan masuk, kamu menyetujui ketentuan Jajanin.", RectF(18f, h - 66f, w - 18f, h - 35f), 10f, kit.muted)

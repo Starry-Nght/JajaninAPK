@@ -106,6 +106,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var adminLoading = false
     internal var adminError: String? = null
     internal var adminFilter = "Semua"
+    internal var adminScheduleFilter = "Semua"
     internal var sellerTab = "Dashboard"
     internal var adminDetailOrder: AdminOrder? = null
     internal var adminDetailId: String? = null
@@ -132,6 +133,8 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productIngredients = ""
     internal var productRoom = ""
     internal var productAvailable = true
+    internal var productOrderSchedule = "both"
+    internal var productPickupSessions = linkedSetOf("Istirahat 1", "Istirahat 2", "Pulang")
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
     internal var productSaving = false
@@ -144,6 +147,8 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myDisplayName: String = ""
     internal var myNis: String = ""
     internal var myClass: String = ""
+    internal var myIsSellerVerified = false
+    internal var mySellerVerifiedEmail: String = ""
     internal var savedProductId: String? = null
     internal var isSellerProfile = false
     // --- Buyer checkout state (multi-item cart, satu warung per order) ---
@@ -153,6 +158,8 @@ internal class JajaninView(context: Context) : View(context) {
     // "" = warung belum pasang (tunai saja), berisi URL = QRIS tersedia.
     internal var cartStallQris: String? = null
     internal var checkoutPayment: String = "cash"
+    internal var checkoutOrderMode: String = "same_day"
+    internal var checkoutPickupSession: String = "Istirahat 1"
     internal var placingOrder = false
     internal var lastOrderId: String? = null
     internal var lastOrderPickup: String? = null
@@ -258,7 +265,7 @@ internal class JajaninView(context: Context) : View(context) {
 
     private var screen = Screen.SPLASH
     private val history = ArrayDeque<Screen>()
-    private var tab = "Home"
+    internal var tab = "Home"
     // Posisi scroll per halaman tab agar tidak reset saat pindah tab.
     private val pageScroll = HashMap<String, Float>()
     private var touchStartX = 0f
@@ -868,7 +875,7 @@ internal class JajaninView(context: Context) : View(context) {
                 val hit = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key ?: return true
                 when {
                     // --- Fondasi: onboarding, pilihan role, autentikasi ---
-                    hit == "welcome" -> go(Screen.ROLE)
+                    hit == "welcome" -> go(Screen.LOGIN)
                     hit == "obSkip" || hit == "obStart" -> activity()?.finishOnboarding()
                     hit == "obNext" -> {
                         if (onboardPage >= onboardCount - 1) activity()?.finishOnboarding()
@@ -949,6 +956,32 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("cartMinus:") -> activity()?.setCartQty(hit.substringAfter(':'), (cart[hit.substringAfter(':')] ?: 0) - 1)
                     hit.startsWith("cartRemove:") -> activity()?.setCartQty(hit.substringAfter(':'), 0)
                     hit.startsWith("payMethod:") -> activity()?.setCheckoutPayment(hit.substringAfter(':'))
+                    hit.startsWith("orderMode:") -> activity()?.setCheckoutOrderMode(hit.substringAfter(':'))
+                    hit.startsWith("pickupSession:") -> {
+                        checkoutPickupSession = hit.substringAfter(':')
+                        invalidate()
+                    }
+                    hit == "switchToSeller" -> activity()?.switchToSellerMode()
+                    hit == "switchToBuyer" -> activity()?.switchToBuyerMode()
+                    hit == "activateSeller" -> activity()?.showSellerOtpActivationDialog()
+                    hit.startsWith("pfSchedule:") -> {
+                        productOrderSchedule = hit.substringAfter(':')
+                        invalidate()
+                    }
+                    hit.startsWith("pfSession:") -> {
+                        val s = hit.substringAfter(':')
+                        if (s in productPickupSessions) {
+                            if (productPickupSessions.size > 1) productPickupSessions.remove(s)
+                        } else {
+                            productPickupSessions.add(s)
+                        }
+                        invalidate()
+                    }
+                    hit.startsWith("adminSchedule:") -> {
+                        adminScheduleFilter = hit.substringAfter(':')
+                        scroll = 0f
+                        invalidate()
+                    }
                     hit == "placeOrder" -> if (!placingOrder) activity()?.placeCartOrder()
                     hit == "paid" -> activity()?.submitPaymentProof()
                     hit.startsWith("myOrderPaid:") -> activity()?.submitPaymentProofFor(hit.substringAfter(':'))
@@ -1122,12 +1155,12 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     hit == "plus" -> {
-                        // Aturan: satu pesanan = satu menu, jumlah tepat 1.
-                        if (quantity < 1) {
-                            quantity = 1
+                        val maxQty = selectedProduct?.stock?.takeIf { it > 0 }?.coerceAtMost(99) ?: 99
+                        if (quantity < maxQty) {
+                            quantity++
                             invalidate()
                         } else {
-                            android.widget.Toast.makeText(context, "Satu pesanan hanya untuk satu menu (1x).", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, "Maksimal $maxQty porsi tersedia.", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
                     hit == "minus" -> { quantity = (quantity - 1).coerceAtLeast(1); invalidate() }

@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.navigation.Screen
-import com.jajanin.app.core.ui.blackoutReopen
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawProductImage
@@ -36,27 +35,13 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
     // 1. Minimal Inline Status Row (No Box)
     val suspended = myAccountStatus == "suspended"
     if (isVisible(y, y + 20f)) {
-        val dotColor = when {
-            suspended -> kit.danger
-            orderingBlocked -> Color.rgb(183, 116, 0)
-            else -> kit.success
-        }
+        val dotColor = if (suspended) kit.danger else kit.success
         kit.rounded(c, RectF(20f, y + 5f, 26f, y + 11f), dotColor, 3f)
         kit.text(c, "${serverClockLabel()} · live", 32f, y + 12f, 11f, kit.muted)
 
-        val reopen = blackoutReopen()
-        val rightText = when {
-            suspended -> "Akun ditangguhkan"
-            reopen != null -> "Buka %s (%d mnt)".format(reopen.first, reopen.second)
-            orderingStatusLoading -> "Memuat..."
-            else -> "Kuota harian $ordersToday/2"
-        }
-        val rightColor = when {
-            suspended -> kit.danger
-            orderingBlocked -> Color.rgb(183, 116, 0)
-            else -> kit.ink
-        }
-        kit.textRight(c, rightText, 370f, y + 12f, 160f, 11f, rightColor, true)
+        val rightText = if (suspended) "Akun ditangguhkan" else "Buka · Hari Ini & PO"
+        val rightColor = if (suspended) kit.danger else kit.success
+        kit.textRight(c, rightText, 370f, y + 12f, 180f, 11f, rightColor, true)
     }
     if (currentScreen == Screen.HOME) postInvalidateDelayed(1000)
     y += 24f
@@ -233,12 +218,12 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
             y += 88f
         }
         else -> {
-            val rowH = 98f
+            val rowH = 108f
             matches.forEachIndexed { index, product ->
                 val rowTop = y
                 val rowBottom = y + rowH
                 if (isVisible(rowTop, rowBottom)) {
-                    val imgRect = RectF(20f, rowTop + 10f, 96f, rowTop + 86f)
+                    val imgRect = RectF(20f, rowTop + 14f, 96f, rowTop + 90f)
                     drawProductImage(c, product, imgRect, 8f)
 
                     // Dish Name + Heart icon inline on the right
@@ -265,15 +250,25 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                         else -> "Tersedia"
                     }
                     val descLine = product.description.takeIf { it.isNotBlank() } ?: "$catName · $stockInfo"
-                    kit.textEllipsized(c, descLine, 110f, rowTop + 45f, 250f, 11.5f, kit.muted)
+                    kit.textEllipsized(c, descLine, 110f, rowTop + 44f, 250f, 11.5f, kit.muted)
+
+                    // Pre-Order / Same-Day schedule pill
+                    val schedLabel = product.scheduleBadgeLabel
+                    val schedW = (kit.measure(schedLabel, 9.5f, true) + 14f).coerceAtMost(150f)
+                    val schedPill = RectF(110f, rowTop + 50f, 110f + schedW, rowTop + 66f)
+                    val isNextOnly = product.orderSchedule == "next_day"
+                    val pillBg = if (isNextOnly) kit.warnBox else kit.tint
+                    val pillFg = if (isNextOnly) Color.rgb(183, 116, 0) else kit.blue
+                    kit.rounded(c, schedPill, pillBg, 4f)
+                    kit.centerText(c, schedLabel, schedPill, 9.5f, pillFg, true)
 
                     // Price on the left, clean 8f radius action on the right
-                    kit.text(c, formatRupiah(product.priceIdr), 110f, rowTop + 76f, 14.5f, kit.ink, true)
+                    kit.text(c, formatRupiah(product.priceIdr), 110f, rowTop + 89f, 14.5f, kit.ink, true)
 
                     val inCartQty = cart[product.id] ?: 0
                     if (available) {
                         if (inCartQty > 0) {
-                            val stepper = RectF(286f, rowTop + 54f, 370f, rowTop + 84f)
+                            val stepper = RectF(286f, rowTop + 65f, 370f, rowTop + 95f)
                             kit.rounded(c, stepper, kit.tint, 7f, kit.blue)
                             val minusHit = RectF(stepper.left, stepper.top, stepper.left + 28f, stepper.bottom)
                             val plusHit = RectF(stepper.right - 28f, stepper.top, stepper.right, stepper.bottom)
@@ -283,13 +278,13 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                             bounds.putVisible("cartMinus:${product.id}", minusHit, topLimit = HEADER_H, bottomLimit = bottomClip)
                             bounds.putVisible("cartPlus:${product.id}", plusHit, topLimit = HEADER_H, bottomLimit = bottomClip)
                         } else {
-                            val addBtn = RectF(296f, rowTop + 54f, 370f, rowTop + 84f)
+                            val addBtn = RectF(296f, rowTop + 65f, 370f, rowTop + 95f)
                             kit.rounded(c, addBtn, kit.blue, 7f)
                             kit.centerText(c, "+ Tambah", addBtn, 11f, Color.WHITE, true)
                             bounds.putVisible("add:${product.id}", addBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
                         }
                     } else {
-                        kit.textRight(c, "Habis", 370f, rowTop + 74f, 64f, 11.5f, kit.danger, true)
+                        kit.textRight(c, "Habis", 370f, rowTop + 85f, 64f, 11.5f, kit.danger, true)
                     }
 
                     // Hairline divider between rows

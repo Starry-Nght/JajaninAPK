@@ -67,6 +67,28 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     }
     y += 76f
 
+    // 1b. Dual-Mode Switcher / Aktivasi Penjual (1 Akun: Pembeli <-> Penjual via Email OTP)
+    val sellerCard = RectF(20f, y, 370f, y + 60f)
+    if (visible(sellerCard.top, sellerCard.bottom)) {
+        kit.rounded(c, sellerCard, kit.tint, 10f, kit.blue)
+        kit.rect(c, 20f, y + 10f, 24f, y + 50f, kit.blue)
+        if (myIsSellerVerified) {
+            kit.textEllipsized(c, "Beralih ke Mode Penjual", 36f, y + 25f, 240f, 13.5f, kit.blue, true)
+            val stallSub = myStallName.takeIf { it.isNotBlank() } ?: "Kelola produk, stok & pesanan warungmu"
+            kit.textEllipsized(c, stallSub, 36f, y + 44f, 240f, 11f, kit.muted)
+            kit.textRight(c, "Buka →", 356f, y + 34f, 70f, 12f, kit.blue, true)
+            bounds.putVisible("switchToSeller", sellerCard, topLimit = HEADER_H, bottomLimit = navClear)
+            press(c, "switchToSeller", sellerCard, 10f)
+        } else {
+            kit.textEllipsized(c, "Mulai Berjualan di Jajanin", 36f, y + 25f, 236f, 13.5f, kit.blue, true)
+            kit.textEllipsized(c, "Aktifkan Mode Penjual via Email OTP 6 digit", 36f, y + 44f, 242f, 10.5f, kit.muted)
+            kit.textRight(c, "Aktifkan →", 356f, y + 34f, 80f, 11.5f, kit.blue, true)
+            bounds.putVisible("activateSeller", sellerCard, topLimit = HEADER_H, bottomLimit = navClear)
+            press(c, "activateSeller", sellerCard, 10f)
+        }
+    }
+    y += 74f
+
     // 2. Section: IDENTITAS & AKUN (Clean hairline-divided rows, no EXP)
     if (visible(y, y + 20f)) {
         kit.text(c, "IDENTITAS & AKUN", 20f, y + 12f, 10.5f, kit.muted, true)

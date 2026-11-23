@@ -142,6 +142,14 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     kit.rect(c, 20f, y + 8f, 23.5f, y + roomCardH - 8f, kit.blue)
 
     kit.text(c, "AMBIL DI RUANGAN", 34f, y + 20f, 9.5f, kit.muted, true)
+    val schedLabel = matchedOrder?.pickupScheduleLabel?.takeIf { it.isNotBlank() }
+    if (schedLabel != null) {
+        val isPo = matchedOrder.isPreOrder
+        val pillW = (kit.measure(schedLabel, 9.5f, true) + 14f).coerceAtMost(200f)
+        val pillRect = RectF(356f - pillW, y + 9f, 356f, y + 27f)
+        kit.rounded(c, pillRect, if (isPo) kit.warnBox else kit.tint, 5f)
+        kit.centerText(c, schedLabel, pillRect, 9.5f, if (isPo) Color.rgb(183, 116, 0) else kit.blue, true)
+    }
     kit.textEllipsized(c, pickupRoom, 34f, y + 41f, 320f, 16f, kit.blue, true)
 
     val sellerIdentity = if (sellerOwner.isNotBlank()) "$storeName  ·  $sellerOwner" else storeName
@@ -316,9 +324,9 @@ private fun JajaninView.drawBuyerOrderItem(
         (order.paymentStatus == "unpaid" || order.paymentStatus == "rejected")
     val hasActionRow = active && (needsProof || canCancel)
     val cardH = when {
-        hasActionRow -> 196f
-        active -> 160f
-        else -> 114f
+        hasActionRow -> 212f
+        active -> 176f
+        else -> 130f
     }
     val card = RectF(20f, top, 370f, top + cardH)
 
@@ -351,36 +359,40 @@ private fun JajaninView.drawBuyerOrderItem(
             c,
             order.itemsSummary.ifBlank { "Pesanan Kantin" },
             32f,
-            top + 54f,
+            top + 52f,
             220f,
             13.5f,
             kit.ink,
             true
         )
-        kit.textRight(c, formatRupiah(order.totalIdr), 358f, top + 54f, 110f, 13.5f, kit.ink, true)
+        kit.textRight(c, formatRupiah(order.totalIdr), 358f, top + 52f, 110f, 13.5f, kit.ink, true)
 
-        // Row 3: Ambil di Ruangan + Nomor Telepon Penjual
+        // Row 3: Jadwal & Sesi Pengambilan (Hari Ini vs PO Besok)
+        val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.success
+        kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 32f, top + 70f, 324f, 10.5f, schedColor, true)
+
+        // Row 4: Ambil di Ruangan + Nomor Telepon Penjual
         val roomLabel = order.pickupRoom.takeIf { it.isNotBlank() }?.let { "Ambil di: $it" }
             ?: order.sellerStoreName.takeIf { it.isNotBlank() }
             ?: "Kantin Jajanin"
         val phoneSuffix = order.sellerPhone.takeIf { it.isNotBlank() }?.let { " · HP ${displayBuyerPhone(it)}" }.orEmpty()
-        kit.textEllipsized(c, "$roomLabel$phoneSuffix", 32f, top + 72f, 324f, 11f, kit.blue, true)
+        kit.textEllipsized(c, "$roomLabel$phoneSuffix", 32f, top + 87f, 324f, 11f, kit.blue, true)
 
-        // Row 4: Payment method & status + Detail chevron
+        // Row 5: Payment method & status + Detail chevron
         val (payLabel, payColor) = paymentLabel(order.paymentStatus)
         val methodName = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
         val cancelInfo = order.cancelReason.takeIf {
             it.isNotBlank() && order.status.equals(STATUS_CANCELLED, ignoreCase = true)
         }
         if (cancelInfo != null) {
-            kit.textEllipsized(c, "Alasan: $cancelInfo", 32f, top + 90f, 200f, 10.5f, kit.danger, true)
+            kit.textEllipsized(c, "Alasan: $cancelInfo", 32f, top + 106f, 200f, 10.5f, kit.danger, true)
         } else {
-            kit.text(c, "$methodName · $payLabel", 32f, top + 90f, 10.5f, payColor, true)
+            kit.text(c, "$methodName · $payLabel", 32f, top + 106f, 10.5f, payColor, true)
         }
         val unreadOrder = unreadChatByOrder[order.id] ?: 0
         val chatLabel = if (unreadOrder > 0) "Chat ($unreadOrder)" else "Chat"
         val chatW = kit.measure(chatLabel, 10f, true) + 18f
-        val chatPill = RectF(302f - chatW, top + 76f, 302f, top + 96f)
+        val chatPill = RectF(302f - chatW, top + 92f, 302f, top + 112f)
         kit.rounded(
             c,
             chatPill,
@@ -392,21 +404,21 @@ private fun JajaninView.drawBuyerOrderItem(
         bounds.putVisible("chatOrder:${order.id}", chatPill, topLimit = HEADER_H, bottomLimit = bottomClip)
         press(c, "chatOrder:${order.id}", chatPill, 5f)
 
-        kit.textRight(c, "Detail →", 358f, top + 90f, 52f, 11f, kit.blue, true)
+        kit.textRight(c, "Detail →", 358f, top + 106f, 52f, 11f, kit.blue, true)
 
         if (active) {
-            kit.line(c, 32f, top + 100f, 358f, top + 100f, kit.divider)
-            drawOrderProgressTrack(c, order.status, 34f, 356f, top + 108f)
+            kit.line(c, 32f, top + 116f, 358f, top + 116f, kit.divider)
+            drawOrderProgressTrack(c, order.status, 34f, 356f, top + 124f)
         }
 
         if (canCancel && needsProof) {
-            val cancelBtn = RectF(32f, top + 154f, 132f, top + 184f)
+            val cancelBtn = RectF(32f, top + 170f, 132f, top + 200f)
             kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
             kit.centerText(c, "Batalkan", cancelBtn, 11f, kit.danger, true)
             press(c, "buyerCancel:${order.id}", cancelBtn, 6f)
             bounds.putVisible("buyerCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
 
-            val payBtn = RectF(140f, top + 154f, 358f, top + 184f)
+            val payBtn = RectF(140f, top + 170f, 358f, top + 200f)
             kit.rounded(c, payBtn, kit.tint, 6f, kit.blue)
             kit.centerText(
                 c,
@@ -418,13 +430,13 @@ private fun JajaninView.drawBuyerOrderItem(
             )
             bounds.putVisible("myOrderPaid:${order.id}", payBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
         } else if (canCancel) {
-            val cancelBtn = RectF(32f, top + 154f, 358f, top + 184f)
+            val cancelBtn = RectF(32f, top + 170f, 358f, top + 200f)
             kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
             kit.centerText(c, "Batalkan Pesanan", cancelBtn, 11f, kit.danger, true)
             press(c, "buyerCancel:${order.id}", cancelBtn, 6f)
             bounds.putVisible("buyerCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
         } else if (active && needsProof) {
-            val payBtn = RectF(32f, top + 154f, 358f, top + 184f)
+            val payBtn = RectF(32f, top + 170f, 358f, top + 200f)
             kit.rounded(c, payBtn, kit.tint, 6f, kit.blue)
             kit.centerText(
                 c,
@@ -440,7 +452,7 @@ private fun JajaninView.drawBuyerOrderItem(
         press(c, "buyerOrder:${order.id}", card, 8f)
     }
 
-    val hitBottom = if (hasActionRow) top + 150f else top + cardH
+    val hitBottom = if (hasActionRow) top + 166f else top + cardH
     bounds.putVisible(
         "buyerOrder:${order.id}",
         RectF(card.left, card.top, card.right, hitBottom),

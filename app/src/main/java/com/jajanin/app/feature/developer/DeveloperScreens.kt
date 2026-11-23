@@ -232,21 +232,6 @@ private fun JajaninView.drawDevOverview(c: Canvas, w: Float, h: Float, off: Floa
         bounds.putVisible("devReset", btn, HEADER_H, navClear)
         press(c, "devReset", btn, 6f)
     }
-    y += 60f
-
-    // 3a. Reset Jatah Pesanan Buyer Row
-    val quotaRow = RectF(20f, y, 370f, y + 52f)
-    if (visible(quotaRow.top, quotaRow.bottom)) {
-        kit.rounded(c, quotaRow, kit.card, 8f, kit.border)
-        kit.text(c, "Reset Jatah Pesanan Buyer", 32f, y + 22f, 13f, kit.ink, true)
-        kit.text(c, "Kembalikan kuota harian semua pembeli ke 0/2", 32f, y + 39f, 10.5f, kit.muted)
-
-        val qBtn = RectF(264f, y + 12f, 358f, y + 40f)
-        kit.rounded(c, qBtn, kit.tint, 6f, kit.border)
-        kit.centerText(c, "Reset Jatah", qBtn, 10.5f, kit.blue, true)
-        bounds.putVisible("devResetQuotas", qBtn, HEADER_H, navClear)
-        press(c, "devResetQuotas", qBtn, 6f)
-    }
     y += 64f
 
     // 3b. OTA App Update Row (Check + Publish from Developer Console)
@@ -521,24 +506,19 @@ private fun JajaninView.drawDevUsers(
                         bounds.putVisible("devStall:${u.stallId}:${!isOpen}", b3, HEADER_H, navClear)
                         press(c, "devStall:${u.stallId}:${!isOpen}", b3, 6f)
                     } else if (u.role == "buyer") {
-                        val b3Left = RectF(28f, btnY + 38f, 190f, btnY + 68f)
-                        val b3Right = RectF(198f, btnY + 38f, 362f, btnY + 68f)
+                        val b3 = RectF(28f, btnY + 38f, 362f, btnY + 68f)
                         val pending = devInvites.firstOrNull { it.targetUserId == u.id && it.status == "pending" }
                         if (pending != null) {
-                            kit.rounded(c, b3Left, kit.warnSoft, 6f)
-                            kit.centerText(c, "Batal Undang Seller", b3Left, 10f, kit.blue, true)
-                            bounds.putVisible("devInviteCancel:${pending.id}", b3Left, HEADER_H, navClear)
-                            press(c, "devInviteCancel:${pending.id}", b3Left, 6f)
+                            kit.rounded(c, b3, kit.warnSoft, 6f)
+                            kit.centerText(c, "Batal Undang Jadi Penjual", b3, 10.5f, kit.blue, true)
+                            bounds.putVisible("devInviteCancel:${pending.id}", b3, HEADER_H, navClear)
+                            press(c, "devInviteCancel:${pending.id}", b3, 6f)
                         } else {
-                            kit.rounded(c, b3Left, kit.tint, 6f)
-                            kit.centerText(c, "Undang Jadi Penjual", b3Left, 10f, kit.blue, true)
-                            bounds.putVisible("devInvite:${u.id}", b3Left, HEADER_H, navClear)
-                            press(c, "devInvite:${u.id}", b3Left, 6f)
+                            kit.rounded(c, b3, kit.tint, 6f)
+                            kit.centerText(c, "Undang Jadi Penjual", b3, 10.5f, kit.blue, true)
+                            bounds.putVisible("devInvite:${u.id}", b3, HEADER_H, navClear)
+                            press(c, "devInvite:${u.id}", b3, 6f)
                         }
-                        kit.rounded(c, b3Right, kit.successSoft, 6f)
-                        kit.centerText(c, "Reset Jatah (0/2)", b3Right, 10f, kit.success, true)
-                        bounds.putVisible("devResetUserQuota:${u.id}", b3Right, HEADER_H, navClear)
-                        press(c, "devResetUserQuota:${u.id}", b3Right, 6f)
                     }
                 } else {
                     kit.line(c, 20f, y + rowH, 370f, y + rowH, kit.divider)

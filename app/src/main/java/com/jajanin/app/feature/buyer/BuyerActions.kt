@@ -366,7 +366,49 @@ internal fun MainActivity.addProductToOrder() {
     addToCart(product.id, ui.quantity)
 }
 
-/** Tambah ke keranjang; aturan: satu pesanan = tepat satu menu, jumlah 1. */
+internal fun MainActivity.cartProducts(): List<ProductRow> =
+    ui.cart.keys.mapNotNull { pid ->
+        ui.products.firstOrNull { it.id == pid } ?: ui.sellerProducts.firstOrNull { it.id == pid }
+    }
+
+internal fun MainActivity.allowedCartOrderModes(): Set<String> {
+    val items = cartProducts()
+    if (items.isEmpty()) return setOf("same_day", "pre_order")
+    val out = LinkedHashSet<String>()
+    if (items.all { it.allowsSameDay }) out.add("same_day")
+    if (items.all { it.allowsNextDay }) out.add("pre_order")
+    return out
+}
+
+internal fun MainActivity.allowedCartPickupSessions(): List<String> {
+    val items = cartProducts()
+    if (items.isEmpty()) return com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
+    var common: Set<String>? = null
+    for (p in items) {
+        val set = p.parsedPickupSessions.toSet()
+        common = if (common == null) set else common.intersect(set)
+    }
+    val ordered = com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS.filter { common?.contains(it) == true }
+    if (ordered.isNotEmpty()) return ordered
+    return common?.toList()?.takeIf { it.isNotEmpty() } ?: com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
+}
+
+private fun MainActivity.syncCheckoutScheduleDefaults() {
+    val modes = allowedCartOrderModes()
+    if (ui.checkoutOrderMode !in modes) {
+        ui.checkoutOrderMode = when {
+            "same_day" in modes -> "same_day"
+            "pre_order" in modes -> "pre_order"
+            else -> "same_day"
+        }
+    }
+    val sessions = allowedCartPickupSessions()
+    if (ui.checkoutPickupSession !in sessions) {
+        ui.checkoutPickupSession = sessions.first()
+    }
+}
+
+/** Tambah ke keranjang; v2.0 mendukung multi-menu & qty > 1 dari 1 warung dengan jadwal kompatibel. */
 internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
     if (ui.myAccountStatus == "suspended") {
         Toast.makeText(this, "Akun ditangguhkan. Kamu tidak bisa memesan.", Toast.LENGTH_LONG).show()
@@ -374,13 +416,56 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
     }
     val product = ui.products.firstOrNull { it.id == productId }
         ?: ui.sellerProducts.firstOrNull { it.id == productId } ?: return
-    if (ui.cart.isNotEmpty()) {
-        Toast.makeText(this, "Satu pesanan hanya untuk satu menu (1x). Selesaikan pesanan ini dulu.", Toast.LENGTH_LONG).show()
+    if (!ui.myStallId.isNullOrBlank() && product.stallId == ui.myStallId) {
+        Toast.makeText(this, "Kamu tidak bisa memesan dari warungmu sendiri.", Toast.LENGTH_SHORT).show()
         return
     }
+    if (product.stock != null && product.stock <= 0) {
+        Toast.makeText(this, "Stok ${product.name} sedang habis.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val addAmount = qty.coerceAtLeast(1)
+    if (ui.cart.isNotEmpty() && !ui.cartStallId.isNullOrBlank() && ui.cartStallId != product.stallId) {
+        showThemedInfo(
+            title = "Ganti warung di keranjang?",
+            message = "Keranjangmu sedang berisi menu dari warung lain. Kosongkan keranjang dan ganti ke ${product.name}?",
+            posLabel = "Ganti Warung",
+            onPos = {
+                ui.cart.clear()
+                ui.cartStallId = null
+                ui.cartStallQris = null
+                addToCart(productId, addAmount)
+            },
+            negLabel = "Batal",
+            destructivePos = true,
+        )
+        return
+    }
+    // Cek kecocokan jadwal (jangan campur menu khusus Hari Ini dengan menu khusus PO Besok).
+    val existing = cartProducts()
+    if (existing.isNotEmpty()) {
+        val candidateAll = existing + product
+        val canSame = candidateAll.all { it.allowsSameDay }
+        val canNext = candidateAll.all { it.allowsNextDay }
+        if (!canSame && !canNext) {
+            Toast.makeText(
+                this,
+                "Jadwal ${product.name} (${product.scheduleBadgeLabel}) tidak cocok dengan menu di keranjang.",
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+    }
+    val currentQty = ui.cart[productId] ?: 0
+    val maxAllowed = product.stock?.coerceAtMost(99) ?: 99
+    val nextQty = (currentQty + addAmount).coerceAtMost(maxAllowed)
+    if (currentQty + addAmount > maxAllowed) {
+        Toast.makeText(this, "Maksimal $maxAllowed porsi untuk ${product.name}.", Toast.LENGTH_SHORT).show()
+    }
     ui.cartStallId = product.stallId
-    ui.cart[productId] = 1
-    Toast.makeText(this, "${product.name} ditambahkan ke keranjang", Toast.LENGTH_SHORT).show()
+    ui.cart[productId] = nextQty
+    syncCheckoutScheduleDefaults()
+    Toast.makeText(this, "${product.name} (${nextQty}x) di keranjang", Toast.LENGTH_SHORT).show()
     ui.invalidate()
 }
 
@@ -390,12 +475,35 @@ internal fun MainActivity.setCartQty(productId: String, qty: Int) {
         if (ui.cart.isEmpty()) {
             ui.cartStallId = null
             ui.cartStallQris = null
+        } else {
+            syncCheckoutScheduleDefaults()
         }
     } else {
-        // Jumlah dikunci 1 (aturan satu menu per pesanan).
-        if (qty > 1) Toast.makeText(this, "Satu pesanan hanya untuk satu menu (1x).", Toast.LENGTH_SHORT).show()
-        ui.cart[productId] = 1
+        val product = ui.products.firstOrNull { it.id == productId }
+            ?: ui.sellerProducts.firstOrNull { it.id == productId }
+        val maxAllowed = product?.stock?.takeIf { it > 0 }?.coerceAtMost(99) ?: 99
+        val clamped = qty.coerceAtMost(maxAllowed)
+        if (qty > maxAllowed) {
+            Toast.makeText(this, "Stok maksimal $maxAllowed porsi.", Toast.LENGTH_SHORT).show()
+        }
+        ui.cart[productId] = clamped
     }
+    ui.invalidate()
+}
+
+internal fun MainActivity.setCheckoutOrderMode(mode: String) {
+    val target = if (mode == "pre_order") "pre_order" else "same_day"
+    val allowed = allowedCartOrderModes()
+    if (target !in allowed) {
+        val msg = if (target == "same_day") {
+            "Ada menu di keranjang yang hanya tersedia untuk PO Besok."
+        } else {
+            "Ada menu di keranjang yang hanya tersedia untuk Hari Ini."
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        return
+    }
+    ui.checkoutOrderMode = target
     ui.invalidate()
 }
 
@@ -445,9 +553,9 @@ internal fun MainActivity.openCheckout() {
     ui.placingOrder = false
     ui.checkoutPayment = "cash"
     ui.cartStallQris = null
+    syncCheckoutScheduleDefaults()
     ui.go(Screen.CHECKOUT)
     refreshOrderingStatus()
-    refreshStallAvailability()
     authScope.launch {
         val stallId = ui.cartStallId
         if (stallId.isNullOrBlank()) {
@@ -603,7 +711,17 @@ internal fun MainActivity.placeCartOrder() {
             }
             val method = if (requestedMethod == "qris") "qris" else "cash"
             ui.checkoutPayment = method
-            val placed = withTimeout(12_000L) { OrderRepository.placeOrder(lines, method) }
+            syncCheckoutScheduleDefaults()
+            val chosenMode = ui.checkoutOrderMode
+            val chosenSession = ui.checkoutPickupSession
+            val placed = withTimeout(12_000L) {
+                OrderRepository.placeOrder(
+                    lines = lines,
+                    paymentMethod = method,
+                    orderMode = chosenMode,
+                    pickupSession = chosenSession,
+                )
+            }
             ui.cart.clear()
             ui.cartStallId = null
             ui.cartStallQris = null
@@ -621,7 +739,12 @@ internal fun MainActivity.placeCartOrder() {
                 refreshMyOrders()
                 ui.lastOrderStatus = placed.status
                 ui.go(Screen.READY)
-                Toast.makeText(self, "Pesanan dibuat. Bayar tunai saat ambil.", Toast.LENGTH_LONG).show()
+                val schedMsg = if (placed.orderMode == "pre_order") {
+                    "Pre-Order besok (${placed.pickupSession}) dibuat. Bayar tunai saat ambil."
+                } else {
+                    "Pesanan hari ini (${placed.pickupSession}) dibuat. Bayar tunai saat ambil."
+                }
+                Toast.makeText(self, schedMsg, Toast.LENGTH_LONG).show()
             }
         } catch (error: CancellationException) {
             throw error
@@ -631,9 +754,7 @@ internal fun MainActivity.placeCartOrder() {
         } finally {
             ui.placingOrder = false
             ui.invalidate()
-            // Perbarui sisa jatah harian ("Pesanan hari ini: X/2") dari server.
             refreshOrderingStatus()
-            refreshStallAvailability()
         }
     }
 }

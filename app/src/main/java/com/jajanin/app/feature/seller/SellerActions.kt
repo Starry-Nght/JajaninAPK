@@ -139,6 +139,8 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productIngredients = existing.cleanIngredients
         ui.productRoom = existing.pickupRoom.ifBlank { fallbackRoom }
         ui.productAvailable = existing.available
+        ui.productOrderSchedule = existing.orderSchedule
+        ui.productPickupSessions = LinkedHashSet(existing.parsedPickupSessions)
     } else {
         ui.productEditId = null
         ui.productName = ""
@@ -150,6 +152,8 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productIngredients = ""
         ui.productRoom = fallbackRoom
         ui.productAvailable = true
+        ui.productOrderSchedule = "both"
+        ui.productPickupSessions = linkedSetOf("Istirahat 1", "Istirahat 2", "Pulang")
     }
     ui.productSaving = false
     ui.productError = ""
@@ -409,8 +413,16 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
             val imageUrl = ui.productImageUrl.takeIf { it.startsWith("https://") }
             val packedIngredients = com.jajanin.app.data.model.packRoomAndIngredients(ui.productRoom, ui.productIngredients)
             val draft = ProductDraft(
-                ui.productName, ui.productDescription, ui.productCategory,
-                price, imageUrl, stock, packedIngredients, ui.productAvailable,
+                name = ui.productName,
+                description = ui.productDescription,
+                category = ui.productCategory,
+                priceIdr = price,
+                imageUrl = imageUrl,
+                stock = stock,
+                ingredients = packedIngredients,
+                available = ui.productAvailable,
+                orderSchedule = ui.productOrderSchedule,
+                pickupSessions = ui.productPickupSessions.joinToString(",").ifBlank { "Istirahat 1,Istirahat 2,Pulang" },
             )
             val editingId = ui.productEditId
             if (editingId == null) {
@@ -789,31 +801,27 @@ internal fun MainActivity.backToSellerHome() {
             refreshProducts()
             return@launch
         }
-        when (SupabaseRepository.currentRole()) {
-            "developer" -> {
-                if (!developerUnlocked) {
-                    requirePrivilegedAccess("developer") { backToSellerHome() }
-                    return@launch
-                }
-                ui.myRole = "developer"
-                ui.showDev()
-                refreshDeveloper()
+        val prof = SupabaseRepository.fetchMyAccountProfile()
+        val role = prof?.role ?: SupabaseRepository.currentRole()
+        if (role == "developer") {
+            if (!developerUnlocked) {
+                requirePrivilegedAccess("developer") { backToSellerHome() }
                 return@launch
             }
-            "seller" -> { /* lanjut ke dashboard penjual di bawah */ }
-            else -> {
-                ui.myRole = "buyer"
-                ui.showHome()
-                refreshProducts()
-                return@launch
-            }
-        }
-        ui.myRole = "seller"
-        if (!isSellerAdmitted()) {
-            requirePrivilegedAccess("seller") { backToSellerHome() }
-            ui.myRole = "buyer"
+            ui.myRole = "developer"
+            ui.showDev()
+            refreshDeveloper()
             return@launch
         }
+        val isVerifiedSeller = prof?.isSellerVerified == true || role == "seller" || ui.myIsSellerVerified
+        ui.myIsSellerVerified = isVerifiedSeller
+        if (!isVerifiedSeller) {
+            ui.myRole = "buyer"
+            ui.showHome()
+            refreshProducts()
+            return@launch
+        }
+        ui.myRole = "seller"
         ensureSellerStallName {
             ui.showAdmin()
             refreshAdminOrders()
@@ -1274,29 +1282,24 @@ internal fun MainActivity.showStallNameEdit() {
 }
 
 internal fun MainActivity.enterSellerDashboard() {
-    val self = this
-    // Dashboard penjual wajib login dulu DAN ber-role seller di database:
-    // tanpa role seller tidak ada baris yang terbaca RLS, dashboard akan kosong.
-    // Kode akses hanya untuk seller non-undangan; undangan developer bebas kode.
+    // Dual-mode v2.0: tanpa kode akses developer; akun terverifikasi OTP Email langsung masuk Mode Penjual.
     if (!SupabaseRepository.hasSession()) {
-        Toast.makeText(this, "Masuk dulu untuk membuka dashboard penjual.", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Masuk dulu untuk membuka Mode Penjual.", Toast.LENGTH_LONG).show()
         showAuthForm(false)
         return
     }
-    ui.myRole = "seller"
     authScope.launch {
-        val role = SupabaseRepository.currentRole()
-        if (role != "seller") {
-            Toast.makeText(self, "Akun ini terdaftar sebagai pembeli, bukan penjual.", Toast.LENGTH_LONG).show()
+        val prof = SupabaseRepository.fetchMyAccountProfile()
+        val isVerified = prof?.isSellerVerified == true || prof?.role == "seller" || ui.myIsSellerVerified
+        ui.myIsSellerVerified = isVerified
+        prof?.stallId?.takeIf { it.isNotBlank() }?.let { ui.myStallId = it }
+        prof?.stallName?.takeIf { it.isNotBlank() }?.let { ui.myStallName = it }
+        if (!isVerified) {
             ui.myRole = "buyer"
-            ui.showHome()
-            refreshProducts()
+            showSellerOtpActivationDialog()
             return@launch
         }
-        if (!isSellerAdmitted()) {
-            requirePrivilegedAccess("seller") { enterSellerDashboard() }
-            return@launch
-        }
+        ui.myRole = "seller"
         ui.adminOrders = emptyList()
         ui.adminLoading = false
         ui.adminError = null
