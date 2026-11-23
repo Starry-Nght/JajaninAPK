@@ -421,6 +421,13 @@ class MainActivity : Activity() {
     internal suspend fun routeSignedInUser() {
         val prof = SupabaseRepository.fetchMyAccountProfile()
         val role = prof?.role?.takeIf { it.isNotBlank() } ?: SupabaseRepository.currentRole()
+        if (prof == null && role == null) {
+            // Sesi lokal menunjuk ke akun yang sudah dihapus di server -> bersihkan dan kembali ke Login NIS.
+            runCatching { SupabaseRepository.logout() }
+            ui.myRole = null
+            ui.showLogin()
+            return
+        }
         refreshMyStatus()
         ui.myIsSellerVerified = prof?.isSellerVerified == true || role == "seller"
         ui.mySellerVerifiedEmail = prof?.sellerVerifiedEmail.orEmpty()
@@ -1144,6 +1151,9 @@ class MainActivity : Activity() {
         private val subtitle = dialog.findViewById<TextView>(R.id.authSubtitle)
         private val name = dialog.findViewById<EditText>(R.id.authName)
         private val nis = dialog.findViewById<EditText>(R.id.authNis)
+        private val autoName = dialog.findViewById<EditText>(R.id.authAutoName)
+        private val autoClass = dialog.findViewById<EditText>(R.id.authAutoClass)
+        private val nisStatus = dialog.findViewById<TextView>(R.id.authNisStatus)
         private val phone = dialog.findViewById<EditText>(R.id.authPhone)
         private val email = dialog.findViewById<EditText>(R.id.authEmail)
         private val password = dialog.findViewById<EditText>(R.id.authPassword)
@@ -1154,35 +1164,6 @@ class MainActivity : Activity() {
         private val showPass = dialog.findViewById<TextView>(R.id.authShowPass)
         private val forgot = dialog.findViewById<TextView>(R.id.authForgot)
 
-        // Kartu Auto-Fill identitas siswa (Nama Lengkap & Kelas otomatis terisi dari database NIS)
-        private val autoFillCard = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            val d = resources.displayMetrics.density
-            setPadding((14 * d).toInt(), (11 * d).toInt(), (14 * d).toInt(), (11 * d).toInt())
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 12f * d
-                setColor(Color.rgb(232, 242, 255))
-                setStroke((1 * d).toInt(), Color.rgb(0, 99, 214))
-            }
-        }
-        private val autoFillName = TextView(this@MainActivity).apply {
-            textSize = 14.5f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.rgb(27, 35, 53))
-        }
-        private val autoFillClass = TextView(this@MainActivity).apply {
-            textSize = 12f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.rgb(0, 99, 214))
-        }
-        private val autoFillHint = TextView(this@MainActivity).apply {
-            textSize = 11.5f
-            setTextColor(Color.rgb(82, 96, 118))
-            setPadding(0, (3 * resources.displayMetrics.density).toInt(), 0, 0)
-        }
-
         private var useEmailMode = false
         private var lookupResult: SupabaseRepository.StudentNisLookupResult? = null
         private var lookupJob: Job? = null
@@ -1192,27 +1173,33 @@ class MainActivity : Activity() {
         val isShowing: Boolean
             get() = dialog.isShowing
 
-        init {
-            autoFillCard.addView(autoFillName)
-            autoFillCard.addView(autoFillClass)
-            autoFillCard.addView(autoFillHint)
-            val parent = nis.parent as? ViewGroup
-            val nisIdx = parent?.indexOfChild(nis) ?: -1
-            if (parent != null && nisIdx >= 0) {
-                val d = resources.displayMetrics.density
-                val lp = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = (10 * d).toInt() }
-                parent.addView(autoFillCard, nisIdx + 1, lp)
+        private fun lockedFieldBg(fill: Int, stroke: Int): android.graphics.drawable.GradientDrawable {
+            val d = resources.displayMetrics.density
+            return android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 12f * d
+                setColor(fill)
+                setStroke((1.2f * d).toInt(), stroke)
             }
+        }
 
+        private fun resetAutoFillFields(statusText: String = "Ketik NIS untuk mengisi Nama & Kelas secara otomatis.") {
+            autoName.setText("")
+            autoClass.setText("")
+            autoName.background = lockedFieldBg(Color.rgb(245, 247, 251), Color.rgb(214, 222, 235))
+            autoClass.background = lockedFieldBg(Color.rgb(245, 247, 251), Color.rgb(214, 222, 235))
+            nisStatus.setTextColor(Color.rgb(112, 120, 137))
+            nisStatus.text = statusText
+        }
+
+        init {
             // Sembunyikan input nama manual karena Nama & Kelas di-autofill otomatis dari NIS
             name.visibility = View.GONE
-            nis.hint = "Masukkan NIS (Nomor Induk Siswa)"
+            nis.hint = "Masukkan NIS (contoh: 11111)"
             nis.imeOptions = EditorInfo.IME_ACTION_NEXT
             email.imeOptions = EditorInfo.IME_ACTION_NEXT
             password.imeOptions = EditorInfo.IME_ACTION_GO
+            resetAutoFillFields()
 
             nis.addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -1256,8 +1243,8 @@ class MainActivity : Activity() {
         }
 
         fun show(signup: Boolean, focusPasswordField: Boolean) {
-            // Default selalu NIS Auto-Fill (baik dari tombol Masuk maupun Daftar)
-            useEmailMode = false
+            // signup=true hanya saat user klik tautan "Developer / Akun Lama? Masuk pakai Email"
+            useEmailMode = signup
             applyMode()
             dialog.show()
             dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -1265,11 +1252,11 @@ class MainActivity : Activity() {
             dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             focus(focusPasswordField)
             val existingNis = nis.text.toString().filter(Char::isDigit)
-            if (existingNis.length >= 3) scheduleNisLookup(existingNis)
+            if (!useEmailMode && existingNis.length >= 3) scheduleNisLookup(existingNis)
         }
 
         fun setMode(signup: Boolean) {
-            useEmailMode = false
+            useEmailMode = signup
             applyMode()
             error.visibility = View.GONE
         }
@@ -1290,24 +1277,20 @@ class MainActivity : Activity() {
             val digits = raw.filter(Char::isDigit)
             if (digits.length < 3) {
                 lookupResult = null
-                autoFillCard.visibility = View.GONE
+                resetAutoFillFields()
                 phone.visibility = View.GONE
                 updateNisActionLabel()
                 return
             }
-            autoFillCard.visibility = View.VISIBLE
-            autoFillName.text = "Mencari NIS $digits..."
-            autoFillClass.visibility = View.GONE
-            autoFillHint.text = "Memeriksa database siswa SMKN 8 Semarang"
-            autoFillCard.background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 12f * resources.displayMetrics.density
-                setColor(Color.rgb(241, 245, 252))
-                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(210, 220, 236))
-            }
+            autoName.setText("Mencari NIS $digits...")
+            autoClass.setText("Memeriksa database sekolah...")
+            autoName.background = lockedFieldBg(Color.rgb(241, 245, 252), Color.rgb(186, 206, 236))
+            autoClass.background = lockedFieldBg(Color.rgb(241, 245, 252), Color.rgb(186, 206, 236))
+            nisStatus.setTextColor(Color.rgb(0, 99, 214))
+            nisStatus.text = "Mencocokkan NIS $digits..."
 
             lookupJob = authScope.launch {
-                kotlinx.coroutines.delay(280L)
+                kotlinx.coroutines.delay(200L)
                 try {
                     val res = SupabaseRepository.lookupStudentNis(digits)
                     if (nis.text.toString().filter(Char::isDigit) != digits) return@launch
@@ -1316,48 +1299,36 @@ class MainActivity : Activity() {
                 } catch (t: Throwable) {
                     if (nis.text.toString().filter(Char::isDigit) != digits) return@launch
                     lookupResult = null
-                    autoFillName.text = "Gagal memeriksa NIS"
-                    autoFillClass.visibility = View.GONE
-                    autoFillHint.text = SupabaseRepository.errorMessage(t)
+                    resetAutoFillFields("Gagal memeriksa NIS: ${SupabaseRepository.errorMessage(t)}")
+                    nisStatus.setTextColor(Color.rgb(206, 60, 60))
                     updateNisActionLabel()
                 }
             }
         }
 
         private fun renderAutoFillResult(res: SupabaseRepository.StudentNisLookupResult) {
-            val d = resources.displayMetrics.density
-            autoFillCard.visibility = View.VISIBLE
             if (res.found) {
-                autoFillCard.background = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                    cornerRadius = 12f * d
-                    setColor(Color.rgb(232, 242, 255))
-                    setStroke((1 * d).toInt(), Color.rgb(0, 99, 214))
-                }
-                autoFillName.setTextColor(Color.rgb(27, 35, 53))
-                autoFillName.text = "✓  ${res.fullName}"
-                autoFillClass.visibility = View.VISIBLE
-                autoFillClass.text = "Kelas ${res.className}  ·  NIS ${res.nis}"
+                autoName.setText(res.fullName)
+                autoClass.setText(res.className)
+                autoName.background = lockedFieldBg(Color.rgb(232, 242, 255), Color.rgb(0, 99, 214))
+                autoClass.background = lockedFieldBg(Color.rgb(232, 242, 255), Color.rgb(0, 99, 214))
+                nisStatus.setTextColor(Color.rgb(22, 130, 74))
                 if (res.registered) {
-                    autoFillHint.text = "Akun siswa sudah aktif — masukkan kata sandi untuk masuk."
+                    nisStatus.text = "✓ Siswa ditemukan (akun aktif) — masukkan kata sandi."
                     phone.visibility = View.GONE
                     password.hint = "Kata sandi akunmu"
                 } else {
-                    autoFillHint.text = "Siswa terverifikasi — buat kata sandi baru untuk aktivasi akun."
+                    nisStatus.text = "✓ Siswa ditemukan — buat kata sandi baru untuk aktivasi akun."
                     phone.visibility = View.VISIBLE
                     password.hint = "Buat kata sandi baru (min. 6 karakter)"
                 }
             } else {
-                autoFillCard.background = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                    cornerRadius = 12f * d
-                    setColor(Color.rgb(254, 242, 242))
-                    setStroke((1 * d).toInt(), Color.rgb(220, 38, 38))
-                }
-                autoFillName.setTextColor(Color.rgb(206, 60, 60))
-                autoFillName.text = "NIS tidak ditemukan di database siswa"
-                autoFillClass.visibility = View.GONE
-                autoFillHint.text = "Pastikan NIS benar atau gunakan Masuk dengan Email untuk akun lama/developer."
+                autoName.setText("")
+                autoClass.setText("")
+                autoName.background = lockedFieldBg(Color.rgb(254, 242, 242), Color.rgb(220, 38, 38))
+                autoClass.background = lockedFieldBg(Color.rgb(254, 242, 242), Color.rgb(220, 38, 38))
+                nisStatus.setTextColor(Color.rgb(206, 60, 60))
+                nisStatus.text = "NIS tidak ditemukan di database siswa."
                 phone.visibility = View.GONE
             }
             updateNisActionLabel()
@@ -1384,7 +1355,9 @@ class MainActivity : Activity() {
                 title.text = "Masuk dengan Email"
                 subtitle.text = "Khusus akun Developer atau akun lama berbasis email."
                 nis.visibility = View.GONE
-                autoFillCard.visibility = View.GONE
+                autoName.visibility = View.GONE
+                autoClass.visibility = View.GONE
+                nisStatus.visibility = View.GONE
                 phone.visibility = View.GONE
                 email.visibility = View.VISIBLE
                 forgot.visibility = View.VISIBLE
@@ -1393,16 +1366,19 @@ class MainActivity : Activity() {
                 toggle.text = "Kembali ke Masuk / Daftar dengan NIS"
             } else {
                 title.text = "Masuk dengan NIS"
-                subtitle.text = "Ketik NIS — Nama & Kelas akan terisi otomatis dari database siswa."
+                subtitle.text = "Ketik NIS — Nama Lengkap & Kelas terisi otomatis."
                 nis.visibility = View.VISIBLE
-                (nis.layoutParams as ViewGroup.MarginLayoutParams).topMargin = (20 * d).toInt()
+                autoName.visibility = View.VISIBLE
+                autoClass.visibility = View.VISIBLE
+                nisStatus.visibility = View.VISIBLE
+                (nis.layoutParams as ViewGroup.MarginLayoutParams).topMargin = (16 * d).toInt()
                 email.visibility = View.GONE
                 forgot.visibility = View.GONE
                 val res = lookupResult
                 if (res != null) {
                     renderAutoFillResult(res)
                 } else {
-                    autoFillCard.visibility = View.GONE
+                    resetAutoFillFields()
                     phone.visibility = View.GONE
                     password.hint = "Kata sandi"
                 }

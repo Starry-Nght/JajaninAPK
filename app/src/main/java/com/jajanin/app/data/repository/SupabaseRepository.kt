@@ -193,14 +193,35 @@ object SupabaseRepository {
     private val edgeJson = Json { ignoreUnknownKeys = true }
 
     /** Lookup 1 NIS eksak di tabel master `public.students` untuk auto-fill Nama & Kelas saat login/daftar. */
-    internal suspend fun lookupStudentNis(nis: String): StudentNisLookupResult {
+    internal suspend fun lookupStudentNis(nis: String): StudentNisLookupResult = withContext(Dispatchers.IO) {
         check(configured) { NOT_CONFIGURED }
         val clean = nis.filter(Char::isDigit)
-        if (clean.length < 3) return StudentNisLookupResult(found = false)
-        return client.postgrest.rpc(
-            "lookup_student_nis",
-            buildJsonObject { put("p_nis", clean) },
-        ).decodeAs<StudentNisLookupResult>()
+        if (clean.length < 3) return@withContext StudentNisLookupResult(found = false)
+        // Panggil langsung dengan anon publishable key agar kebal dari sesi JWT lama/terhapus.
+        val endpoint = "$projectUrl/rest/v1/rpc/lookup_student_nis"
+        val payload = buildJsonObject { put("p_nis", clean) }.toString()
+        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            setRequestProperty("apikey", publishableKey)
+            setRequestProperty("Authorization", "Bearer $publishableKey")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+        }
+        try {
+            conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.readText().orEmpty()
+            if (code !in 200..299) {
+                throw IllegalStateException("Gagal cek NIS ($code): ${body.take(120)}")
+            }
+            edgeJson.decodeFromString<StudentNisLookupResult>(body)
+        } finally {
+            conn.disconnect()
+        }
     }
 
     /** Membaca profil & status verifikasi dual-mode (Buyer <-> Seller) pemilik sesi. */

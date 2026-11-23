@@ -173,7 +173,6 @@ internal fun MainActivity.checkForOtaUpdate(silent: Boolean) {
             return@launch
         }
         otaPromptedVersion = release.versionCode
-        prefs.edit().putInt(PREF_LAST_PROMPTED_CODE, release.versionCode).apply()
         showOtaAvailableDialog(release)
     }
 }
@@ -239,7 +238,13 @@ internal fun MainActivity.showOtaAvailableDialog(release: OtaRelease) {
     }
     if (!release.mandatory) {
         buttons.addView(
-            otaTextButton("Nanti", mutedColor()) { dialog.dismiss() },
+            otaTextButton("Nanti", mutedColor()) {
+                getSharedPreferences(PREFS_OTA, android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putInt(PREF_LAST_PROMPTED_CODE, release.versionCode)
+                    .apply()
+                dialog.dismiss()
+            },
         )
     }
     buttons.addView(

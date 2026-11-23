@@ -895,7 +895,7 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     hit == "role" -> activity()?.submitRoleChoice(selectedRole)
-                    hit == "emailField" -> activity()?.showAuthForm(false)
+                    hit == "emailField" || hit == "nisAutoNameField" || hit == "nisAutoClassField" -> activity()?.showAuthForm(false)
                     hit == "passwordField" -> activity()?.showAuthForm(true)
                     hit == "emailLogin" -> activity()?.showAuthForm(false)
                     hit == "forgotPassword" -> activity()?.showForgotPasswordDialog()
