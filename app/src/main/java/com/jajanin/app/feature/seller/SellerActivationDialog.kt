@@ -153,12 +153,6 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
         InputType.TYPE_CLASS_PHONE,
         18,
     )
-    val roomInput = makeField(
-        "Ruangan Pengambilan (cth. Lab 1 / XI PPLG 3)",
-        ui.myStallRoom,
-        InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS,
-        45,
-    )
 
     val requestOtpBtn = TextView(this).apply {
         text = "Kirim Kode OTP ke Email"
@@ -243,7 +237,6 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
     root.addView(emailInput)
     root.addView(stallInput)
     root.addView(phoneInput)
-    root.addView(roomInput)
     root.addView(requestOtpBtn)
     root.addView(otpContainer)
     root.addView(statusTv)
@@ -312,7 +305,6 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
         val codeVal = otpInput.text.toString().filter(Char::isDigit).trim()
         val stallVal = stallInput.text.toString().trim()
         val phoneVal = phoneInput.text.toString().trim()
-        val roomVal = roomInput.text.toString().trim()
         if (!android.util.Patterns.EMAIL_ADDRESS.matcher(emailVal).matches() || emailVal.endsWith("@siswa.jajanin.app")) {
             showStatus("Masukkan email aktif valid terlebih dahulu.", true)
             return
@@ -339,12 +331,11 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
                     code = codeVal,
                     stallName = stallVal,
                     phone = phoneVal,
-                    room = roomVal,
+                    room = "",
                 )
                 ui.myIsSellerVerified = true
                 ui.mySellerVerifiedEmail = emailVal
                 ui.myStallName = stallVal
-                ui.myStallRoom = roomVal
                 PhoneRepository.normalizePhone(phoneVal)?.let { ui.myPhone = it }
                 dialog.dismiss()
                 Toast.makeText(self, "Mode Penjual aktif! Selamat berjualan.", Toast.LENGTH_LONG).show()
