@@ -80,7 +80,7 @@ internal object NotificationHelper {
     ) {
         ensureChannel(context)
         (context as? MainActivity)?.runOnUiThread {
-            android.widget.Toast.makeText(context, "🔔 $title\n$body", android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(context, "$title\n$body", android.widget.Toast.LENGTH_LONG).show()
         }
         val tap = Intent(context, MainActivity::class.java).apply {
             putExtra(EXTRA_ORDER_ID, orderId)

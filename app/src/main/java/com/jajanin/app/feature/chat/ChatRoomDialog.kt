@@ -620,7 +620,7 @@ internal class ChatRoomDialog(
 
     private fun updateMuteButtonUI() {
         val muted = activity.isConversationMuted(conversationId)
-        muteBtnView.text = if (muted) "🔕 Bisu" else "🔔 Aktif"
+        muteBtnView.text = if (muted) "Dibisukan" else "Notif Aktif"
         muteBtnView.setTextColor(if (muted) kit.muted else kit.blue)
         muteBtnView.background = roundedDrawable(
             if (muted) kit.bg else kit.tint,

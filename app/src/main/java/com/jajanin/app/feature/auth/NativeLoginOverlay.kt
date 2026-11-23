@@ -1,7 +1,10 @@
 package com.jajanin.app.feature.auth
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -76,7 +79,7 @@ internal class NativeLoginOverlay(
     private val identityNameTv: TextView
     private val identityClassTv: TextView
     private val identityStatusPill: TextView
-    private val identityLockTv: TextView
+    private val identityLockIcon: LockVectorView
 
     // Phone field (for first-time NIS activation)
     private val phoneBox: LinearLayout
@@ -91,7 +94,7 @@ internal class NativeLoginOverlay(
 
     // Shared Password + Terms + Error + CTA
     private val passwordBox: LinearLayout
-    private val passwordIcon: TextView
+    private val passwordIcon: LockVectorView
     private val passwordInput: EditText
     private val showPassBtn: TextView
     private val forgotBtn: TextView
@@ -397,14 +400,14 @@ internal class NativeLoginOverlay(
         idCenter.addView(identityNameTv)
         idCenter.addView(idSubRow)
 
-        identityLockTv = TextView(activity).apply {
-            text = "🔒"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setPadding(dp(8), 0, 0, 0)
+        identityLockIcon = LockVectorView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                leftMargin = dp(8)
+            }
         }
         identityCard.addView(identityNisPill)
         identityCard.addView(idCenter)
-        identityCard.addView(identityLockTv)
+        identityCard.addView(identityLockIcon)
         nisSection.addView(identityCard)
 
         // 3c. WhatsApp Phone Field (for unregistered student activation)
@@ -497,10 +500,11 @@ internal class NativeLoginOverlay(
                 dp(54),
             ).apply { topMargin = dp(12) }
         }
-        passwordIcon = TextView(activity).apply {
-            text = "🔒"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(dp(4), 0, dp(8), 0)
+        passwordIcon = LockVectorView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply {
+                leftMargin = dp(4)
+                rightMargin = dp(10)
+            }
         }
         passwordInput = EditText(activity).apply {
             hint = "Kata Sandi"
@@ -714,6 +718,7 @@ internal class NativeLoginOverlay(
         emailInput.setHintTextColor(mutedColor)
 
         passwordBox.background = rounded(surfaceColor, 14f, borderColor)
+        passwordIcon.iconColor = mutedColor
         passwordInput.setTextColor(inkColor)
         passwordInput.setHintTextColor(mutedColor)
         showPassBtn.setTextColor(blueColor)
@@ -922,8 +927,7 @@ internal class NativeLoginOverlay(
         identityClassTv.setTextColor(mutedColor)
         identityClassTv.text = "Pastikan NIS terdaftar di database siswa"
         identityStatusPill.visibility = View.GONE
-        identityLockTv.text = "!"
-        identityLockTv.setTextColor(dangerFg)
+        identityLockIcon.iconColor = dangerFg
         phoneBox.visibility = View.GONE
     }
 
@@ -1059,8 +1063,7 @@ internal class NativeLoginOverlay(
                 phoneBox.visibility = View.VISIBLE
                 passwordInput.hint = "Buat kata sandi baru (min. 6 karakter)"
             }
-            identityLockTv.text = "🔒"
-            identityLockTv.setTextColor(amberFg)
+            identityLockIcon.iconColor = amberFg
         } else {
             identityCard.background = rounded(surfaceSoft, 14f, borderColor)
             identityNisPill.background = rounded(surfaceColor, 8f, borderColor)
@@ -1071,8 +1074,7 @@ internal class NativeLoginOverlay(
             identityClassTv.setTextColor(mutedColor)
             identityClassTv.text = "Kelas otomatis terisi saat NIS dipilih"
             identityStatusPill.visibility = View.GONE
-            identityLockTv.text = "🔒"
-            identityLockTv.setTextColor(mutedColor)
+            identityLockIcon.iconColor = mutedColor
             phoneBox.visibility = View.GONE
             passwordInput.hint = "Kata Sandi"
         }
@@ -1205,6 +1207,48 @@ internal class NativeLoginOverlay(
                 showError(SupabaseRepository.errorMessage(e))
                 setBusy(false)
             }
+        }
+    }
+
+    /** Ikon gembok vektor bersih (tanpa emoji sistem). */
+    private class LockVectorView(context: Context) : View(context) {
+        var iconColor: Int = Color.GRAY
+            set(value) {
+                field = value
+                paint.color = value
+                invalidate()
+            }
+
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+            color = iconColor
+        }
+        private val shackleRect = RectF()
+        private val bodyRect = RectF()
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            val s = minOf(w, h)
+            paint.strokeWidth = (s * 0.105f).coerceAtLeast(1.8f)
+
+            val shackleW = s * 0.40f
+            val shackleLeft = (w - shackleW) / 2f
+            val shackleTop = h * 0.14f
+            val shackleBottom = h * 0.56f
+            shackleRect.set(shackleLeft, shackleTop, shackleLeft + shackleW, shackleBottom)
+            canvas.drawArc(shackleRect, 180f, 180f, false, paint)
+
+            val bodyW = s * 0.64f
+            val bodyH = s * 0.42f
+            val bodyLeft = (w - bodyW) / 2f
+            val bodyTop = h * 0.44f
+            bodyRect.set(bodyLeft, bodyTop, bodyLeft + bodyW, bodyTop + bodyH)
+            canvas.drawRoundRect(bodyRect, s * 0.10f, s * 0.10f, paint)
         }
     }
 }
