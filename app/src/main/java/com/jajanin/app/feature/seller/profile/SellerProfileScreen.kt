@@ -70,11 +70,18 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
             kit.blue,
             true,
         )
-        val emailAndPhone = buildString {
-            append(SupabaseRepository.currentEmail() ?: "Belum masuk")
-            if (myPhone.isNotBlank()) append("  ·  ${displayLocalPhone(myPhone)}")
+        val visibleEmail = mySellerVerifiedEmail
+            .trim()
+            .takeIf { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) }
+            ?: SupabaseRepository.currentVisibleEmail()
+        val emailAndPhone = buildList {
+            if (visibleEmail != null) add(visibleEmail)
+            else if (!SupabaseRepository.hasSession()) add("Belum masuk")
+            if (myPhone.isNotBlank()) add(displayLocalPhone(myPhone))
+        }.joinToString("  ·  ")
+        if (emailAndPhone.isNotBlank()) {
+            kit.textEllipsized(c, emailAndPhone, 84f, y + 54f, 284f, 11f, kit.muted)
         }
-        kit.textEllipsized(c, emailAndPhone, 84f, y + 54f, 284f, 11f, kit.muted)
     }
     y += 72f
 

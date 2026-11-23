@@ -116,6 +116,11 @@ object SupabaseRepository {
 
     fun currentEmail(): String? = if (configured) client.auth.currentUserOrNull()?.email else null
 
+    /** Mengembalikan email asli user, atau null jika masih memakai email internal NIS (`@siswa.jajanin.app`). */
+    fun currentVisibleEmail(): String? = currentEmail()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) }
+
     fun currentUid(): String? = if (configured) client.auth.currentUserOrNull()?.id else null
 
     @Serializable

@@ -55,17 +55,28 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
         }
         val nisColor = if (myNis.isNotBlank() && myClass.isNotBlank()) kit.blue else kit.danger
         kit.textEllipsized(c, nisText, 84f, y + 36f, 280f, 12f, nisColor, true)
-        kit.textEllipsized(
-            c,
-            SupabaseRepository.currentEmail() ?: "Belum masuk",
-            84f,
-            y + 53f,
-            280f,
-            11.5f,
-            kit.muted
-        )
+        val visibleEmail = mySellerVerifiedEmail
+            .trim()
+            .takeIf { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) }
+            ?: SupabaseRepository.currentVisibleEmail()
+        if (visibleEmail != null) {
+            kit.textEllipsized(
+                c,
+                visibleEmail,
+                84f,
+                y + 53f,
+                280f,
+                11.5f,
+                kit.muted
+            )
+        } else if (!SupabaseRepository.hasSession()) {
+            kit.textEllipsized(c, "Belum masuk", 84f, y + 53f, 280f, 11.5f, kit.muted)
+        }
     }
-    y += 76f
+    val hasSubLine = !SupabaseRepository.hasSession() ||
+        mySellerVerifiedEmail.trim().let { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) } ||
+        SupabaseRepository.currentVisibleEmail() != null
+    y += if (hasSubLine) 76f else 66f
 
     // 1b. Dual-Mode Switcher / Aktivasi Penjual (1 Akun: Pembeli <-> Penjual via Email OTP)
     val sellerCard = RectF(20f, y, 370f, y + 60f)
