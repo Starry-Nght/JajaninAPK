@@ -160,49 +160,55 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
         45,
     )
 
-    val otpContainer = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        visibility = View.GONE
+    val requestOtpBtn = TextView(this).apply {
+        text = "Kirim Kode OTP ke Email"
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+        setTextColor(kit.blue)
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
         background = rounded(kit.tint, 12f, kit.blue)
         setPadding(dp(14), dp(12), dp(14), dp(12))
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply {
-            topMargin = dp(4)
+            topMargin = dp(2)
+            bottomMargin = dp(10)
+        }
+    }
+
+    val otpContainer = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(kit.tint, 12f, kit.border)
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
             bottomMargin = dp(10)
         }
     }
     val otpHintTv = TextView(this).apply {
-        text = "Masukkan kode OTP 6 digit dari email kamu:"
+        text = "Kode OTP 6 Digit (dari email):"
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         setTextColor(kit.blue)
         typeface = Typeface.DEFAULT_BOLD
         setPadding(0, 0, 0, dp(8))
     }
     val otpInput = makeField(
-        "Kode OTP 6 digit",
+        "• • • • • •",
         "",
         InputType.TYPE_CLASS_NUMBER,
         6,
     ).apply {
         gravity = Gravity.CENTER
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
         typeface = Typeface.DEFAULT_BOLD
-        letterSpacing = 0.25f
-        (layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(4)
-    }
-    val resendBtn = TextView(this).apply {
-        text = "Kirim ulang kode OTP"
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-        setTextColor(kit.blue)
-        typeface = Typeface.DEFAULT_BOLD
-        gravity = Gravity.END
-        setPadding(dp(4), dp(4), dp(4), dp(2))
+        letterSpacing = 0.35f
+        (layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(2)
     }
     otpContainer.addView(otpHintTv)
     otpContainer.addView(otpInput)
-    otpContainer.addView(resendBtn)
 
     val statusTv = TextView(this).apply {
         visibility = View.GONE
@@ -210,8 +216,8 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
         setPadding(dp(4), dp(2), dp(4), dp(10))
     }
 
-    val primaryBtn = TextView(this).apply {
-        text = "Kirim Kode OTP ke Email"
+    val verifyBtn = TextView(this).apply {
+        text = "Verifikasi OTP & Buka Warung"
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
         setTextColor(Color.WHITE)
         typeface = Typeface.DEFAULT_BOLD
@@ -238,9 +244,10 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
     root.addView(stallInput)
     root.addView(phoneInput)
     root.addView(roomInput)
+    root.addView(requestOtpBtn)
     root.addView(otpContainer)
     root.addView(statusTv)
-    root.addView(primaryBtn)
+    root.addView(verifyBtn)
     root.addView(cancelBtn)
     scroll.addView(root)
     dialog.setContentView(scroll)
@@ -251,13 +258,18 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
         statusTv.setTextColor(if (isError) kit.danger else kit.success)
     }
 
-    fun updateBusy(loading: Boolean, label: String? = null) {
+    fun updateBusy(loading: Boolean, actionLabel: String? = null) {
         busy = loading
-        primaryBtn.isEnabled = !loading
-        resendBtn.isEnabled = !loading
-        emailInput.isEnabled = !loading && !otpRequested
-        primaryBtn.text = label ?: if (otpRequested) "Verifikasi & Buka Warung" else "Kirim Kode OTP ke Email"
-        primaryBtn.background = rounded(if (loading) kit.muted else kit.blue, 12f)
+        requestOtpBtn.isEnabled = !loading
+        verifyBtn.isEnabled = !loading
+        emailInput.isEnabled = !loading
+        requestOtpBtn.text = when {
+            loading && actionLabel == "sending" -> "Mengirim OTP..."
+            otpRequested -> "Kirim Ulang Kode OTP ke Email"
+            else -> "Kirim Kode OTP ke Email"
+        }
+        verifyBtn.text = if (loading && actionLabel == "verifying") "Memverifikasi OTP..." else "Verifikasi OTP & Buka Warung"
+        verifyBtn.background = rounded(if (loading) kit.muted else kit.blue, 12f)
     }
 
     fun requestOtpFlow() {
@@ -277,13 +289,13 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
             showStatus("Nomor WhatsApp aktif wajib diisi (cth. 0812xxxxxxx).", true)
             return
         }
-        updateBusy(true, "Mengirim OTP...")
+        updateBusy(true, "sending")
         authScope.launch {
             try {
                 val res = SupabaseRepository.requestSellerEmailOtp(emailVal)
                 otpProvider = res.provider
                 otpRequested = true
-                otpContainer.visibility = View.VISIBLE
+                otpContainer.background = rounded(kit.tint, 12f, kit.blue)
                 showStatus(res.message, false)
                 updateBusy(false)
                 otpInput.requestFocus()
@@ -301,8 +313,13 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
         val stallVal = stallInput.text.toString().trim()
         val phoneVal = phoneInput.text.toString().trim()
         val roomVal = roomInput.text.toString().trim()
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(emailVal).matches() || emailVal.endsWith("@siswa.jajanin.app")) {
+            showStatus("Masukkan email aktif valid terlebih dahulu.", true)
+            return
+        }
         if (codeVal.length != 6) {
             showStatus("Masukkan 6 digit angka OTP dari email kamu.", true)
+            otpInput.requestFocus()
             return
         }
         if (stallVal.length < 3) {
@@ -313,7 +330,7 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
             showStatus("Nomor WhatsApp aktif wajib valid.", true)
             return
         }
-        updateBusy(true, "Memverifikasi OTP...")
+        updateBusy(true, "verifying")
         authScope.launch {
             try {
                 SupabaseRepository.verifySellerEmailOtpAndActivate(
@@ -339,13 +356,8 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
         }
     }
 
-    primaryBtn.setOnClickListener {
-        if (!otpRequested) requestOtpFlow() else verifyOtpFlow()
-    }
-    resendBtn.setOnClickListener {
-        otpRequested = false
-        requestOtpFlow()
-    }
+    requestOtpBtn.setOnClickListener { requestOtpFlow() }
+    verifyBtn.setOnClickListener { verifyOtpFlow() }
 
     dialog.show()
     dialog.window?.setLayout(

@@ -620,6 +620,9 @@ object SupabaseRepository {
             has("email_not_confirmed") ->
                 "Email belum dikonfirmasi. Matikan Confirm email di Supabase Dashboard agar bisa langsung masuk."
 
+            has("email_address_invalid") && has("siswa.jajanin.app") ->
+                "Gagal mengirim OTP: matikan 'Secure email change' di Supabase Auth → Email (atau pasang resend_api_key di Vault)."
+
             has("rate_limit", "too many request", "over email send") ->
                 "Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi."
 
