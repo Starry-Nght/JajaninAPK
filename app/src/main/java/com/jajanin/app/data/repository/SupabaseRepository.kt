@@ -224,6 +224,37 @@ object SupabaseRepository {
         }
     }
 
+    /** Pencarian prefix NIS real-time untuk dropdown auto-fill ala Snaps (min. 2 digit, maks 8 hasil). */
+    internal suspend fun searchStudentsNis(query: String): List<StudentNisLookupResult> = withContext(Dispatchers.IO) {
+        check(configured) { NOT_CONFIGURED }
+        val clean = query.filter(Char::isDigit)
+        if (clean.length < 2) return@withContext emptyList()
+        val endpoint = "$projectUrl/rest/v1/rpc/search_students_nis"
+        val payload = buildJsonObject { put("p_query", clean) }.toString()
+        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            setRequestProperty("apikey", publishableKey)
+            setRequestProperty("Authorization", "Bearer $publishableKey")
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+        }
+        try {
+            conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.readText().orEmpty()
+            if (code !in 200..299) {
+                throw IllegalStateException("Gagal mencari NIS ($code): ${body.take(120)}")
+            }
+            edgeJson.decodeFromString<List<StudentNisLookupResult>>(body).map { it.copy(found = true) }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /** Membaca profil & status verifikasi dual-mode (Buyer <-> Seller) pemilik sesi. */
     internal suspend fun fetchMyAccountProfile(): AccountProfileRow? {
         if (!hasSession()) return null

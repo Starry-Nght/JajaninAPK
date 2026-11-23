@@ -5,8 +5,8 @@ package com.jajanin.app.core.navigation
  * fondasi -> pembeli -> penjual -> developer -> halaman informasi.
  */
 internal enum class Screen {
-    // Fondasi: splash, onboarding, autentikasi
-    SPLASH, ONBOARD, WELCOME, ROLE, LOGIN,
+    // Fondasi: splash, onboarding, autentikasi (tanpa layar pilih role)
+    SPLASH, ONBOARD, WELCOME, LOGIN,
 
     // Pembeli (buyer): katalog, pesanan, profil
     HOME, EXPLORE, DETAIL, CHECKOUT, QRIS,

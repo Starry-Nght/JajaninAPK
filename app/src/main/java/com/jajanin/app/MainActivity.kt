@@ -62,6 +62,7 @@ import com.jajanin.app.data.repository.RegisterResult
 import com.jajanin.app.data.repository.SellerInvite
 import com.jajanin.app.data.repository.StallInfo
 import com.jajanin.app.data.repository.SupabaseRepository
+import com.jajanin.app.feature.auth.NativeLoginOverlay
 import com.jajanin.app.feature.buyer.exp.EXP_MAX_LEVEL
 import com.jajanin.app.feature.buyer.exp.ExpEntry
 import com.jajanin.app.feature.buyer.exp.ExpRepository
@@ -82,7 +83,7 @@ class MainActivity : Activity() {
     /** Akses tema gelap untuk helper dialog bertema. */
     internal fun isDarkMode(): Boolean = ui.darkMode
     internal val authScope = CoroutineScope(Dispatchers.Main)
-    internal var authForm: AuthForm? = null
+    internal lateinit var loginOverlay: NativeLoginOverlay
     internal var pendingPasswordRecovery = false
     internal var adminObserver: OrderObserver? = null
     internal var adminRefreshJob: Job? = null
@@ -368,6 +369,21 @@ class MainActivity : Activity() {
             ),
         )
         LiquidGlassNavHost(this, root, ui)
+        loginOverlay = NativeLoginOverlay(this, root)
+        ui.screenChangedListener = { screen ->
+            val isLogin = screen == Screen.LOGIN
+            if (isLogin) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            } else {
+                window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            }
+            loginOverlay.setVisible(isLogin)
+        }
+        ui.loginThemeListener = { dark ->
+            loginOverlay.applyTheme(dark)
+        }
+        @Suppress("DEPRECATION")
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
         NotificationHelper.ensureChannel(this)
         requestNotificationPermission()
@@ -582,15 +598,6 @@ class MainActivity : Activity() {
     internal var orderingStatusJob: Job? = null
 
     internal var stallAvailJob: Job? = null
-
-    fun submitRoleChoice(role: String) {
-        ui.myRole = "buyer"
-        if (SupabaseRepository.hasSession()) {
-            authScope.launch { routeSignedInUser() }
-        } else {
-            ui.go(Screen.LOGIN)
-        }
-    }
 
     /** Kembali ke pola aplikasi: seller tetap di dashboard, developer di dasbornya, pembeli pulang ke beranda. */
     internal var devObserver: OrderObserver? = null
@@ -891,15 +898,8 @@ class MainActivity : Activity() {
     }
 
     fun showAuthForm(focusPassword: Boolean, signup: Boolean = false) {
-        val open = authForm
-        if (open != null && open.isShowing) {
-            open.setMode(signup)
-            open.focus(focusPassword)
-            return
-        }
-        val form = AuthForm()
-        authForm = form
-        form.show(signup, focusPassword)
+        if (ui.currentScreen != Screen.LOGIN) ui.go(Screen.LOGIN)
+        loginOverlay.openMode(emailMode = signup, focusPassword = focusPassword)
     }
 
     internal var searchDialog: Dialog? = null
@@ -1135,348 +1135,7 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (ui.currentScreen == Screen.LOGIN && loginOverlay.handleBack()) return
         if (!ui.goBack()) super.onBackPressed()
-    }
-
-    internal inner class AuthForm {
-        private val dialog = Dialog(this@MainActivity).apply {
-            setContentView(R.layout.dialog_auth)
-            window?.setBackgroundDrawableResource(android.R.color.transparent)
-            setOnDismissListener {
-                lookupJob?.cancel()
-                authForm = null
-            }
-        }
-        private val title = dialog.findViewById<TextView>(R.id.authTitle)
-        private val subtitle = dialog.findViewById<TextView>(R.id.authSubtitle)
-        private val name = dialog.findViewById<EditText>(R.id.authName)
-        private val nis = dialog.findViewById<EditText>(R.id.authNis)
-        private val autoName = dialog.findViewById<EditText>(R.id.authAutoName)
-        private val autoClass = dialog.findViewById<EditText>(R.id.authAutoClass)
-        private val nisStatus = dialog.findViewById<TextView>(R.id.authNisStatus)
-        private val phone = dialog.findViewById<EditText>(R.id.authPhone)
-        private val email = dialog.findViewById<EditText>(R.id.authEmail)
-        private val password = dialog.findViewById<EditText>(R.id.authPassword)
-        private val error = dialog.findViewById<TextView>(R.id.authError)
-        private val action = dialog.findViewById<Button>(R.id.authAction)
-        private val progress = dialog.findViewById<ProgressBar>(R.id.authProgress)
-        private val toggle = dialog.findViewById<TextView>(R.id.authToggle)
-        private val showPass = dialog.findViewById<TextView>(R.id.authShowPass)
-        private val forgot = dialog.findViewById<TextView>(R.id.authForgot)
-
-        private var useEmailMode = false
-        private var lookupResult: SupabaseRepository.StudentNisLookupResult? = null
-        private var lookupJob: Job? = null
-        private var busy = false
-        private var passVisible = false
-
-        val isShowing: Boolean
-            get() = dialog.isShowing
-
-        private fun lockedFieldBg(fill: Int, stroke: Int): android.graphics.drawable.GradientDrawable {
-            val d = resources.displayMetrics.density
-            return android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 12f * d
-                setColor(fill)
-                setStroke((1.2f * d).toInt(), stroke)
-            }
-        }
-
-        private fun resetAutoFillFields(statusText: String = "Ketik NIS untuk mengisi Nama & Kelas secara otomatis.") {
-            autoName.setText("")
-            autoClass.setText("")
-            autoName.background = lockedFieldBg(Color.rgb(245, 247, 251), Color.rgb(214, 222, 235))
-            autoClass.background = lockedFieldBg(Color.rgb(245, 247, 251), Color.rgb(214, 222, 235))
-            nisStatus.setTextColor(Color.rgb(112, 120, 137))
-            nisStatus.text = statusText
-        }
-
-        init {
-            // Sembunyikan input nama manual karena Nama & Kelas di-autofill otomatis dari NIS
-            name.visibility = View.GONE
-            nis.hint = "Masukkan NIS (contoh: 11111)"
-            nis.imeOptions = EditorInfo.IME_ACTION_NEXT
-            email.imeOptions = EditorInfo.IME_ACTION_NEXT
-            password.imeOptions = EditorInfo.IME_ACTION_GO
-            resetAutoFillFields()
-
-            nis.addTextChangedListener(object : android.text.TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    if (!useEmailMode) scheduleNisLookup(s?.toString().orEmpty())
-                }
-                override fun afterTextChanged(s: android.text.Editable?) = Unit
-            })
-
-            password.setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE) {
-                    submit()
-                    true
-                } else false
-            }
-            action.setOnClickListener { submit() }
-            toggle.setOnClickListener {
-                useEmailMode = !useEmailMode
-                applyMode()
-                error.visibility = View.GONE
-                focus(false)
-            }
-            forgot.setOnClickListener {
-                val typedEmail = email.text.toString().trim()
-                dialog.dismiss()
-                showForgotPasswordDialog(typedEmail)
-            }
-            showPass.setOnClickListener {
-                passVisible = !passVisible
-                val cursor = password.selectionStart
-                password.inputType = if (passVisible) {
-                    android.text.InputType.TYPE_CLASS_TEXT or
-                        android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                } else {
-                    android.text.InputType.TYPE_CLASS_TEXT or
-                        android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-                }
-                password.setSelection(cursor.coerceAtLeast(0).coerceAtMost(password.text.length))
-                showPass.text = if (passVisible) "Sembunyi" else "Lihat"
-            }
-        }
-
-        fun show(signup: Boolean, focusPasswordField: Boolean) {
-            // signup=true hanya saat user klik tautan "Developer / Akun Lama? Masuk pakai Email"
-            useEmailMode = signup
-            applyMode()
-            dialog.show()
-            dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
-            @Suppress("DEPRECATION")
-            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-            focus(focusPasswordField)
-            val existingNis = nis.text.toString().filter(Char::isDigit)
-            if (!useEmailMode && existingNis.length >= 3) scheduleNisLookup(existingNis)
-        }
-
-        fun setMode(signup: Boolean) {
-            useEmailMode = signup
-            applyMode()
-            error.visibility = View.GONE
-        }
-
-        fun focus(focusPasswordField: Boolean) {
-            val target = when {
-                focusPasswordField -> password
-                useEmailMode -> email
-                else -> nis
-            }
-            target.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            target.post { imm.showSoftInput(target, InputMethodManager.SHOW_IMPLICIT) }
-        }
-
-        private fun scheduleNisLookup(raw: String) {
-            lookupJob?.cancel()
-            val digits = raw.filter(Char::isDigit)
-            if (digits.length < 3) {
-                lookupResult = null
-                resetAutoFillFields()
-                phone.visibility = View.GONE
-                updateNisActionLabel()
-                return
-            }
-            autoName.setText("Mencari NIS $digits...")
-            autoClass.setText("Memeriksa database sekolah...")
-            autoName.background = lockedFieldBg(Color.rgb(241, 245, 252), Color.rgb(186, 206, 236))
-            autoClass.background = lockedFieldBg(Color.rgb(241, 245, 252), Color.rgb(186, 206, 236))
-            nisStatus.setTextColor(Color.rgb(0, 99, 214))
-            nisStatus.text = "Mencocokkan NIS $digits..."
-
-            lookupJob = authScope.launch {
-                kotlinx.coroutines.delay(200L)
-                try {
-                    val res = SupabaseRepository.lookupStudentNis(digits)
-                    if (nis.text.toString().filter(Char::isDigit) != digits) return@launch
-                    lookupResult = res
-                    renderAutoFillResult(res)
-                } catch (t: Throwable) {
-                    if (nis.text.toString().filter(Char::isDigit) != digits) return@launch
-                    lookupResult = null
-                    resetAutoFillFields("Gagal memeriksa NIS: ${SupabaseRepository.errorMessage(t)}")
-                    nisStatus.setTextColor(Color.rgb(206, 60, 60))
-                    updateNisActionLabel()
-                }
-            }
-        }
-
-        private fun renderAutoFillResult(res: SupabaseRepository.StudentNisLookupResult) {
-            if (res.found) {
-                autoName.setText(res.fullName)
-                autoClass.setText(res.className)
-                autoName.background = lockedFieldBg(Color.rgb(232, 242, 255), Color.rgb(0, 99, 214))
-                autoClass.background = lockedFieldBg(Color.rgb(232, 242, 255), Color.rgb(0, 99, 214))
-                nisStatus.setTextColor(Color.rgb(22, 130, 74))
-                if (res.registered) {
-                    nisStatus.text = "✓ Siswa ditemukan (akun aktif) — masukkan kata sandi."
-                    phone.visibility = View.GONE
-                    password.hint = "Kata sandi akunmu"
-                } else {
-                    nisStatus.text = "✓ Siswa ditemukan — buat kata sandi baru untuk aktivasi akun."
-                    phone.visibility = View.VISIBLE
-                    password.hint = "Buat kata sandi baru (min. 6 karakter)"
-                }
-            } else {
-                autoName.setText("")
-                autoClass.setText("")
-                autoName.background = lockedFieldBg(Color.rgb(254, 242, 242), Color.rgb(220, 38, 38))
-                autoClass.background = lockedFieldBg(Color.rgb(254, 242, 242), Color.rgb(220, 38, 38))
-                nisStatus.setTextColor(Color.rgb(206, 60, 60))
-                nisStatus.text = "NIS tidak ditemukan di database siswa."
-                phone.visibility = View.GONE
-            }
-            updateNisActionLabel()
-        }
-
-        private fun updateNisActionLabel() {
-            if (useEmailMode) {
-                action.text = if (busy) "Masuk..." else "Masuk dengan Email"
-                return
-            }
-            val res = lookupResult
-            action.text = when {
-                busy && res?.registered == false -> "Mengaktifkan..."
-                busy -> "Masuk..."
-                res != null && res.found && !res.registered -> "Aktifkan Akun & Masuk"
-                else -> "Masuk dengan NIS"
-            }
-        }
-
-        private fun applyMode() {
-            val d = resources.displayMetrics.density
-            name.visibility = View.GONE
-            if (useEmailMode) {
-                title.text = "Masuk dengan Email"
-                subtitle.text = "Khusus akun Developer atau akun lama berbasis email."
-                nis.visibility = View.GONE
-                autoName.visibility = View.GONE
-                autoClass.visibility = View.GONE
-                nisStatus.visibility = View.GONE
-                phone.visibility = View.GONE
-                email.visibility = View.VISIBLE
-                forgot.visibility = View.VISIBLE
-                password.hint = "Kata sandi"
-                (email.layoutParams as ViewGroup.MarginLayoutParams).topMargin = (20 * d).toInt()
-                toggle.text = "Kembali ke Masuk / Daftar dengan NIS"
-            } else {
-                title.text = "Masuk dengan NIS"
-                subtitle.text = "Ketik NIS — Nama Lengkap & Kelas terisi otomatis."
-                nis.visibility = View.VISIBLE
-                autoName.visibility = View.VISIBLE
-                autoClass.visibility = View.VISIBLE
-                nisStatus.visibility = View.VISIBLE
-                (nis.layoutParams as ViewGroup.MarginLayoutParams).topMargin = (16 * d).toInt()
-                email.visibility = View.GONE
-                forgot.visibility = View.GONE
-                val res = lookupResult
-                if (res != null) {
-                    renderAutoFillResult(res)
-                } else {
-                    resetAutoFillFields()
-                    phone.visibility = View.GONE
-                    password.hint = "Kata sandi"
-                }
-                toggle.text = "Masuk dengan Email (Developer / Akun Lama)"
-            }
-            updateNisActionLabel()
-        }
-
-        private fun fail(message: String) {
-            error.text = message
-            error.visibility = View.VISIBLE
-        }
-
-        private fun setBusy(value: Boolean) {
-            busy = value
-            action.isEnabled = !value
-            toggle.isEnabled = !value
-            forgot.isEnabled = !value
-            nis.isEnabled = !value
-            phone.isEnabled = !value
-            email.isEnabled = !value
-            password.isEnabled = !value
-            showPass.isEnabled = !value
-            progress.visibility = if (value) View.VISIBLE else View.GONE
-            updateNisActionLabel()
-        }
-
-        private fun submit() {
-            if (busy) return
-            error.visibility = View.GONE
-            val passwordValue = password.text.toString()
-            if (!SupabaseRepository.isConfigured()) {
-                fail("Supabase belum dikonfigurasi.")
-                return
-            }
-
-            if (useEmailMode) {
-                val emailValue = email.text.toString().trim()
-                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(emailValue).matches() || passwordValue.length < 6) {
-                    fail("Masukkan email valid dan kata sandi minimal 6 karakter.")
-                    return
-                }
-                setBusy(true)
-                authScope.launch {
-                    try {
-                        SupabaseRepository.login(emailValue, passwordValue)
-                        dialog.dismiss()
-                        routeSignedInUser()
-                    } catch (e: Throwable) {
-                        fail(SupabaseRepository.errorMessage(e))
-                        setBusy(false)
-                    }
-                }
-                return
-            }
-
-            // Mode NIS Auto-Fill
-            val nisDigits = nis.text.toString().filter(Char::isDigit)
-            if (nisDigits.length < 3) {
-                fail("Masukkan NIS siswa terlebih dahulu.")
-                return
-            }
-            if (passwordValue.length < 6) {
-                fail("Kata sandi minimal 6 karakter.")
-                return
-            }
-
-            setBusy(true)
-            authScope.launch {
-                try {
-                    val info = lookupResult?.takeIf { it.nis == nisDigits && it.found }
-                        ?: SupabaseRepository.lookupStudentNis(nisDigits)
-                    lookupResult = info
-                    if (!info.found) {
-                        renderAutoFillResult(info)
-                        fail("NIS $nisDigits tidak ditemukan di database siswa SMKN 8 Semarang.")
-                        setBusy(false)
-                        return@launch
-                    }
-
-                    if (info.registered) {
-                        SupabaseRepository.login(info.authEmail, passwordValue)
-                    } else {
-                        val phoneVal = phone.text.toString().trim()
-                        if (phoneVal.isNotBlank() && PhoneRepository.normalizePhone(phoneVal) == null) {
-                            fail("Nomor HP tidak valid (gunakan format 08... atau +62...).")
-                            setBusy(false)
-                            return@launch
-                        }
-                        SupabaseRepository.registerWithNis(info.nis, passwordValue, phoneVal)
-                    }
-                    dialog.dismiss()
-                    routeSignedInUser()
-                } catch (e: Throwable) {
-                    fail(SupabaseRepository.errorMessage(e))
-                    setBusy(false)
-                }
-            }
-        }
     }
 }

@@ -51,7 +51,6 @@ import com.jajanin.app.data.repository.PlacedOrder
 import com.jajanin.app.data.repository.SellerInvite
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.auth.drawLogin
-import com.jajanin.app.feature.auth.drawRole
 import com.jajanin.app.feature.auth.drawWelcome
 import com.jajanin.app.feature.buyer.*
 import com.jajanin.app.feature.seller.*
@@ -382,13 +381,22 @@ internal class JajaninView(context: Context) : View(context) {
     /** Dibaca host dock kaca untuk menyelaraskan latar belakang & warna aksen. */
     internal var themeChangedListener: (() -> Unit)? = null
 
+    /** Listener tema khusus overlay native (mis. NativeLoginOverlay). */
+    internal var loginThemeListener: ((Boolean) -> Unit)? = null
+
+    /** Listener perpindahan layar untuk menampilkan/menyembunyikan overlay native. */
+    internal var screenChangedListener: ((Screen) -> Unit)? = null
+
     /** Ganti tema terang/gelap; berlaku untuk buyer, seller, dan developer. */
     fun setDarkMode(dark: Boolean) {
         darkMode = dark
         kit.applyTheme(dark)
         invalidate()
         themeChangedListener?.invoke()
+        loginThemeListener?.invoke(dark)
     }
+
+    internal fun canGoBack(): Boolean = history.isNotEmpty()
 
     internal fun go(next: Screen) {
         if (screen == next) return
@@ -400,6 +408,7 @@ internal class JajaninView(context: Context) : View(context) {
         scroll = 0f
         beginSlide(1f)
         invalidate()
+        screenChangedListener?.invoke(screen)
     }
 
     internal fun goBack(): Boolean {
@@ -410,6 +419,7 @@ internal class JajaninView(context: Context) : View(context) {
         scroll = 0f
         beginSlide(-1f)
         invalidate()
+        screenChangedListener?.invoke(screen)
         return true
     }
 
@@ -566,19 +576,19 @@ internal class JajaninView(context: Context) : View(context) {
         invalidate()
     }
 
-    fun showHome() { screen = Screen.HOME; history.clear(); invalidate() }
+    fun showHome() { screen = Screen.HOME; history.clear(); invalidate(); screenChangedListener?.invoke(screen) }
 
-    fun showSplash() { screen = Screen.SPLASH; history.clear(); invalidate() }
+    fun showSplash() { screen = Screen.SPLASH; history.clear(); invalidate(); screenChangedListener?.invoke(screen) }
 
-    fun showOnboard() { screen = Screen.ONBOARD; history.clear(); onboardPage = 0; scroll = 0f; invalidate() }
+    fun showOnboard() { screen = Screen.ONBOARD; history.clear(); onboardPage = 0; scroll = 0f; invalidate(); screenChangedListener?.invoke(screen) }
 
-    fun showWelcome() { screen = Screen.WELCOME; history.clear(); scroll = 0f; invalidate() }
+    fun showWelcome() { screen = Screen.WELCOME; history.clear(); scroll = 0f; invalidate(); screenChangedListener?.invoke(screen) }
 
-    fun showAdmin() { screen = Screen.ADMIN; history.clear(); invalidate() }
+    fun showAdmin() { screen = Screen.ADMIN; history.clear(); invalidate(); screenChangedListener?.invoke(screen) }
 
-    fun showDev() { screen = Screen.DEV; history.clear(); devTab = "Overview"; scroll = 0f; invalidate() }
+    fun showDev() { screen = Screen.DEV; history.clear(); devTab = "Overview"; scroll = 0f; invalidate(); screenChangedListener?.invoke(screen) }
 
-    fun showLogin() { screen = Screen.LOGIN; history.clear(); invalidate() }
+    fun showLogin() { screen = Screen.LOGIN; history.clear(); invalidate(); screenChangedListener?.invoke(screen) }
 
     internal fun applyQuery(value: String) {
         query = value
@@ -630,7 +640,6 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.SPLASH -> drawSplash(canvas, 390f, height / s)
             Screen.ONBOARD -> drawOnboard(canvas, 390f, height / s)
             Screen.WELCOME -> drawWelcome(canvas, 390f, height / s)
-            Screen.ROLE -> drawRole(canvas, 390f, height / s)
             Screen.LOGIN -> drawLogin(canvas, 390f, height / s)
 
             // --- Pembeli (buyer) ---
@@ -890,16 +899,6 @@ internal class JajaninView(context: Context) : View(context) {
                             invalidate()
                         }
                     }
-                    hit == "buyer" || hit == "seller" -> {
-                        selectedRole = hit
-                        invalidate()
-                    }
-                    hit == "role" -> activity()?.submitRoleChoice(selectedRole)
-                    hit == "emailField" || hit == "nisAutoNameField" || hit == "nisAutoClassField" -> activity()?.showAuthForm(false)
-                    hit == "passwordField" -> activity()?.showAuthForm(true)
-                    hit == "emailLogin" -> activity()?.showAuthForm(false)
-                    hit == "forgotPassword" -> activity()?.showForgotPasswordDialog()
-                    hit == "toggleAuth" -> activity()?.showAuthForm(false, signup = true)
                     // --- Pembeli (buyer): pencarian, katalog, keranjang, checkout ---
                     hit == "search" -> activity()?.showSearchForm()
                     hit == "clearSearch" -> applyQuery("")
