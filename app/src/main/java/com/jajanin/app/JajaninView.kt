@@ -998,7 +998,6 @@ internal class JajaninView(context: Context) : View(context) {
                     }
                     // --- Profil, EXP, dan pengaturan warung ---
                     hit == "profilePhone" -> activity()?.showPhoneEditor()
-                    hit == "profileRealName" || hit == "profileNis" -> activity()?.showRealNameEdit()
                     hit == "profileStallRoom" -> activity()?.showStallRoomEdit()
                     hit.startsWith("copyPhone:") -> activity()?.copyPhoneToClipboard(hit.substringAfter(':'))
                     hit.startsWith("dialPhone:") -> activity()?.openDialer(hit.substringAfter(':'))

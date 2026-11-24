@@ -100,21 +100,14 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     }
     y += 74f
 
-    // 2. Section: IDENTITAS & AKUN (Clean hairline-divided rows, no EXP)
+    // 2. Section: AKUN (Identitas siswa dikunci sesuai data sekolah & tampil di header atas)
     if (visible(y, y + 20f)) {
-        kit.text(c, "IDENTITAS & AKUN", 20f, y + 12f, 10.5f, kit.muted, true)
+        kit.text(c, "AKUN", 20f, y + 12f, 10.5f, kit.muted, true)
     }
     y += 20f
 
     val unread = inboxUnreadCount()
     val accountRows = listOf(
-        ProfileRowSpec(
-            title = "Nama Asli, NIS & Kelas (Wajib)",
-            subtitle = "${myDisplayName.ifBlank { "Belum diisi" }}  ·  NIS: ${myNis.ifBlank { "-" }}  ·  Kelas: ${myClass.ifBlank { "Wajib diisi" }}",
-            trailing = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) "Lengkapi" else "Ubah",
-            trailingColor = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) kit.danger else kit.blue,
-            key = "profileNis"
-        ),
         ProfileRowSpec(
             title = "Nomor HP",
             subtitle = myPhone.takeIf { it.isNotBlank() } ?: "Belum diisi · wajib sebelum memesan",

@@ -490,15 +490,6 @@ object SupabaseRepository {
     suspend fun myNis(): String? =
         myRawDisplayName()?.let { extractNis(it) }?.takeIf { it.isNotBlank() }
 
-    /**
-     * Menyimpan nama asli (beserta NIS & Kelas bila ada) milik sendiri (validasi 3-50 karakter di server).
-     */
-    suspend fun setMyName(name: String, nis: String = "", kelas: String = "") {
-        val packed = if (nis.isNotBlank() || kelas.isNotBlank()) packNameAndNis(name, nis, kelas) else name.trim()
-        val params = mapOf("p_name" to kotlinx.serialization.json.JsonPrimitive(packed))
-        client.postgrest.rpc("set_my_name", params)
-    }
-
     private val NIS_TAG_REGEX = Regex("\\s*\\[NIS:\\s*([0-9]+)\\]", RegexOption.IGNORE_CASE)
     private val KELAS_TAG_REGEX = Regex("\\s*\\[Kelas:\\s*([^\\]]+)\\]", RegexOption.IGNORE_CASE)
 

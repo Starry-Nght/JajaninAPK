@@ -457,10 +457,6 @@ class MainActivity : Activity() {
         ui.myDisplayName = displayName
         ui.myNis = nis
         ui.myClass = kelas
-        if ((role == "buyer" || role == "seller") && (displayName.length < 3 || nis.isBlank() || kelas.isBlank())) {
-            showDisplayNameDialog { authScope.launch { routeSignedInUser() } }
-            return
-        }
         if (role == "developer") {
             if (!developerUnlocked) {
                 ui.myRole = "buyer"

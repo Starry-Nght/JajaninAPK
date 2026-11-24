@@ -120,22 +120,14 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
     }
     y += 68f
 
-    // 3. Identitas Penjual & Pengaturan Warung (Nama Asli + Nama Toko + Nomor Telepon Wajib + Ruangan Ambil)
+    // 3. Pengaturan Warung (Identitas siswa dikunci sesuai data sekolah & tampil di header atas)
     if (visible(y, y + 20f)) {
-        sellerSection(c, "Identitas & Warung", y + 12f)
+        sellerSection(c, "Pengaturan Warung", y + 12f)
     }
     y += 20f
     y = sellerSettingsGroup(
         c, y,
         listOf(
-            SellerSettingRow(
-                title = "Nama Asli, NIS & Kelas (Wajib)",
-                key = "profileRealName",
-                subtitle = "${myDisplayName.ifBlank { "Belum diisi" }}  ·  NIS: ${myNis.ifBlank { "-" }}  ·  Kelas: ${myClass.ifBlank { "Wajib diisi" }}",
-                value = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) "Lengkapi" else "Ubah",
-                valueColor = if (myNis.isBlank() || myDisplayName.isBlank() || myClass.isBlank()) kit.danger else kit.blue,
-                chevron = false,
-            ),
             SellerSettingRow(
                 title = "Nama Toko / Warung",
                 key = "profileStallName",
