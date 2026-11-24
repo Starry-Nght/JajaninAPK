@@ -397,6 +397,35 @@ object SupabaseRepository {
         )
     }
 
+    /**
+     * Hapus akun sendiri lewat Edge Function `delete-account` (wajib konfirmasi kata sandi):
+     * - `mode = "seller_only"`: hapus warung & menu, nonaktifkan Mode Penjual (akun pembeli tetap aktif)
+     * - `mode = "full_account"`: hapus total akun pembeli & penjual secara permanen
+     */
+    internal suspend fun deleteMyAccount(mode: String, password: String): String {
+        check(configured) { NOT_CONFIGURED }
+        require(mode == "seller_only" || mode == "full_account") { "Mode penghapusan akun tidak valid." }
+        require(password.isNotEmpty()) { "Masukkan kata sandi untuk konfirmasi." }
+        val token = currentAccessToken() ?: error("Sesi berakhir. Silakan masuk ulang.")
+        val payload = buildJsonObject {
+            put("mode", mode)
+            put("password", password)
+        }.toString()
+        val (status, body) = postEdgeFunction("delete-account", payload, bearerToken = token)
+        val parsed = runCatching { edgeJson.parseToJsonElement(body).jsonObject }.getOrNull()
+        if (status !in 200..299) {
+            val err = parsed?.get("error")?.jsonPrimitive?.contentOrNull
+                ?: "Gagal menghapus akun ($status)."
+            throw IllegalStateException(err)
+        }
+        return parsed?.get("message")?.jsonPrimitive?.contentOrNull
+            ?: if (mode == "seller_only") {
+                "Akun penjual berhasil dihapus."
+            } else {
+                "Akun berhasil dihapus permanen."
+            }
+    }
+
     private suspend fun postEdgeFunction(
         slug: String,
         jsonBody: String,

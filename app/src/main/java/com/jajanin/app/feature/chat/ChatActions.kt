@@ -146,7 +146,7 @@ internal fun MainActivity.stopChatObserver() {
     chatObserver = null
 }
 
-/** Buka ruang chat berdasarkan `order_id` (buat otomatis bila belum ada). */
+/** Buka ruang chat berdasarkan `order_id` (1 user = 1 ruang percakapan terpadu). */
 internal fun MainActivity.openOrderChat(orderId: String) {
     if (!SupabaseRepository.hasSession()) {
         Toast.makeText(this, "Masuk dulu untuk membuka chat.", Toast.LENGTH_SHORT).show()
@@ -155,12 +155,6 @@ internal fun MainActivity.openOrderChat(orderId: String) {
     }
     val cleanId = orderId.trim()
     if (cleanId.isEmpty()) return
-
-    val cached = ui.chatConversations.firstOrNull { it.orderId == cleanId }
-    if (cached != null) {
-        showChatRoomDialog(cached)
-        return
-    }
 
     authScope.launch {
         try {
@@ -173,7 +167,7 @@ internal fun MainActivity.openOrderChat(orderId: String) {
     }
 }
 
-/** Buka ruang chat pra-pesanan berdasarkan `product_id` ("Tanya Penjual" di Detail Produk). */
+/** Buka ruang chat pra-pesanan berdasarkan `product_id` (1 user = 1 ruang percakapan terpadu). */
 internal fun MainActivity.openProductInquiryChat(productId: String) {
     if (!SupabaseRepository.hasSession()) {
         Toast.makeText(this, "Masuk dulu untuk bertanya ke penjual.", Toast.LENGTH_SHORT).show()
@@ -182,14 +176,6 @@ internal fun MainActivity.openProductInquiryChat(productId: String) {
     }
     val cleanId = productId.trim()
     if (cleanId.isEmpty()) return
-
-    val cached = ui.chatConversations.firstOrNull {
-        it.conversationType == "product_inquiry" && it.orderId == null && it.productId == cleanId
-    }
-    if (cached != null) {
-        showChatRoomDialog(cached)
-        return
-    }
 
     authScope.launch {
         try {
@@ -241,12 +227,11 @@ internal fun MainActivity.showChatRoomDialog(summary: ConversationSummary) {
 
 private fun MainActivity.upsertLocalConversationSummary(summary: ConversationSummary) {
     val list = ui.chatConversations.toMutableList()
-    val idx = list.indexOfFirst { it.id == summary.id }
-    if (idx >= 0) {
-        list[idx] = summary
-    } else {
-        list.add(0, summary)
+    list.removeAll { existing ->
+        existing.id == summary.id ||
+            (summary.counterpartyId.isNotBlank() && existing.counterpartyId == summary.counterpartyId)
     }
+    list.add(0, summary)
     ui.chatConversations = list
     ui.invalidate()
 }

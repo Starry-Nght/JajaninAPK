@@ -46,7 +46,7 @@ internal fun JajaninView.drawProductForm(c: Canvas, w: Float, h: Float) {
 
     // --- 2b. Jadwal Pemesanan & Sesi Pengambilan (Pre-Order / Hari Ini) ---
     y += 8f
-    sellerSection(c, "Jadwal & Sesi Pengambilan", y + 12f, trailing = "Atur Hari Ini / PO Besok", trailingColor = kit.blue)
+    sellerSection(c, "Jadwal & Sesi Pengambilan", y + 12f, trailing = "Atur Hari Ini / Pre-Order", trailingColor = kit.blue)
     y += 24f
     y = scheduleAndSessionPicker(c, y, h - 72f)
 
@@ -153,7 +153,7 @@ private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLi
     kit.text(c, "Tersedia untuk", 20f, y + 10f, SellerTokens.T_LABEL, kit.muted, true)
     val schedules = listOf(
         "same_day" to "Hari Ini",
-        "next_day" to "PO Besok",
+        "next_day" to "Pre-Order",
         "both" to "Keduanya",
     )
     val gap = 8f

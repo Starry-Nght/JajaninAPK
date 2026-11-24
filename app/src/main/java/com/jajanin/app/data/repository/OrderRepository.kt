@@ -125,15 +125,15 @@ internal data class AdminOrder(
     val isPreOrder: Boolean
         get() = orderMode.equals("pre_order", ignoreCase = true)
 
-    /** Label ringkas jadwal ambil, mis. "Hari Ini · Istirahat 1" atau "PO Besok (24 Nov) · Istirahat 2". */
+    /** Label ringkas jadwal ambil, mis. "Ambil Hari Ini · Istirahat 1" atau "PO Kam, 26 Nov · Istirahat 2". */
     val pickupScheduleLabel: String
         get() {
             val today = OrderRepository.todayWibDateString()
             val tomorrow = OrderRepository.tomorrowWibDateString()
             val dateTag = when {
                 pickupDate == today -> "Hari Ini"
-                pickupDate == tomorrow -> "Besok"
-                pickupDate.isNotBlank() -> formatShortIdDate(pickupDate)
+                pickupDate == tomorrow -> "Besok (${formatShortIdDate(pickupDate)})"
+                pickupDate.isNotBlank() -> formatCalendarShortChip(pickupDate)
                 isPreOrder -> "Besok"
                 else -> "Hari Ini"
             }
@@ -471,6 +471,7 @@ internal object OrderRepository {
         paymentMethod: String,
         orderMode: String = "same_day",
         pickupSession: String = "Istirahat 1",
+        pickupDate: String? = null,
     ): PlacedOrder {
         val method = paymentMethod.lowercase()
         require(method == "cash" || method == "qris") { "Metode bayar tidak valid." }
@@ -483,14 +484,17 @@ internal object OrderRepository {
                 }
             }
         )
-        val params = mapOf(
-            "p_items" to array,
-            "p_payment_method" to kotlinx.serialization.json.JsonPrimitive(method),
-            "p_order_mode" to kotlinx.serialization.json.JsonPrimitive(orderMode),
-            "p_pickup_session" to kotlinx.serialization.json.JsonPrimitive(pickupSession.trim().ifBlank { "Istirahat 1" }),
-        )
+        val params = buildMap<String, kotlinx.serialization.json.JsonElement> {
+            put("p_items", array)
+            put("p_payment_method", kotlinx.serialization.json.JsonPrimitive(method))
+            put("p_order_mode", kotlinx.serialization.json.JsonPrimitive(orderMode))
+            put("p_pickup_session", kotlinx.serialization.json.JsonPrimitive(pickupSession.trim().ifBlank { "Istirahat 1" }))
+            if (orderMode == "pre_order" && !pickupDate.isNullOrBlank()) {
+                put("p_pickup_date", kotlinx.serialization.json.JsonPrimitive(pickupDate.trim()))
+            }
+        }
         return try {
-            client.postgrest.rpc("place_order_v2", params).decodeAs<PlacedOrder>()
+            client.postgrest.rpc("place_order_v3", params).decodeAs<PlacedOrder>()
         } catch (t: Throwable) {
             throw IllegalStateException(parseDbError(t), t)
         }
@@ -528,6 +532,10 @@ internal object OrderRepository {
             clean.contains("Satu pesanan hanya", true) -> clean.take(200)
             clean.contains("tepat 1", true) -> clean.take(200)
             clean.contains("ditangguhkan", true) -> clean.take(200)
+            clean.contains("Tanggal Pre-Order", true) -> clean.take(200)
+            clean.contains("Format tanggal", true) -> clean.take(200)
+            clean.contains("khusus Pre-Order", true) -> clean.take(200)
+            clean.contains("khusus ambil Hari Ini", true) -> clean.take(200)
             clean.contains("tidak valid", true) -> clean.take(160)
             clean.contains("tidak ditemukan", true) -> "Menu tidak ditemukan."
             clean.contains("tidak tersedia", true) -> clean.take(160)
@@ -871,20 +879,25 @@ internal object OrderRepository {
         }
     }
 
-    internal fun todayWibDateString(): String {
-        val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Jakarta"))
+    internal fun todayWibDateString(): String = wibDateStringOffset(0)
+
+    internal fun tomorrowWibDateString(): String = wibDateStringOffset(1)
+
+    internal fun wibDateStringOffset(daysAhead: Int): String {
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Jakarta")).apply {
+            add(Calendar.DAY_OF_YEAR, daysAhead)
+        }
         return SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("Asia/Jakarta")
         }.format(cal.time)
     }
 
-    internal fun tomorrowWibDateString(): String {
-        val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Jakarta")).apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-        }
-        return SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("Asia/Jakarta")
-        }.format(cal.time)
+    internal fun isValidPreOrderDate(isoDate: String): Boolean {
+        val clean = isoDate.trim()
+        if (!clean.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) return false
+        val minDate = wibDateStringOffset(1)
+        val maxDate = wibDateStringOffset(30)
+        return clean >= minDate && clean <= maxDate
     }
 
     /** Riwayat order pembeli yang sedang masuk (dipakai layar Pesanan pembeli). */
@@ -979,4 +992,18 @@ internal fun formatShortIdDate(isoDate: String): String {
         SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(isoDate.take(10))
     }.getOrNull() ?: return isoDate.take(10)
     return SimpleDateFormat("d MMM", Locale("id", "ID")).format(parsed)
+}
+
+internal fun formatCalendarShortChip(isoDate: String): String {
+    val parsed = runCatching {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(isoDate.take(10))
+    }.getOrNull() ?: return isoDate.take(10)
+    return SimpleDateFormat("EEE, d MMM", Locale("id", "ID")).format(parsed)
+}
+
+internal fun formatCalendarFullIdDate(isoDate: String): String {
+    val parsed = runCatching {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(isoDate.take(10))
+    }.getOrNull() ?: return isoDate.take(10)
+    return SimpleDateFormat("EEEE, d MMM yyyy", Locale("id", "ID")).format(parsed)
 }

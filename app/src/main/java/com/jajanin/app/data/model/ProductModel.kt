@@ -42,8 +42,8 @@ internal data class ProductRow(
     val scheduleBadgeLabel: String
         get() = when (orderSchedule) {
             "same_day" -> "Hari Ini"
-            "next_day" -> "PO Besok"
-            else -> "Hari Ini / PO Besok"
+            "next_day" -> "Pre-Order (PO)"
+            else -> "Hari Ini / PO"
         }
 
     val parsedPickupSessions: List<String>

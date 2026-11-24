@@ -95,7 +95,7 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
         }
         val schedShort = when (product.orderSchedule) {
             "same_day" -> "Hari Ini"
-            "next_day" -> "PO Besok"
+            "next_day" -> "Pre-Order"
             else -> "Hari Ini / PO"
         }
         val schedW = (kit.measure(schedShort, 9f, true) + 14f).coerceAtMost(tileW - 14f)

@@ -289,14 +289,14 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
             "Selesai" -> s == STATUS_COMPLETED || s == STATUS_CANCELLED
             else -> true
         }
-        val isPoTomorrow = order.isPreOrder && (order.pickupDate.isBlank() || order.pickupDate > todayStr)
+        val isPoFuture = order.isPreOrder && (order.pickupDate.isBlank() || order.pickupDate > todayStr)
         val schedOk = when (adminScheduleFilter) {
-            "Hari Ini" -> !isPoTomorrow
-            "PO Besok" -> isPoTomorrow
+            "Hari Ini" -> !isPoFuture
+            "Pre-Order", "PO Besok" -> isPoFuture
             else -> true
         }
         statusOk && schedOk
-    }.sortedWith(compareBy({ statusSortOrder(it.status) }, { it.createdAt }))
+    }.sortedWith(compareBy({ statusSortOrder(it.status) }, { it.pickupDate.ifBlank { "9999-12-31" } }, { it.createdAt }))
 
     val off = -scroll
     val bottomLimit = h - NAV_CLEAR
@@ -340,19 +340,19 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
     }
     y += 40f
 
-    // 1b. Schedule Filter Pills (Semua / Hari Ini / PO Besok)
+    // 1b. Schedule Filter Pills (Semua / Hari Ini / Pre-Order)
     if (visible(y, y + 32f)) {
         val schedSpecs = listOf(
             "Semua" to "Semua Jadwal",
             "Hari Ini" to "Hari Ini ($sameDayCount)",
-            "PO Besok" to "PO Besok ($poCount)",
+            "Pre-Order" to "Pre-Order ($poCount)",
         )
         var sx = 20f
         schedSpecs.forEach { (key, label) ->
-            val active = adminScheduleFilter == key
+            val active = adminScheduleFilter == key || (key == "Pre-Order" && adminScheduleFilter == "PO Besok")
             val sw = kit.measure(label, 10.5f, true) + 20f
             val pill = RectF(sx, y + 2f, sx + sw, y + 28f)
-            val isPoPill = key == "PO Besok"
+            val isPoPill = key == "Pre-Order"
             val bg = when {
                 active && isPoPill -> kit.warnBox
                 active -> kit.tint

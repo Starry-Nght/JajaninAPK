@@ -32,17 +32,17 @@ internal fun JajaninView.drawChatList(c: Canvas, w: Float, h: Float) {
 
     var y = 72f + off
 
-    // 1. Filter Chips ("Semua", "Belum Dibaca", "Pesanan", "Tanya Produk")
-    val filters = listOf("Semua", "Belum Dibaca", "Pesanan", "Tanya Produk")
+    // 1. Deduplikasi 1 user = 1 percakapan & Filter Chips ("Semua", "Belum Dibaca", "Pesanan")
+    val unifiedConversations = chatConversations.distinctBy { it.counterpartyId.ifBlank { it.id } }
+    val filters = listOf("Semua", "Belum Dibaca", "Pesanan")
     val activeFilter = if (chatListFilter in filters) chatListFilter else "Semua"
 
     var chipX = 20f
     filters.forEach { filter ->
         val count = when (filter) {
-            "Belum Dibaca" -> chatConversations.count { it.unreadCount > 0 }
-            "Pesanan" -> chatConversations.count { it.conversationType == "order" || it.orderContext != null }
-            "Tanya Produk" -> chatConversations.count { it.conversationType == "product_inquiry" && it.orderContext == null }
-            else -> chatConversations.size
+            "Belum Dibaca" -> unifiedConversations.count { it.unreadCount > 0 }
+            "Pesanan" -> unifiedConversations.count { it.orderContext != null }
+            else -> unifiedConversations.size
         }
         val label = if (count > 0) "$filter ($count)" else filter
         val chipW = kit.measure(label, 10f, true) + 18f
@@ -62,11 +62,10 @@ internal fun JajaninView.drawChatList(c: Canvas, w: Float, h: Float) {
     }
     y += 36f
 
-    val filtered = chatConversations.filter { convo ->
+    val filtered = unifiedConversations.filter { convo ->
         when (activeFilter) {
             "Belum Dibaca" -> convo.unreadCount > 0
-            "Pesanan" -> convo.conversationType == "order" || convo.orderContext != null
-            "Tanya Produk" -> convo.conversationType == "product_inquiry" && convo.orderContext == null
+            "Pesanan" -> convo.orderContext != null
             else -> true
         }
     }

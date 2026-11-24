@@ -46,12 +46,14 @@ import com.jajanin.app.data.repository.DevStats
 import com.jajanin.app.data.repository.DevUser
 import com.jajanin.app.data.repository.DevWarningRow
 import com.jajanin.app.data.repository.OrderObserver
+import com.jajanin.app.data.repository.OrderRepository
 import com.jajanin.app.data.repository.SalesStat
 import com.jajanin.app.data.repository.PlacedOrder
 import com.jajanin.app.data.repository.SellerInvite
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.auth.drawLogin
 import com.jajanin.app.feature.auth.drawWelcome
+import com.jajanin.app.feature.auth.showDeleteAccountFlow
 import com.jajanin.app.feature.buyer.*
 import com.jajanin.app.feature.seller.*
 import com.jajanin.app.feature.developer.*
@@ -158,6 +160,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var cartStallQris: String? = null
     internal var checkoutPayment: String = "cash"
     internal var checkoutOrderMode: String = "same_day"
+    internal var checkoutPickupDate: String = OrderRepository.tomorrowWibDateString()
     internal var checkoutPickupSession: String = "Istirahat 1"
     internal var placingOrder = false
     internal var lastOrderId: String? = null
@@ -956,10 +959,14 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("cartRemove:") -> activity()?.setCartQty(hit.substringAfter(':'), 0)
                     hit.startsWith("payMethod:") -> activity()?.setCheckoutPayment(hit.substringAfter(':'))
                     hit.startsWith("orderMode:") -> activity()?.setCheckoutOrderMode(hit.substringAfter(':'))
+                    hit == "pickPoDate" -> activity()?.showPreOrderDatePicker()
+                    hit.startsWith("poQuickDate:") -> activity()?.setCheckoutPickupDate(hit.substringAfter(':'))
                     hit.startsWith("pickupSession:") -> {
                         checkoutPickupSession = hit.substringAfter(':')
                         invalidate()
                     }
+                    hit == "deleteAccount" -> activity()?.showDeleteAccountFlow(fromSellerProfile = false)
+                    hit == "deleteSellerAccount" -> activity()?.showDeleteAccountFlow(fromSellerProfile = true)
                     hit == "switchToSeller" -> activity()?.switchToSellerMode()
                     hit == "switchToBuyer" -> activity()?.switchToBuyerMode()
                     hit == "activateSeller" -> activity()?.showSellerOtpActivationDialog()

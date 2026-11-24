@@ -247,8 +247,16 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
     }
     bounds.putVisible("logout", logout, topLimit = HEADER_H, bottomLimit = navClear)
 
+    val deleteRow = RectF(SellerTokens.PAD, logout.bottom + 10f, SellerTokens.RIGHT, logout.bottom + 54f)
+    if (visible(deleteRow.top, deleteRow.bottom)) {
+        kit.rounded(c, deleteRow, kit.bg, SellerTokens.RADIUS_SURFACE, kit.dangerBorder)
+        kit.centerText(c, "Hapus Akun Penjual / Akun", deleteRow, 12.5f, kit.danger, true)
+        press(c, "deleteSellerAccount", deleteRow, SellerTokens.RADIUS_SURFACE)
+    }
+    bounds.putVisible("deleteSellerAccount", deleteRow, topLimit = HEADER_H, bottomLimit = navClear)
+
     c.restoreToCount(bodySave)
-    contentHeight = logout.bottom - off + GLASS_TOP_OFFSET + 20f
+    contentHeight = deleteRow.bottom - off + GLASS_TOP_OFFSET + 20f
 
     sellerHeader(c, "Profil Warung")
     drawAdminNav(c, w, h, "Profil")

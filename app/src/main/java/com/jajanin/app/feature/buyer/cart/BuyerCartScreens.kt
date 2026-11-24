@@ -20,6 +20,10 @@ import com.jajanin.app.core.ui.drawQr
 import com.jajanin.app.core.ui.summaryRow
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
+import com.jajanin.app.data.repository.OrderRepository
+import com.jajanin.app.data.repository.formatCalendarFullIdDate
+import com.jajanin.app.data.repository.formatCalendarShortChip
+import com.jajanin.app.data.repository.formatShortIdDate
 import com.jajanin.app.feature.buyer.home.normalizeCategory
 
 internal fun JajaninView.drawDetail(c: Canvas, w: Float, h: Float) {
@@ -100,7 +104,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         y += 86f
     }
 
-    // 1. Jadwal Pengambilan (Hari Ini vs PO Besok)
+    // 1. Jadwal Pengambilan (Hari Ini vs Pre-Order Kalender)
     val canSameDay = lines.all { it.first.allowsSameDay }
     val canNextDay = lines.all { it.first.allowsNextDay }
     val activeMode = when {
@@ -109,6 +113,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         canSameDay -> "same_day"
         else -> "pre_order"
     }
+    val poAccent = Color.rgb(183, 116, 0)
     kit.text(c, "Jadwal pengambilan", 22f, y + 22f, 15f, kit.ink, true)
     val sameBox = RectF(18f, y + 34f, 190f, y + 92f)
     val poBox = RectF(198f, y + 34f, 372f, y + 92f)
@@ -124,7 +129,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     kit.text(c, "Hari Ini", 34f, y + 59f, 13f, if (canSameDay) kit.ink else kit.muted, true)
     kit.text(
         c,
-        if (canSameDay) "Ambil hari ini" else "Khusus PO besok",
+        if (canSameDay) "Ambil hari ini" else "Khusus Pre-Order",
         34f,
         y + 79f,
         10f,
@@ -139,21 +144,71 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         poBox,
         if (poSelected) kit.warnBox else kit.card,
         13f,
-        if (poSelected) Color.rgb(183, 116, 0) else kit.border,
+        if (poSelected) poAccent else kit.border,
     )
-    kit.text(c, "PO Besok", 214f, y + 59f, 13f, if (canNextDay) kit.ink else kit.muted, true)
+    kit.text(c, "Pre-Order (PO)", 214f, y + 59f, 13f, if (canNextDay) kit.ink else kit.muted, true)
     kit.text(
         c,
-        if (canNextDay) "Pre-Order untuk besok" else "Khusus hari ini",
+        if (canNextDay) "Pilih tanggal kalender" else "Khusus hari ini",
         214f,
         y + 79f,
         10f,
         kit.muted,
     )
-    if (poSelected) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, Color.rgb(183, 116, 0), true)
+    if (poSelected) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, poAccent, true)
     bounds.putVisible("orderMode:pre_order", poBox, topLimit = bodyTop, bottomLimit = bodyBottom)
 
-    y += 108f
+    y += 106f
+
+    // 1b. Pemilih Tanggal Kalender (tampil saat Pre-Order aktif)
+    val tomorrowIso = OrderRepository.tomorrowWibDateString()
+    val chosenPoDate = if (OrderRepository.isValidPreOrderDate(checkoutPickupDate)) checkoutPickupDate else tomorrowIso
+    if (poSelected) {
+        val dateCard = RectF(18f, y + 4f, 372f, y + 60f)
+        kit.rounded(c, dateCard, kit.warnBox, 12f, poAccent)
+        kit.text(c, "TANGGAL PENGAMBILAN PO", 32f, y + 22f, 9.5f, poAccent, true)
+        val fullLabel = formatCalendarFullIdDate(chosenPoDate)
+        val dateDisplay = if (chosenPoDate == tomorrowIso) "$fullLabel (Besok)" else fullLabel
+        kit.textEllipsized(c, dateDisplay, 32f, y + 44f, 232f, 13f, kit.ink, true)
+
+        val calPill = RectF(272f, y + 17f, 360f, y + 47f)
+        kit.rounded(c, calPill, kit.card, 8f, poAccent)
+        kit.centerText(c, "Kalender", calPill, 11f, poAccent, true)
+        bounds.putVisible("pickPoDate", dateCard, topLimit = bodyTop, bottomLimit = bodyBottom)
+        press(c, "pickPoDate", dateCard, 12f)
+
+        // Baris cepat: Besok, +2 hari, +3 hari, Tanggal Lain
+        val d1 = OrderRepository.wibDateStringOffset(1)
+        val d2 = OrderRepository.wibDateStringOffset(2)
+        val d3 = OrderRepository.wibDateStringOffset(3)
+        val quickChoices = listOf(
+            "poQuickDate:$d1" to "Besok (${formatShortIdDate(d1)})",
+            "poQuickDate:$d2" to formatCalendarShortChip(d2),
+            "poQuickDate:$d3" to formatCalendarShortChip(d3),
+            "pickPoDate" to "Lainnya...",
+        )
+        val qGap = 6f
+        val qW = (354f - qGap * 3f) / 4f
+        quickChoices.forEachIndexed { idx, (key, label) ->
+            val left = 18f + idx * (qW + qGap)
+            val chip = RectF(left, y + 68f, left + qW, y + 98f)
+            val isQuickSelected = when (key) {
+                "pickPoDate" -> chosenPoDate != d1 && chosenPoDate != d2 && chosenPoDate != d3
+                else -> key.removePrefix("poQuickDate:") == chosenPoDate
+            }
+            kit.rounded(
+                c,
+                chip,
+                if (isQuickSelected) kit.warnBox else kit.card,
+                8f,
+                if (isQuickSelected) poAccent else kit.border,
+            )
+            kit.centerText(c, label, chip, 9.5f, if (isQuickSelected) poAccent else kit.ink, isQuickSelected)
+            bounds.putVisible(key, chip, topLimit = bodyTop, bottomLimit = bodyBottom)
+            press(c, key, chip, 8f)
+        }
+        y += 112f
+    }
 
     // 2. Sesi Pengambilan (Istirahat 1 / Istirahat 2 / Pulang)
     var commonSessions: Set<String>? = null
@@ -206,7 +261,11 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     val subtotal = lines.sumOf { (p, qty) -> p.priceIdr * qty }
     val totalY = y + 128f
     kit.text(c, "Ringkasan", 22f, totalY, 15f, kit.ink, true)
-    val scheduleText = if (activeMode == "pre_order") "PO Besok · $activeSession" else "Hari Ini · $activeSession"
+    val scheduleText = if (activeMode == "pre_order") {
+        "PO ${formatCalendarShortChip(chosenPoDate)} · $activeSession"
+    } else {
+        "Hari Ini · $activeSession"
+    }
     summaryRow(c, "Jadwal ambil", scheduleText, totalY + 28f)
     summaryRow(c, "Subtotal", formatRupiah(subtotal), totalY + 54f)
     summaryRow(c, "Biaya layanan", formatRupiah(SERVICE_FEE), totalY + 80f)

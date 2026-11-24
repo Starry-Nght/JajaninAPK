@@ -181,7 +181,7 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     y = drawCleanProfileGroup(c, y, appRows, ::visible, navClear)
     y += 24f
 
-    // 5. Minimal Logout Row (Radius 8f)
+    // 5. Minimal Logout & Delete Account Rows (Radius 8f)
     val logoutRow = RectF(20f, y, 370f, y + 48f)
     if (visible(logoutRow.top, logoutRow.bottom)) {
         kit.rounded(c, logoutRow, kit.card, 8f, kit.dangerBorder)
@@ -189,6 +189,15 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
         press(c, "logout", logoutRow, 8f)
     }
     bounds.putVisible("logout", logoutRow, topLimit = HEADER_H, bottomLimit = navClear)
+
+    val deleteRow = RectF(20f, logoutRow.bottom + 10f, 370f, logoutRow.bottom + 54f)
+    if (visible(deleteRow.top, deleteRow.bottom)) {
+        kit.rounded(c, deleteRow, kit.bg, 8f, kit.dangerBorder)
+        val deleteLabel = if (myIsSellerVerified) "Hapus Akun Pembeli / Penjual" else "Hapus Akun Permanen"
+        kit.centerText(c, deleteLabel, deleteRow, 12.5f, kit.danger, true)
+        press(c, "deleteAccount", deleteRow, 8f)
+    }
+    bounds.putVisible("deleteAccount", deleteRow, topLimit = HEADER_H, bottomLimit = navClear)
 
     c.restoreToCount(bodySave)
 
@@ -202,7 +211,7 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     c.restore()
     bounds["headerBack"] = RectF(12f, 10f, 56f, HEADER_H)
 
-    contentHeight = logoutRow.bottom - off + GLASS_TOP_OFFSET + 24f
+    contentHeight = deleteRow.bottom - off + GLASS_TOP_OFFSET + 24f
     drawBottomNav(c, w, h, "Profile")
 }
 

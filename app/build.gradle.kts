@@ -14,8 +14,8 @@ val supabaseUrl = providers.gradleProperty("SUPABASE_URL")
     .orElse("https://yezxyhpczfnkcndfpuht.supabase.co").get()
 val supabasePublishableKey = providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY")
     .orElse("sb_publishable_vj7akRru3TvuUmkugtyRBg_0oRAQck6").get()
-val otaVersionCode = providers.gradleProperty("VERSION_CODE").map(String::toInt).orElse(27).get()
-val otaVersionName = providers.gradleProperty("VERSION_NAME").orElse("2.6").get()
+val otaVersionCode = providers.gradleProperty("VERSION_CODE").map(String::toInt).orElse(28).get()
+val otaVersionName = providers.gradleProperty("VERSION_NAME").orElse("2.7").get()
 
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 

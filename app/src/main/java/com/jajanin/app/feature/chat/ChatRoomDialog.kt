@@ -454,8 +454,9 @@ internal class ChatRoomDialog(
         contextBannerContainer.removeAllViews()
         val orderCtx = summary.orderContext
         val prodCtx = summary.productContext
+        val preferProduct = summary.conversationType == "product_inquiry" && prodCtx != null
 
-        if (orderCtx != null) {
+        if (orderCtx != null && !preferProduct) {
             val card = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL

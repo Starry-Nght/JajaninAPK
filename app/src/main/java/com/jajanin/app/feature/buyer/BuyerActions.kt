@@ -402,10 +402,76 @@ private fun MainActivity.syncCheckoutScheduleDefaults() {
             else -> "same_day"
         }
     }
+    if (!OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
+        ui.checkoutPickupDate = OrderRepository.tomorrowWibDateString()
+    }
     val sessions = allowedCartPickupSessions()
     if (ui.checkoutPickupSession !in sessions) {
         ui.checkoutPickupSession = sessions.first()
     }
+}
+
+internal fun MainActivity.setCheckoutPickupDate(isoDate: String) {
+    val clean = isoDate.trim()
+    if (!OrderRepository.isValidPreOrderDate(clean)) {
+        Toast.makeText(this, "Pilih tanggal Pre-Order antara besok sampai 30 hari ke depan.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    ui.checkoutPickupDate = clean
+    if ("pre_order" in allowedCartOrderModes()) {
+        ui.checkoutOrderMode = "pre_order"
+    }
+    ui.invalidate()
+}
+
+internal fun MainActivity.showPreOrderDatePicker() {
+    val wibTz = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+    val minCal = java.util.Calendar.getInstance(wibTz).apply {
+        add(java.util.Calendar.DAY_OF_YEAR, 1)
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val maxCal = java.util.Calendar.getInstance(wibTz).apply {
+        add(java.util.Calendar.DAY_OF_YEAR, 30)
+        set(java.util.Calendar.HOUR_OF_DAY, 23)
+        set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59)
+        set(java.util.Calendar.MILLISECOND, 999)
+    }
+    val curCal = java.util.Calendar.getInstance(wibTz)
+    val parsedCur = runCatching {
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+            timeZone = wibTz
+        }.parse(ui.checkoutPickupDate)
+    }.getOrNull()
+    if (parsedCur != null && parsedCur.time in minCal.timeInMillis..maxCal.timeInMillis) {
+        curCal.time = parsedCur
+    } else {
+        curCal.timeInMillis = minCal.timeInMillis
+    }
+
+    val themeRes = if (isDarkMode()) {
+        android.R.style.Theme_DeviceDefault_Dialog_Alert
+    } else {
+        android.R.style.Theme_DeviceDefault_Light_Dialog_Alert
+    }
+    val picker = android.app.DatePickerDialog(
+        this,
+        themeRes,
+        { _, year, month, dayOfMonth ->
+            val picked = String.format(java.util.Locale.US, "%04d-%02d-%02d", year, month + 1, dayOfMonth)
+            setCheckoutPickupDate(picked)
+        },
+        curCal.get(java.util.Calendar.YEAR),
+        curCal.get(java.util.Calendar.MONTH),
+        curCal.get(java.util.Calendar.DAY_OF_MONTH),
+    )
+    picker.datePicker.minDate = minCal.timeInMillis
+    picker.datePicker.maxDate = maxCal.timeInMillis
+    picker.setTitle("Pilih Tanggal Pengambilan PO")
+    picker.show()
 }
 
 /** Tambah ke keranjang; v2.0 mendukung multi-menu & qty > 1 dari 1 warung dengan jadwal kompatibel. */
@@ -496,7 +562,7 @@ internal fun MainActivity.setCheckoutOrderMode(mode: String) {
     val allowed = allowedCartOrderModes()
     if (target !in allowed) {
         val msg = if (target == "same_day") {
-            "Ada menu di keranjang yang hanya tersedia untuk PO Besok."
+            "Ada menu di keranjang yang hanya tersedia untuk Pre-Order."
         } else {
             "Ada menu di keranjang yang hanya tersedia untuk Hari Ini."
         }
@@ -504,6 +570,9 @@ internal fun MainActivity.setCheckoutOrderMode(mode: String) {
         return
     }
     ui.checkoutOrderMode = target
+    if (target == "pre_order" && !OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
+        ui.checkoutPickupDate = OrderRepository.tomorrowWibDateString()
+    }
     ui.invalidate()
 }
 
@@ -714,12 +783,14 @@ internal fun MainActivity.placeCartOrder() {
             syncCheckoutScheduleDefaults()
             val chosenMode = ui.checkoutOrderMode
             val chosenSession = ui.checkoutPickupSession
+            val chosenDate = if (chosenMode == "pre_order") ui.checkoutPickupDate else null
             val placed = withTimeout(12_000L) {
                 OrderRepository.placeOrder(
                     lines = lines,
                     paymentMethod = method,
                     orderMode = chosenMode,
                     pickupSession = chosenSession,
+                    pickupDate = chosenDate,
                 )
             }
             ui.cart.clear()
@@ -740,7 +811,8 @@ internal fun MainActivity.placeCartOrder() {
                 ui.lastOrderStatus = placed.status
                 ui.go(Screen.READY)
                 val schedMsg = if (placed.orderMode == "pre_order") {
-                    "Pre-Order besok (${placed.pickupSession}) dibuat. Bayar tunai saat ambil."
+                    val dateLabel = com.jajanin.app.data.repository.formatCalendarShortChip(placed.pickupDate.ifBlank { ui.checkoutPickupDate })
+                    "Pre-Order $dateLabel (${placed.pickupSession}) dibuat. Bayar tunai saat ambil."
                 } else {
                     "Pesanan hari ini (${placed.pickupSession}) dibuat. Bayar tunai saat ambil."
                 }
