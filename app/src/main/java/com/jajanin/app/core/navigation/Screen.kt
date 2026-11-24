@@ -12,8 +12,8 @@ internal enum class Screen {
     HOME, EXPLORE, DETAIL, CHECKOUT, QRIS,
     READY, ORDERS, PROFILE, EXP_HISTORY,
 
-    // Penjual (seller): dashboard, detail pesanan, form produk
-    ADMIN, ADMIN_DETAIL, PRODUCT_FORM,
+    // Penjual (seller): dashboard, detail pesanan, form produk, menu dagangan
+    ADMIN, ADMIN_DETAIL, PRODUCT_FORM, SELLER_MENU,
 
     // Developer / super admin
     DEV,

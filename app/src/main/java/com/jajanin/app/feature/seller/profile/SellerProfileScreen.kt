@@ -104,6 +104,12 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
             kit.text(c, valText, left + 14f, y + 23f, 15.5f, colColor, true)
             kit.text(c, label, left + 14f, y + 40f, 10f, kit.muted)
         }
+        bounds.putVisible(
+            "openSellerMenu",
+            RectF(20f, y, 20f + colW, y + 52f),
+            topLimit = HEADER_H,
+            bottomLimit = navClear,
+        )
     }
     y += 70f
 
@@ -125,9 +131,22 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
         sellerSection(c, "Pengaturan Warung", y + 12f)
     }
     y += 20f
+    val activeMenuCount = sellerProducts.count { it.available }
     y = sellerSettingsGroup(
         c, y,
         listOf(
+            SellerSettingRow(
+                title = "Menu Dagangan",
+                key = "openSellerMenu",
+                subtitle = if (sellerProducts.isEmpty()) {
+                    "Tambah & kelola daftar dagangan warungmu"
+                } else {
+                    "$activeMenuCount aktif dari ${sellerProducts.size} dagangan · Kelola stok & PO"
+                },
+                badge = "${sellerProducts.size} menu",
+                badgeColor = kit.blue,
+                chevron = true,
+            ),
             SellerSettingRow(
                 title = "Nama Toko / Warung",
                 key = "profileStallName",

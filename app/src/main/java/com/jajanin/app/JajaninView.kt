@@ -76,6 +76,7 @@ import com.jajanin.app.feature.onboarding.drawOnboard
 import com.jajanin.app.feature.onboarding.drawSplash
 import com.jajanin.app.feature.seller.dashboard.drawAdminDashboard
 import com.jajanin.app.feature.seller.menu.drawProductForm
+import com.jajanin.app.feature.seller.menu.drawSellerMenu
 import com.jajanin.app.feature.seller.orders.drawAdminDetail
 import kotlin.math.abs
 
@@ -110,6 +111,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var adminFilter = "Semua"
     internal var adminScheduleFilter = "Semua"
     internal var sellerTab = "Dashboard"
+    internal var sellerMenuFilter = "Semua"
     internal var adminDetailOrder: AdminOrder? = null
     internal var adminDetailId: String? = null
     internal var adminDetailLoading = false
@@ -577,6 +579,7 @@ internal class JajaninView(context: Context) : View(context) {
                     go(Screen.PROFILE)
                     if (tabDir != 0f) beginSlide(tabDir)
                     activity()?.refreshSellerSettings()
+                    activity()?.refreshSellerProducts()
                 } else {
                     android.widget.Toast.makeText(context, "Masuk dulu untuk membuka profil.", android.widget.Toast.LENGTH_SHORT).show()
                     activity()?.showAuthForm(false)
@@ -667,6 +670,7 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.ADMIN -> drawAdminDashboard(canvas, 390f, height / s)
             Screen.ADMIN_DETAIL -> drawAdminDetail(canvas, 390f, height / s)
             Screen.PRODUCT_FORM -> drawProductForm(canvas, 390f, height / s)
+            Screen.SELLER_MENU -> drawSellerMenu(canvas, 390f, height / s)
 
             // --- Developer ---
             Screen.DEV -> drawDeveloper(canvas, 390f, height / s)
@@ -696,7 +700,7 @@ internal class JajaninView(context: Context) : View(context) {
     private fun canPullRefresh(): Boolean =
         screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
             screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
-            screen == Screen.CHAT_LIST
+            screen == Screen.SELLER_MENU || screen == Screen.CHAT_LIST
 
     private fun drawPullRefreshBanner(c: Canvas) {
         if (!canPullRefresh()) return
@@ -737,6 +741,10 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.ADMIN_DETAIL -> {
                 adminDetailId?.let { act.loadAdminOrderDetail(it) }
             }
+            Screen.SELLER_MENU -> {
+                act.refreshSellerProducts()
+                android.widget.Toast.makeText(context, "Menu dagangan diperbarui", android.widget.Toast.LENGTH_SHORT).show()
+            }
             Screen.CHAT_LIST -> {
                 act.refreshChatList(silent = false)
                 android.widget.Toast.makeText(context, "Daftar chat diperbarui", android.widget.Toast.LENGTH_SHORT).show()
@@ -748,6 +756,7 @@ internal class JajaninView(context: Context) : View(context) {
     /** Layar yang memakai tipografi penjual (termasuk profil & notifikasi seller). */
     private fun isSellerScreen(): Boolean =
         screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL || screen == Screen.PRODUCT_FORM ||
+            screen == Screen.SELLER_MENU ||
             (screen == Screen.PROFILE && isSellerProfile) ||
             (screen == Screen.NOTIF && myRole == "seller") ||
             (screen == Screen.CHAT_LIST && myRole == "seller")
@@ -804,7 +813,7 @@ internal class JajaninView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
                     screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
-                    screen == Screen.PRODUCT_FORM || screen == Screen.DEV || screen == Screen.CHECKOUT ||
+                    screen == Screen.PRODUCT_FORM || screen == Screen.SELLER_MENU || screen == Screen.DEV || screen == Screen.CHECKOUT ||
                     screen == Screen.NOTIF || screen == Screen.EXP_HISTORY || screen == Screen.PROFILE ||
                     screen == Screen.CHAT_LIST
                 val touchInPinnedHeader = touchStartY <= 68f
@@ -977,6 +986,16 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "switchToSeller" -> activity()?.switchToSellerMode()
                     hit == "switchToBuyer" -> activity()?.switchToBuyerMode()
                     hit == "activateSeller" -> activity()?.showSellerOtpActivationDialog()
+                    hit == "openSellerMenu" -> {
+                        sellerMenuFilter = "Semua"
+                        go(Screen.SELLER_MENU)
+                        activity()?.refreshSellerProducts()
+                    }
+                    hit.startsWith("sellerMenuFilter:") -> {
+                        sellerMenuFilter = hit.substringAfter(':')
+                        scroll = 0f
+                        invalidate()
+                    }
                     hit.startsWith("pfSchedule:") -> {
                         productOrderSchedule = hit.substringAfter(':')
                         invalidate()
@@ -1058,6 +1077,7 @@ internal class JajaninView(context: Context) : View(context) {
                             isSellerProfile = true
                             go(Screen.PROFILE)
                             activity()?.refreshSellerSettings()
+                    activity()?.refreshSellerProducts()
                         } else {
                             android.widget.Toast.makeText(context, "Masuk dulu untuk membuka profil.", android.widget.Toast.LENGTH_SHORT).show()
                             activity()?.showAuthForm(false)
@@ -1116,7 +1136,7 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("adminCancel:") -> activity()?.cancelAdminOrder(hit.substringAfter(':'))
                     hit.startsWith("payPaid:") -> activity()?.markOrderPaid(hit.substringAfter(':'))
                     hit.startsWith("payReject:") -> activity()?.rejectOrderPayment(hit.substringAfter(':'))
-                    hit == "productAdd" -> activity()?.showProductForm()
+                    hit == "productAdd" || hit == "productAddHeader" -> activity()?.showProductForm()
                     hit.startsWith("productToggle:") -> activity()?.toggleProductAvailability(hit.substringAfter(':'))
                     hit == "productSave" -> activity()?.saveProduct()
                     hit == "pfName" -> activity()?.showProductTextField("nama")

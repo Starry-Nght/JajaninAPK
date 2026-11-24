@@ -107,22 +107,41 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     y += 20f
 
     val unread = inboxUnreadCount()
-    val accountRows = listOf(
-        ProfileRowSpec(
-            title = "Nomor HP",
-            subtitle = myPhone.takeIf { it.isNotBlank() } ?: "Belum diisi · wajib sebelum memesan",
-            trailing = if (myPhone.isBlank()) "Isi" else "Ubah",
-            trailingColor = if (myPhone.isBlank()) kit.danger else kit.blue,
-            key = "profilePhone"
-        ),
-        ProfileRowSpec(
-            title = "Notifikasi & Pesan",
-            subtitle = if (unread > 0) "$unread pesan belum dibaca" else "Tidak ada pesan baru",
-            trailing = if (unread > 0) "$unread baru" else null,
-            trailingColor = kit.danger,
-            key = "inbox"
+    val accountRows = buildList {
+        if (myIsSellerVerified) {
+            add(
+                ProfileRowSpec(
+                    title = "Menu Dagangan",
+                    subtitle = if (sellerProducts.isNotEmpty()) {
+                        "${sellerProducts.count { it.available }} aktif dari ${sellerProducts.size} dagangan warungmu"
+                    } else {
+                        "Lihat, tambah & kelola dagangan warungmu"
+                    },
+                    trailing = if (sellerProducts.isNotEmpty()) "${sellerProducts.size} menu" else "Buka",
+                    trailingColor = kit.blue,
+                    key = "openSellerMenu"
+                )
+            )
+        }
+        add(
+            ProfileRowSpec(
+                title = "Nomor HP",
+                subtitle = myPhone.takeIf { it.isNotBlank() } ?: "Belum diisi · wajib sebelum memesan",
+                trailing = if (myPhone.isBlank()) "Isi" else "Ubah",
+                trailingColor = if (myPhone.isBlank()) kit.danger else kit.blue,
+                key = "profilePhone"
+            )
         )
-    )
+        add(
+            ProfileRowSpec(
+                title = "Notifikasi & Pesan",
+                subtitle = if (unread > 0) "$unread pesan belum dibaca" else "Tidak ada pesan baru",
+                trailing = if (unread > 0) "$unread baru" else null,
+                trailingColor = kit.danger,
+                key = "inbox"
+            )
+        )
+    }
     y = drawCleanProfileGroup(c, y, accountRows, ::visible, navClear)
     y += 22f
 
