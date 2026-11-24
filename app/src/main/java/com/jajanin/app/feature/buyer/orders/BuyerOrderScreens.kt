@@ -52,12 +52,7 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     val payStatus = matchedOrder?.paymentStatus ?: if (method == "cash") "unpaid" else "waiting_verification"
     val timeText = matchedOrder?.timeLabel?.takeIf { it.isNotBlank() } ?: "Baru saja"
 
-    // Resolve Pickup Room ("Ambil di ruangan") & Seller Contact
-    val firstMenuId = matchedOrder?.items?.firstNotNullOfOrNull { it.menuItemId }
-    val localProduct = firstMenuId?.let { id -> products.firstOrNull { it.id == id } }
-    val pickupRoom = matchedOrder?.pickupRoom?.takeIf { it.isNotBlank() }
-        ?: localProduct?.pickupRoom?.takeIf { it.isNotBlank() }
-        ?: "Kantin / Ruangan Penjual"
+    // Resolve Seller Contact
     val storeName = matchedOrder?.sellerStoreName?.takeIf { it.isNotBlank() }
         ?: cartStallName.takeIf { it.isNotBlank() }
         ?: "Warung Jajanin"
@@ -132,7 +127,7 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
 
     y = ticketBottom + 12f
 
-    // 2. Section: Ambil di Ruangan & Kontak / Chat Penjual (Visible to Buyer!)
+    // 2. Section: Warung & Kontak / Chat Penjual
     val targetOrderId = matchedOrder?.id ?: lastOrderId
     val unreadForOrder = targetOrderId?.let { unreadChatByOrder[it] ?: 0 } ?: 0
     val hasSellerPhone = sellerPhone.isNotBlank()
@@ -141,7 +136,7 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     kit.rounded(c, roomCard, kit.card, 8f, kit.border)
     kit.rect(c, 20f, y + 8f, 23.5f, y + roomCardH - 8f, kit.blue)
 
-    kit.text(c, "AMBIL DI RUANGAN", 34f, y + 20f, 9.5f, kit.muted, true)
+    kit.text(c, "WARUNG & KONTAK PENJUAL", 34f, y + 20f, 9.5f, kit.muted, true)
     val schedLabel = matchedOrder?.pickupScheduleLabel?.takeIf { it.isNotBlank() }
     if (schedLabel != null) {
         val isPo = matchedOrder.isPreOrder
@@ -150,10 +145,10 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
         kit.rounded(c, pillRect, if (isPo) kit.warnBox else kit.tint, 5f)
         kit.centerText(c, schedLabel, pillRect, 9.5f, if (isPo) Color.rgb(183, 116, 0) else kit.blue, true)
     }
-    kit.textEllipsized(c, pickupRoom, 34f, y + 41f, 320f, 16f, kit.blue, true)
+    kit.textEllipsized(c, storeName, 34f, y + 41f, 320f, 16f, kit.blue, true)
 
-    val sellerIdentity = if (sellerOwner.isNotBlank()) "$storeName  ·  $sellerOwner" else storeName
-    kit.textEllipsized(c, sellerIdentity, 34f, y + 60f, 320f, 12f, kit.ink, true)
+    val sellerIdentity = sellerOwner.ifBlank { "Koordinasi langsung dengan penjual" }
+    kit.textEllipsized(c, sellerIdentity, 34f, y + 60f, 320f, 12f, kit.ink, sellerOwner.isNotBlank())
 
     kit.line(c, 34f, y + 70f, 356f, y + 70f, kit.divider)
     if (hasSellerPhone) {
@@ -389,12 +384,10 @@ private fun JajaninView.drawBuyerOrderItem(
         val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.success
         kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 32f, top + 70f, 324f, 10.5f, schedColor, true)
 
-        // Row 4: Ambil di Ruangan + Nomor Telepon Penjual
-        val roomLabel = order.pickupRoom.takeIf { it.isNotBlank() }?.let { "Ambil di: $it" }
-            ?: order.sellerStoreName.takeIf { it.isNotBlank() }
-            ?: "Kantin Jajanin"
+        // Row 4: Warung + Nomor Telepon Penjual
+        val storeLabel = order.sellerStoreName.takeIf { it.isNotBlank() } ?: "Warung Jajanin"
         val phoneSuffix = order.sellerPhone.takeIf { it.isNotBlank() }?.let { " · HP ${displayBuyerPhone(it)}" }.orEmpty()
-        kit.textEllipsized(c, "$roomLabel$phoneSuffix", 32f, top + 87f, 324f, 11f, kit.blue, true)
+        kit.textEllipsized(c, "$storeLabel$phoneSuffix", 32f, top + 87f, 324f, 11f, kit.blue, true)
 
         // Row 5: Payment method & status + Detail chevron
         val (payLabel, payColor) = paymentLabel(order.paymentStatus)

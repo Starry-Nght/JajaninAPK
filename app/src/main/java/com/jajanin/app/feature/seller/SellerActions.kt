@@ -245,7 +245,6 @@ internal fun MainActivity.showProductTextField(field: String) {
         "po_quota" -> arrayOf("Kuota PO per Tanggal", "cth. 15 (kosongkan = tanpa batas)", ui.productPoDailyQuota, "1", "3", "0")
         "deskripsi" -> arrayOf("Deskripsi", "Singkat saja", ui.productDescription, "0", "200", "1")
         "bahan" -> arrayOf("Bahan", "Opsional", ui.productIngredients, "0", "120", "1")
-        "ruangan" -> arrayOf("Ambil di Ruangan", "cth. Ruang XII RPL 1 / Kantin Utama", ui.productRoom, "0", "45", "0")
         else -> arrayOf("Nama produk", "cth. Nasi goreng", ui.productName, "0", "60", "0")
     }
     val title = spec[0]
@@ -275,7 +274,6 @@ internal fun MainActivity.showProductTextField(field: String) {
                 "po_quota" -> ui.productPoDailyQuota = value.filter(Char::isDigit)
                 "deskripsi" -> ui.productDescription = value
                 "bahan" -> ui.productIngredients = value
-                "ruangan" -> ui.productRoom = value
                 else -> ui.productName = value
             }
             ui.productError = ""
@@ -317,7 +315,6 @@ internal fun MainActivity.saveProductForm() {
     val stockText = ui.productStock.trim()
     ui.productError = when {
         ui.productName.isBlank() -> "Nama produk wajib diisi."
-        ui.productRoom.isBlank() -> "Ruangan pengambilan (Ambil di ruangan) wajib diisi."
         priceValue == null || priceValue <= 0 -> "Harga wajib angka lebih dari Rp 0."
         priceValue > 999_999_999 -> "Harga terlalu besar."
         stockText.isNotBlank() && (stockText.toIntOrNull() == null || stockText.toInt() < 0) ->
@@ -500,7 +497,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
     authScope.launch {
         try {
             val imageUrl = ui.productImageUrl.takeIf { it.startsWith("https://") }
-            val packedIngredients = com.jajanin.app.data.model.packRoomAndIngredients(ui.productRoom, ui.productIngredients)
+            val cleanIngredients = com.jajanin.app.data.model.stripRoomTag(ui.productIngredients)
             val draft = ProductDraft(
                 name = ui.productName,
                 description = ui.productDescription,
@@ -508,7 +505,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
                 priceIdr = price,
                 imageUrl = imageUrl,
                 stock = stock,
-                ingredients = packedIngredients,
+                ingredients = cleanIngredients,
                 available = ui.productAvailable,
                 orderSchedule = ui.productOrderSchedule,
                 pickupSessions = ui.productPickupSessions.joinToString(",").ifBlank { "Istirahat 1,Istirahat 2,Pulang" },
@@ -524,12 +521,6 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
             } else {
                 OrderRepository.updateProduct(editingId, draft)
                 ui.productEditId = null
-            }
-            val cleanRoom = ui.productRoom.trim()
-            if (cleanRoom.isNotBlank()) {
-                ui.myStallRoom = cleanRoom
-                recordRecentSellerRoom(cleanRoom)
-                ui.myStallId?.let { OrderRepository.updateStallLocation(it, cleanRoom) }
             }
             dialog?.dismiss()
             ui.productSaving = false
@@ -1040,54 +1031,6 @@ internal fun MainActivity.showSellerMandatoryPhoneDialog(stallId: String, onSave
                 dialog.dismiss()
                 Toast.makeText(self, "Nomor telepon penjual disimpan.", Toast.LENGTH_SHORT).show()
                 onSaved()
-            } catch (error: Throwable) {
-                saveBtn.isEnabled = true
-                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-    input.requestFocus()
-}
-
-/** Dialog ubah ruangan pengambilan default warung dari halaman Profil seller. */
-internal fun MainActivity.showStallRoomEdit() {
-    val self = this
-    val container = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(48, 24, 48, 0)
-    }
-    val input = EditText(this).apply {
-        hint = "cth. Ruang XII RPL 1 / Kantin Utama"
-        setSingleLine(true)
-        setText(ui.myStallRoom)
-        selectAll()
-    }
-    container.addView(input)
-    val dialog = android.app.AlertDialog.Builder(this).setTitle("Ambil di Ruangan")
-        .setMessage("Ruangan/kelas tempat pembeli mengambil pesanan warungmu.")
-        .setView(container)
-        .setPositiveButton("Simpan", null)
-        .setNegativeButton("Batal", null)
-        .show()
-    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-        val value = input.text.toString().trim()
-        if (value.isBlank()) {
-            Toast.makeText(this, "Nama ruangan tidak boleh kosong.", Toast.LENGTH_SHORT).show()
-            return@setOnClickListener
-        }
-        val saveBtn = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
-        saveBtn.isEnabled = false
-        authScope.launch {
-            try {
-                val stallId = ui.myStallId ?: OrderRepository.sellerStallId()
-                if (stallId != null) {
-                    OrderRepository.updateStallLocation(stallId, value)
-                }
-                ui.myStallRoom = value
-                recordRecentSellerRoom(value)
-                ui.invalidate()
-                dialog.dismiss()
-                Toast.makeText(self, "Ruangan ambil disimpan: $value", Toast.LENGTH_SHORT).show()
             } catch (error: Throwable) {
                 saveBtn.isEnabled = true
                 Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()

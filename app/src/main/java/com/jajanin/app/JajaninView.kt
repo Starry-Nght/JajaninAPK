@@ -1051,7 +1051,6 @@ internal class JajaninView(context: Context) : View(context) {
                     }
                     // --- Profil, EXP, dan pengaturan warung ---
                     hit == "profilePhone" -> activity()?.showPhoneEditor()
-                    hit == "profileStallRoom" -> activity()?.showStallRoomEdit()
                     hit.startsWith("copyPhone:") -> activity()?.copyPhoneToClipboard(hit.substringAfter(':'))
                     hit.startsWith("dialPhone:") -> activity()?.openDialer(hit.substringAfter(':'))
                     hit == "expHistory" -> activity()?.openExpHistory()
@@ -1144,12 +1143,6 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "pfStock" -> activity()?.showProductTextField("stok")
                     hit == "pfDesc" -> activity()?.showProductTextField("deskripsi")
                     hit == "pfIngredients" -> activity()?.showProductTextField("bahan")
-                    hit == "pfRoom" -> activity()?.showProductTextField("ruangan")
-                    hit.startsWith("pfRoomChip:") -> {
-                        productRoom = hit.substringAfter(':')
-                        productError = ""
-                        invalidate()
-                    }
                     hit == "pfCategory" -> activity()?.showProductCategoryPicker()
                     hit.startsWith("pfCat:") -> {
                         productCategory = hit.substringAfter(':')

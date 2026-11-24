@@ -108,7 +108,7 @@ internal fun JajaninView.drawNotif(c: Canvas, w: Float, h: Float) {
                     isCancelled ->
                         "Pesanan dibatalkan · Kuota harian dikembalikan"
                     isReady ->
-                        "Ambil di ${order.pickupRoom.ifBlank { order.sellerStoreName.ifBlank { "Warung" } }} · ${formatRupiah(order.totalIdr)}"
+                        "${order.sellerStoreName.ifBlank { "Warung Jajanin" }} · Siap diambil · ${formatRupiah(order.totalIdr)}"
                     else ->
                         "${order.itemsSummary.ifBlank { "Pesanan Kantin" }} · ${formatRupiah(order.totalIdr)}"
                 }

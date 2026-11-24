@@ -41,13 +41,7 @@ internal fun JajaninView.drawProductForm(c: Canvas, w: Float, h: Float) {
     y = descriptionField(c, y)
     y = ingredientsField(c, y)
 
-    // --- 2. Ambil di Ruangan (Lokasi Pengambilan) ---
-    y += 8f
-    sellerSection(c, "Ambil di Ruangan", y + 12f, trailing = "Tampil di pesanan pembeli", trailingColor = kit.blue)
-    y += 24f
-    y = roomPickupSection(c, y, h - 72f)
-
-    // --- 2b. Jadwal Pemesanan & Sesi Pengambilan (Pre-Order / Hari Ini) ---
+    // --- 2. Jadwal Pemesanan & Sesi Pengambilan (Pre-Order / Hari Ini) ---
     y += 8f
     sellerSection(c, "Jadwal & Sesi Pengambilan", y + 12f, trailing = "Atur Hari Ini / Pre-Order", trailingColor = kit.blue)
     y += 24f
@@ -100,55 +94,6 @@ internal fun JajaninView.drawProductForm(c: Canvas, w: Float, h: Float) {
         }
     }
     sellerHeader(c, if (editing) "Ubah Produk" else "Tambah Produk")
-}
-
-private fun JajaninView.roomPickupSection(c: Canvas, top: Float, bottomLimit: Float): Float {
-    var y = sellerFormField(
-        c = c,
-        label = "Ruangan / kelas tempat pembeli mengambil pesanan",
-        value = productRoom,
-        placeholder = "cth. Ruang XII RPL 1 / Kantin",
-        key = "pfRoom",
-        top = top,
-    )
-
-    val recentRooms = buildList {
-        addAll(recentSellerRooms)
-        if (myStallRoom.isNotBlank()) add(myStallRoom.trim())
-        sellerProducts.forEach { prod ->
-            val r = prod.pickupRoom.trim()
-            if (r.isNotBlank()) add(r)
-        }
-    }.distinctBy { it.lowercase() }.take(4)
-
-    if (recentRooms.isEmpty()) return y + 4f
-
-    kit.text(c, "Terakhir digunakan:", 20f, y + 10f, 10f, kit.muted, true)
-    y += 16f
-
-    var chipX = 20f
-    var chipY = y
-    val chipH = 28f
-    val gap = 6f
-    recentRooms.forEach { room ->
-        val chipW = (kit.measure(room, 10f, true) + 22f).coerceIn(58f, 170f)
-        if (chipX + chipW > 370f) {
-            chipX = 20f
-            chipY += chipH + gap
-        }
-        val chipRect = RectF(chipX, chipY, chipX + chipW, chipY + chipH)
-        val active = productRoom.equals(room, ignoreCase = true)
-        if (active) {
-            kit.rounded(c, chipRect, kit.blue, 6f)
-        } else {
-            kit.rounded(c, chipRect, kit.card, 6f, kit.border)
-        }
-        kit.centerText(c, room, chipRect, 10f, if (active) Color.WHITE else kit.ink, true)
-        bounds.putVisible("pfRoomChip:$room", chipRect, topLimit = 60f, bottomLimit = bottomLimit)
-        chipX += chipW + gap
-    }
-
-    return chipY + chipH + 8f
 }
 
 private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLimit: Float): Float {

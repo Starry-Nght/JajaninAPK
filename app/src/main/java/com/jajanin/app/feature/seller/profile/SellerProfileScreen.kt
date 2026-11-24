@@ -165,14 +165,6 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
                 chevron = false,
             ),
             SellerSettingRow(
-                title = "Ambil di Ruangan (Default)",
-                key = "profileStallRoom",
-                subtitle = myStallRoom.takeIf { it.isNotBlank() } ?: "Atur ruangan tempat pembeli mengambil pesanan",
-                value = if (myStallRoom.isBlank()) "Atur" else "Ubah",
-                valueColor = kit.blue,
-                chevron = false,
-            ),
-            SellerSettingRow(
                 title = "QRIS Warung",
                 key = "profileQris",
                 subtitle = if (myStallQris.isBlank()) "Belum dipasang" else "Siap menerima pembayaran QRIS",

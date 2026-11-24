@@ -480,15 +480,6 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
         kit.textEllipsized(c, "Bahan: $cleanIng", 22f, nextY + 2f, 346f, 12f, kit.muted)
         nextY += 24f
     }
-    val room = product.pickupRoom
-    if (room.isNotBlank() && nextY + 40f < h - 166f) {
-        val poiTop = nextY + 4f
-        val poiRect = RectF(20f, poiTop, 370f, poiTop + 36f)
-        kit.rounded(c, poiRect, kit.tint, 8f, kit.border)
-        kit.rect(c, 20f, poiTop + 6f, 23.5f, poiTop + 30f, kit.blue)
-        kit.text(c, "AMBIL DI RUANGAN", 34f, poiTop + 22f, 10f, kit.muted, true)
-        kit.textRight(c, room, 356f, poiTop + 22.5f, 190f, 12.5f, kit.blue, true)
-    }
     val available = product.available && (product.stock == null || product.stock > 0)
     kit.text(c, if (available) "Tersedia${product.stock?.let { " · Stok $it" }.orEmpty()}" else "Out of Stock", 22f, h - 158f, 13f, if (available) kit.success else kit.danger, true)
     kit.text(c, "Jumlah", 22f, h - 119f, 14f, kit.ink, true)
