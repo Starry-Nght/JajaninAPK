@@ -28,6 +28,10 @@ internal data class ProductRow(
     @SerialName("order_schedule") val orderSchedule: String = "both",
     @SerialName("pickup_sessions") val pickupSessions: String = "Istirahat 1,Istirahat 2,Pulang",
     @SerialName("po_dates") val poDates: String = "",
+    @SerialName("po_cutoff_hour") val poCutoffHour: Int = 20,
+    @SerialName("po_daily_quota") val poDailyQuota: Int? = null,
+    @SerialName("po_require_qris") val poRequireQris: Boolean = false,
+    @SerialName("po_allow_weekend") val poAllowWeekend: Boolean = false,
 ) {
     /** Ruangan pengambilan yang disematkan pada produk (jika ada). */
     val pickupRoom: String
@@ -43,19 +47,26 @@ internal data class ProductRow(
     val allowsNextDay: Boolean
         get() = orderSchedule == "next_day" || orderSchedule == "both"
 
-    /** Daftar tanggal PO (YYYY-MM-DD) yang valid dan akan datang (besok s/d +30 hari). Kosong = fleksibel. */
+    /** Daftar tanggal PO (YYYY-MM-DD) yang valid dan akan datang (besok s/d +30 hari, hari sekolah kecuali allowWeekend). */
     val parsedPoDates: List<String>
         get() = poDates
             .split(',')
             .map { it.trim() }
-            .filter { OrderRepository.isValidPreOrderDate(it) }
+            .filter { iso ->
+                OrderRepository.isValidPreOrderDate(iso) &&
+                    (poAllowWeekend || !OrderRepository.isWeekendWib(iso))
+            }
             .distinct()
             .sorted()
+
+    /** Tanggal PO yang masih dibuka pemesanannya (belum lewat batas jam cutoff H-1 WIB). */
+    val openParsedPoDates: List<String>
+        get() = parsedPoDates.filter { !OrderRepository.isPastPoCutoffWib(it, poCutoffHour) }
 
     /** Ringkasan tanggal kalender PO untuk ditampilkan di detail produk. */
     val poDatesDisplaySummary: String
         get() {
-            val dates = parsedPoDates
+            val dates = openParsedPoDates.ifEmpty { parsedPoDates }
             if (dates.isEmpty()) return ""
             val shown = dates.take(3).joinToString(" · ") { formatCalendarShortChip(it) }
             return if (dates.size > 3) "$shown (+${dates.size - 3} tgl)" else shown

@@ -399,14 +399,32 @@ private fun MainActivity.allowedCartPoDates(): List<String> {
         val prod = ui.products.firstOrNull { it.id == pid }
             ?: ui.sellerProducts.firstOrNull { it.id == pid }
             ?: return@forEach
-        val dates = prod.parsedPoDates
-        if (dates.isNotEmpty()) {
+        val dates = prod.openParsedPoDates
+        if (prod.poDates.isNotBlank() || prod.orderSchedule == "next_day") {
             val s = dates.toSet()
             common = if (common == null) s else common?.intersect(s)
         }
     }
     return common?.sorted().orEmpty()
 }
+
+private fun MainActivity.cartMinPoCutoffHour(): Int =
+    cartProducts().minOfOrNull { it.poCutoffHour }?.coerceIn(12, 23) ?: 20
+
+private fun MainActivity.cartAllowsWeekendPo(): Boolean =
+    cartProducts().isNotEmpty() && cartProducts().all { it.poAllowWeekend }
+
+internal fun MainActivity.cartRequiresQrisForPo(pickupDate: String): Boolean {
+    if (OrderRepository.daysAheadFromTodayWib(pickupDate) > 3) return true
+    return cartProducts().any { it.poRequireQris }
+}
+
+private fun MainActivity.cartQrisRequiredReason(pickupDate: String): String =
+    if (OrderRepository.daysAheadFromTodayWib(pickupDate) > 3) {
+        "Pre-Order lebih dari 3 hari wajib pembayaran QRIS di muka."
+    } else {
+        "Menu Pre-Order ini mewajibkan pembayaran QRIS di muka."
+    }
 
 private fun MainActivity.syncCheckoutScheduleDefaults() {
     val modes = allowedCartOrderModes()
@@ -418,12 +436,24 @@ private fun MainActivity.syncCheckoutScheduleDefaults() {
         }
     }
     val sellerPoDates = allowedCartPoDates()
+    val cutoff = cartMinPoCutoffHour()
+    val allowWknd = cartAllowsWeekendPo()
+    val defaultOpen = OrderRepository.nextOpenSchoolDatesWib(1, cutoff, allowWknd).firstOrNull()
+        ?: OrderRepository.tomorrowWibDateString()
+
     if (sellerPoDates.isNotEmpty()) {
         if (ui.checkoutPickupDate !in sellerPoDates) {
             ui.checkoutPickupDate = sellerPoDates.first()
         }
-    } else if (!OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
-        ui.checkoutPickupDate = OrderRepository.tomorrowWibDateString()
+    } else if (
+        !OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate) ||
+        (!allowWknd && OrderRepository.isWeekendWib(ui.checkoutPickupDate)) ||
+        OrderRepository.isPastPoCutoffWib(ui.checkoutPickupDate, cutoff)
+    ) {
+        ui.checkoutPickupDate = defaultOpen
+    }
+    if (ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate) && !ui.cartStallQris.isNullOrBlank()) {
+        ui.checkoutPayment = "qris"
     }
     val sessions = allowedCartPickupSessions()
     if (ui.checkoutPickupSession !in sessions) {
@@ -437,6 +467,24 @@ internal fun MainActivity.setCheckoutPickupDate(isoDate: String) {
         Toast.makeText(this, "Pilih tanggal Pre-Order antara besok sampai 30 hari ke depan.", Toast.LENGTH_SHORT).show()
         return
     }
+    if (!cartAllowsWeekendPo() && OrderRepository.isWeekendWib(clean)) {
+        Toast.makeText(this, "Pre-Order hanya tersedia pada hari sekolah (Senin–Jumat).", Toast.LENGTH_LONG).show()
+        return
+    }
+    val cutoff = cartMinPoCutoffHour()
+    if (OrderRepository.isPastPoCutoffWib(clean, cutoff)) {
+        Toast.makeText(
+            this,
+            "Pemesanan PO untuk ${com.jajanin.app.data.repository.formatCalendarShortChip(clean)} sudah ditutup (maks. H-1 pukul ${cutoff}:00 WIB).",
+            Toast.LENGTH_LONG,
+        ).show()
+        return
+    }
+    val slot = ui.checkoutPoSlots[clean]
+    if (slot != null && slot.closed) {
+        Toast.makeText(this, slot.closeReason ?: "Tanggal PO ini sudah penuh atau ditutup.", Toast.LENGTH_LONG).show()
+        return
+    }
     val sellerPoDates = allowedCartPoDates()
     if (sellerPoDates.isNotEmpty() && clean !in sellerPoDates) {
         val avail = sellerPoDates.take(4).joinToString(", ") {
@@ -448,6 +496,18 @@ internal fun MainActivity.setCheckoutPickupDate(isoDate: String) {
     ui.checkoutPickupDate = clean
     if ("pre_order" in allowedCartOrderModes()) {
         ui.checkoutOrderMode = "pre_order"
+    }
+    if (cartRequiresQrisForPo(clean)) {
+        if (!ui.cartStallQris.isNullOrBlank()) {
+            ui.checkoutPayment = "qris"
+            Toast.makeText(this, cartQrisRequiredReason(clean), Toast.LENGTH_SHORT).show()
+        } else if (ui.cartStallQris != null) {
+            Toast.makeText(
+                this,
+                "PO > 3 hari wajib QRIS, tetapi warung ini belum memasang QRIS. Pilih tanggal 1–3 hari.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
     }
     ui.invalidate()
 }
@@ -551,7 +611,7 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
         )
         return
     }
-    // Cek kecocokan jadwal (jangan campur menu khusus Hari Ini dengan menu khusus PO Besok).
+    // Cek kecocokan jadwal & irisan tanggal PO (jangan campur menu khusus Hari Ini dengan PO atau 2 PO beda tanggal).
     val existing = cartProducts()
     if (existing.isNotEmpty()) {
         val candidateAll = existing + product
@@ -564,6 +624,23 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
                 Toast.LENGTH_LONG,
             ).show()
             return
+        }
+        if (!canSame && canNext) {
+            var poIntersect: Set<String>? = null
+            candidateAll.forEach { prod ->
+                if (prod.poDates.isNotBlank() || prod.orderSchedule == "next_day") {
+                    val s = prod.openParsedPoDates.toSet()
+                    poIntersect = if (poIntersect == null) s else poIntersect?.intersect(s)
+                }
+            }
+            if (poIntersect != null && poIntersect!!.isEmpty()) {
+                Toast.makeText(
+                    this,
+                    "Tanggal PO ${product.name} tidak cocok dengan tanggal PO menu lain di keranjang.",
+                    Toast.LENGTH_LONG,
+                ).show()
+                return
+            }
         }
     }
     val currentQty = ui.cart[productId] ?: 0
@@ -615,17 +692,23 @@ internal fun MainActivity.setCheckoutOrderMode(mode: String) {
     }
     ui.checkoutOrderMode = target
     if (target == "pre_order") {
-        val sellerPoDates = allowedCartPoDates()
-        if (sellerPoDates.isNotEmpty() && ui.checkoutPickupDate !in sellerPoDates) {
-            ui.checkoutPickupDate = sellerPoDates.first()
-        } else if (!OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
-            ui.checkoutPickupDate = OrderRepository.tomorrowWibDateString()
+        syncCheckoutScheduleDefaults()
+        if (cartRequiresQrisForPo(ui.checkoutPickupDate) && !ui.cartStallQris.isNullOrBlank()) {
+            ui.checkoutPayment = "qris"
         }
     }
     ui.invalidate()
 }
 
 internal fun MainActivity.setCheckoutPayment(method: String) {
+    if (method == "cash" && ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate)) {
+        Toast.makeText(this, cartQrisRequiredReason(ui.checkoutPickupDate), Toast.LENGTH_LONG).show()
+        if (!ui.cartStallQris.isNullOrBlank()) {
+            ui.checkoutPayment = "qris"
+            ui.invalidate()
+        }
+        return
+    }
     if (method == "qris" && ui.cartStallQris.isNullOrBlank()) {
         Toast.makeText(this, "Toko ini belum memasang QRIS. Silakan bayar Tunai.", Toast.LENGTH_SHORT).show()
         ui.checkoutPayment = "cash"
@@ -671,6 +754,7 @@ internal fun MainActivity.openCheckout() {
     ui.placingOrder = false
     ui.checkoutPayment = "cash"
     ui.cartStallQris = null
+    ui.checkoutPoSlots = emptyMap()
     syncCheckoutScheduleDefaults()
     ui.go(Screen.CHECKOUT)
     refreshOrderingStatus()
@@ -687,8 +771,20 @@ internal fun MainActivity.openCheckout() {
         }
         ui.cartStallName = stall?.name ?: "Kantin Jajanin"
         ui.cartStallQris = stall?.qrisImageUrl?.trim().orEmpty()
-        // Warung belum pasang QRIS = tunai saja, opsi QRIS disembunyikan.
-        if (ui.cartStallQris.isNullOrBlank()) ui.checkoutPayment = "cash"
+        if (ui.cartStallQris.isNullOrBlank()) {
+            ui.checkoutPayment = "cash"
+        } else if (ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate)) {
+            ui.checkoutPayment = "qris"
+        }
+        val firstPoPid = cartProducts().firstOrNull { it.allowsNextDay }?.id
+        if (firstPoPid != null) {
+            val avail = withTimeoutOrNull(6_000L) {
+                OrderRepository.fetchPoSlotAvailability(firstPoPid)
+            }
+            if (avail != null) {
+                ui.checkoutPoSlots = avail.dates
+            }
+        }
         ui.invalidate()
     }
 }
@@ -822,17 +918,26 @@ internal fun MainActivity.placeCartOrder() {
                 verifiedQris = stall?.qrisImageUrl?.trim().orEmpty()
                 ui.cartStallQris = verifiedQris
             }
+            syncCheckoutScheduleDefaults()
+            val chosenMode = ui.checkoutOrderMode
+            val chosenSession = ui.checkoutPickupSession
+            val chosenDate = if (chosenMode == "pre_order") ui.checkoutPickupDate else null
+            val qrisMandatory = chosenMode == "pre_order" && chosenDate != null && cartRequiresQrisForPo(chosenDate)
+            if (qrisMandatory && verifiedQris.isNullOrBlank()) {
+                Toast.makeText(
+                    self,
+                    "Pre-Order ini wajib pembayaran QRIS, tetapi warung belum memasang QRIS. Pilih tanggal 1–3 hari.",
+                    Toast.LENGTH_LONG,
+                ).show()
+                return@launch
+            }
             if (requestedMethod == "qris" && verifiedQris.isNullOrBlank()) {
                 ui.checkoutPayment = "cash"
                 Toast.makeText(self, "Toko ini belum memasang kode QRIS. Silakan pilih Tunai.", Toast.LENGTH_LONG).show()
                 return@launch
             }
-            val method = if (requestedMethod == "qris") "qris" else "cash"
+            val method = if (qrisMandatory || requestedMethod == "qris") "qris" else "cash"
             ui.checkoutPayment = method
-            syncCheckoutScheduleDefaults()
-            val chosenMode = ui.checkoutOrderMode
-            val chosenSession = ui.checkoutPickupSession
-            val chosenDate = if (chosenMode == "pre_order") ui.checkoutPickupDate else null
             val placed = withTimeout(12_000L) {
                 OrderRepository.placeOrder(
                     lines = lines,
@@ -959,6 +1064,14 @@ internal fun MainActivity.submitPaymentProofFor(orderId: String) {
 internal fun MainActivity.cancelBuyerOrder(orderId: String) {
     val self = this
     val order = ui.myOrders.firstOrNull { it.id == orderId }
+    if (order?.isPreOrder == true) {
+        Toast.makeText(
+            this,
+            "Pesanan Pre-Order tidak dapat dibatalkan oleh pembeli. Hubungi penjual lewat chat jika ada kendala.",
+            Toast.LENGTH_LONG,
+        ).show()
+        return
+    }
     val currentStatus = order?.status ?: if (ui.lastOrderId == orderId) ui.lastOrderStatus else null
     if (currentStatus != null && !currentStatus.equals(STATUS_PENDING, ignoreCase = true)) {
         Toast.makeText(this, "Pesanan sudah dikonfirmasi penjual dan tidak bisa dibatalkan.", Toast.LENGTH_LONG).show()

@@ -47,6 +47,7 @@ import com.jajanin.app.data.repository.DevUser
 import com.jajanin.app.data.repository.DevWarningRow
 import com.jajanin.app.data.repository.OrderObserver
 import com.jajanin.app.data.repository.OrderRepository
+import com.jajanin.app.data.repository.sellerPoAdvanceBlockReason
 import com.jajanin.app.data.repository.SalesStat
 import com.jajanin.app.data.repository.PlacedOrder
 import com.jajanin.app.data.repository.SellerInvite
@@ -137,6 +138,9 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productOrderSchedule = "both"
     internal var productPickupSessions = linkedSetOf("Istirahat 1", "Istirahat 2", "Pulang")
     internal var productPoDates = linkedSetOf<String>()
+    internal var productPoCutoffHour = 20
+    internal var productPoDailyQuota = ""
+    internal var productPoRequireQris = false
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
     internal var productSaving = false
@@ -161,8 +165,10 @@ internal class JajaninView(context: Context) : View(context) {
     internal var cartStallQris: String? = null
     internal var checkoutPayment: String = "cash"
     internal var checkoutOrderMode: String = "same_day"
-    internal var checkoutPickupDate: String = OrderRepository.tomorrowWibDateString()
+    internal var checkoutPickupDate: String = OrderRepository.nextOpenSchoolDatesWib(1).firstOrNull()
+        ?: OrderRepository.tomorrowWibDateString()
     internal var checkoutPickupSession: String = "Istirahat 1"
+    internal var checkoutPoSlots: Map<String, com.jajanin.app.data.repository.PoDateSlot> = emptyMap()
     internal var placingOrder = false
     internal var lastOrderId: String? = null
     internal var lastOrderPickup: String? = null
@@ -993,6 +999,15 @@ internal class JajaninView(context: Context) : View(context) {
                         productPoDates.remove(hit.substringAfter(':'))
                         invalidate()
                     }
+                    hit.startsWith("pfCutoff:") -> {
+                        productPoCutoffHour = hit.substringAfter(':').toIntOrNull()?.coerceIn(12, 23) ?: 20
+                        invalidate()
+                    }
+                    hit == "pfPoQuota" -> activity()?.showProductTextField("po_quota")
+                    hit == "pfPoRequireQris" -> {
+                        productPoRequireQris = !productPoRequireQris
+                        invalidate()
+                    }
                     hit.startsWith("pfSession:") -> {
                         val s = hit.substringAfter(':')
                         if (s in productPickupSessions) {
@@ -1070,19 +1085,32 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "adminRetry" -> adminDetailId?.let { activity()?.loadAdminOrderDetail(it) }
                     hit.startsWith("adminSet:") -> {
                         val status = hit.substringAfter(':')
-                        adminDetailOrder = adminDetailOrder?.copy(status = status)
-                        invalidate()
-                        adminDetailOrder?.let { activity()?.setAdminOrderStatus(it.id, status) }
+                        val detail = adminDetailOrder
+                        if (detail != null) {
+                            val lockMsg = sellerPoAdvanceBlockReason(detail, status)
+                            if (lockMsg != null) {
+                                android.widget.Toast.makeText(context, lockMsg, android.widget.Toast.LENGTH_LONG).show()
+                            } else {
+                                adminDetailOrder = detail.copy(status = status)
+                                invalidate()
+                                activity()?.setAdminOrderStatus(detail.id, status)
+                            }
+                        }
                     }
                     hit.startsWith("adminStatus:") -> {
                         val orderId = hit.substringAfter(':')
                         val current = adminOrders.firstOrNull { it.id == orderId }
                         val next = current?.let { statusNextAction(it.status)?.second }
                         if (current != null && next != null) {
-                            // Optimis: status kartu langsung bergerak; server mengonfirmasi lewat refresh.
-                            adminOrders = adminOrders.map { if (it.id == orderId) it.copy(status = next) else it }
-                            invalidate()
-                            activity()?.setAdminOrderStatus(orderId, next)
+                            val lockMsg = sellerPoAdvanceBlockReason(current, next)
+                            if (lockMsg != null) {
+                                android.widget.Toast.makeText(context, lockMsg, android.widget.Toast.LENGTH_LONG).show()
+                            } else {
+                                // Optimis: status kartu langsung bergerak; server mengonfirmasi lewat refresh.
+                                adminOrders = adminOrders.map { if (it.id == orderId) it.copy(status = next) else it }
+                                invalidate()
+                                activity()?.setAdminOrderStatus(orderId, next)
+                            }
                         }
                     }
                     hit.startsWith("adminCancel:") -> activity()?.cancelAdminOrder(hit.substringAfter(':'))

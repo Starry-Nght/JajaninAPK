@@ -162,36 +162,61 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
 
     // 1b. Pemilih Tanggal Kalender (tampil saat Pre-Order aktif)
     val tomorrowIso = OrderRepository.tomorrowWibDateString()
+    val minCutoffHour = lines.minOfOrNull { it.first.poCutoffHour }?.coerceIn(12, 23) ?: 20
+    val allowWeekendPo = lines.isNotEmpty() && lines.all { it.first.poAllowWeekend }
     var commonPoDates: Set<String>? = null
     lines.forEach { (p, _) ->
-        val d = p.parsedPoDates
-        if (d.isNotEmpty()) {
-            val s = d.toSet()
+        if (p.poDates.isNotBlank() || p.orderSchedule == "next_day") {
+            val s = p.openParsedPoDates.toSet()
             commonPoDates = if (commonPoDates == null) s else commonPoDates?.intersect(s)
         }
     }
     val sellerPoDates = commonPoDates?.sorted().orEmpty()
+    val defaultSchoolDate = OrderRepository.nextOpenSchoolDatesWib(1, minCutoffHour, allowWeekendPo).firstOrNull()
+        ?: tomorrowIso
     val chosenPoDate = when {
         sellerPoDates.isNotEmpty() -> if (checkoutPickupDate in sellerPoDates) checkoutPickupDate else sellerPoDates.first()
-        OrderRepository.isValidPreOrderDate(checkoutPickupDate) -> checkoutPickupDate
-        else -> tomorrowIso
+        OrderRepository.isValidPreOrderDate(checkoutPickupDate) &&
+            (allowWeekendPo || !OrderRepository.isWeekendWib(checkoutPickupDate)) &&
+            !OrderRepository.isPastPoCutoffWib(checkoutPickupDate, minCutoffHour) -> checkoutPickupDate
+        else -> defaultSchoolDate
     }
+    val daysAheadPo = OrderRepository.daysAheadFromTodayWib(chosenPoDate)
+    val poRequiresQris = poSelected && (daysAheadPo > 3 || lines.any { it.first.poRequireQris })
+    val poQrisReason = if (daysAheadPo > 3) {
+        "PO > 3 hari wajib QRIS di muka"
+    } else {
+        "Menu PO ini wajib QRIS di muka"
+    }
+
     if (poSelected) {
-        val dateCard = RectF(18f, y + 4f, 372f, y + 60f)
+        val dateCard = RectF(18f, y + 4f, 372f, y + 74f)
         kit.rounded(c, dateCard, kit.warnBox, 12f, poAccent)
-        val headerLabel = if (sellerPoDates.isNotEmpty()) "TANGGAL PO DARI PENJUAL" else "TANGGAL PENGAMBILAN PO"
-        kit.text(c, headerLabel, 32f, y + 22f, 9.5f, poAccent, true)
+        val headerLabel = if (sellerPoDates.isNotEmpty()) "TANGGAL PO DARI PENJUAL (SEN–JUM)" else "TANGGAL PENGAMBILAN PO (SEN–JUM)"
+        kit.text(c, headerLabel, 32f, y + 21f, 9f, poAccent, true)
         val fullLabel = formatCalendarFullIdDate(chosenPoDate)
         val dateDisplay = if (chosenPoDate == tomorrowIso) "$fullLabel (Besok)" else fullLabel
-        kit.textEllipsized(c, dateDisplay, 32f, y + 44f, 232f, 13f, kit.ink, true)
+        kit.textEllipsized(c, dateDisplay, 32f, y + 41f, 232f, 12.5f, kit.ink, true)
 
-        val calPill = RectF(272f, y + 17f, 360f, y + 47f)
+        val slot = checkoutPoSlots[chosenPoDate]
+        val quotaInfo = when {
+            slot != null && slot.quota != null -> " · Sisa ${slot.remaining ?: 0}/${slot.quota} porsi"
+            lines.any { it.first.poDailyQuota != null } -> {
+                val q = lines.mapNotNull { it.first.poDailyQuota }.minOrNull()
+                if (q != null) " · Kuota $q/hari" else ""
+            }
+            else -> ""
+        }
+        val metaLine = "Tutup H-1 ${minCutoffHour}:00 WIB$quotaInfo"
+        kit.textEllipsized(c, metaLine, 32f, y + 59f, 232f, 9.5f, kit.muted, true)
+
+        val calPill = RectF(272f, y + 22f, 360f, y + 52f)
         kit.rounded(c, calPill, kit.card, 8f, poAccent)
         kit.centerText(c, "Kalender", calPill, 11f, poAccent, true)
         bounds.putVisible("pickPoDateCard", dateCard, topLimit = bodyTop, bottomLimit = bodyBottom)
         press(c, "pickPoDateCard", dateCard, 12f)
 
-        // Baris cepat: tanggal PO penjual (bila dikunci) atau Besok, +2 hr, +3 hr, Lainnya...
+        // Baris cepat: tanggal PO penjual (bila dikunci) atau 3 hari sekolah terbuka + Kalender...
         val quickChoices: List<Pair<String, String>> = if (sellerPoDates.isNotEmpty()) {
             if (sellerPoDates.size <= 4) {
                 sellerPoDates.map { iso ->
@@ -205,15 +230,11 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
                 } + ("pickPoDateMore" to "Kalender...")
             }
         } else {
-            val d1 = OrderRepository.wibDateStringOffset(1)
-            val d2 = OrderRepository.wibDateStringOffset(2)
-            val d3 = OrderRepository.wibDateStringOffset(3)
-            listOf(
-                "poQuickDate:$d1" to "Besok (${formatShortIdDate(d1)})",
-                "poQuickDate:$d2" to formatCalendarShortChip(d2),
-                "poQuickDate:$d3" to formatCalendarShortChip(d3),
-                "pickPoDateMore" to "Kalender...",
-            )
+            val openDates = OrderRepository.nextOpenSchoolDatesWib(3, minCutoffHour, allowWeekendPo)
+            openDates.map { iso ->
+                val lbl = if (iso == tomorrowIso) "Besok (${formatShortIdDate(iso)})" else formatCalendarShortChip(iso)
+                "poQuickDate:$iso" to lbl
+            } + ("pickPoDateMore" to "Kalender...")
         }
         val qGap = 6f
         val qW = (354f - qGap * (quickChoices.size - 1).coerceAtLeast(0)) / quickChoices.size.coerceAtLeast(1)
@@ -222,7 +243,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         }.toSet()
         quickChoices.forEachIndexed { idx, (key, label) ->
             val left = 18f + idx * (qW + qGap)
-            val chip = RectF(left, y + 68f, left + qW, y + 98f)
+            val chip = RectF(left, y + 82f, left + qW, y + 112f)
             val isQuickSelected = when (key) {
                 "pickPoDateMore" -> chosenPoDate !in shownQuickIsos
                 else -> key.removePrefix("poQuickDate:") == chosenPoDate
@@ -238,7 +259,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
             bounds.putVisible(key, chip, topLimit = bodyTop, bottomLimit = bodyBottom)
             press(c, key, chip, 8f)
         }
-        y += 112f
+        y += 124f
     }
 
     // 2. Sesi Pengambilan (Istirahat 1 / Istirahat 2 / Pulang)
@@ -268,29 +289,48 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     kit.text(c, "Metode pembayaran", 22f, y + 22f, 15f, kit.ink, true)
     val stallQris = cartStallQris
     val qrisOffered = !stallQris.isNullOrBlank()
+    val cashLockedByPo = poRequiresQris
+    val missingQrisForStrictPo = poRequiresQris && stallQris != null && !qrisOffered
     val cashBox = if (qrisOffered) RectF(18f, y + 34f, 190f, y + 92f) else RectF(18f, y + 34f, 372f, y + 92f)
-    val cashOn = checkoutPayment == "cash" || !qrisOffered
-    kit.rounded(c, cashBox, kit.card, 13f, if (cashOn) kit.blue else kit.border)
-    kit.text(c, "Tunai", 34f, y + 59f, 13f, kit.ink, true)
+    val cashOn = !cashLockedByPo && (checkoutPayment == "cash" || !qrisOffered)
+    kit.rounded(
+        c,
+        cashBox,
+        if (cashLockedByPo) kit.bg else kit.card,
+        13f,
+        if (cashOn) kit.blue else kit.border,
+    )
+    kit.text(c, "Tunai", 34f, y + 59f, 13f, if (cashLockedByPo) kit.muted else kit.ink, true)
     val cashSub = when {
+        cashLockedByPo -> poQrisReason
         stallQris == null -> "Bayar saat ambil · memeriksa QRIS warung..."
         qrisOffered -> "Bayar saat ambil"
         else -> "Bayar saat ambil · toko belum pasang QRIS"
     }
-    kit.text(c, cashSub, 34f, y + 79f, 10f, kit.muted)
+    kit.textEllipsized(c, cashSub, 34f, y + 79f, (cashBox.width() - 28f).coerceAtLeast(100f), 9.5f, if (cashLockedByPo) poAccent else kit.muted)
     if (cashOn) kit.centerText(c, "●", RectF(cashBox.right - 32f, y + 52f, cashBox.right - 8f, y + 76f), 13f, kit.blue, true)
     bounds.putVisible("payMethod:cash", cashBox, topLimit = bodyTop, bottomLimit = bodyBottom)
     if (qrisOffered) {
         val qrisBox = RectF(198f, y + 34f, 372f, y + 92f)
-        kit.rounded(c, qrisBox, kit.card, 13f, if (!cashOn) kit.blue else kit.border)
-        kit.text(c, "QRIS", 214f, y + 59f, 13f, kit.ink, true)
-        kit.text(c, "Scan lalu konfirmasi", 214f, y + 79f, 10f, kit.muted)
-        if (!cashOn) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, kit.blue, true)
+        val qrisOn = cashLockedByPo || !cashOn
+        kit.rounded(c, qrisBox, if (cashLockedByPo) kit.warnBox else kit.card, 13f, if (qrisOn) (if (cashLockedByPo) poAccent else kit.blue) else kit.border)
+        kit.text(c, if (cashLockedByPo) "QRIS (Wajib)" else "QRIS", 214f, y + 59f, 13f, kit.ink, true)
+        kit.text(c, if (cashLockedByPo) "Bayar di muka" else "Scan lalu konfirmasi", 214f, y + 79f, 10f, if (cashLockedByPo) poAccent else kit.muted)
+        if (qrisOn) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, if (cashLockedByPo) poAccent else kit.blue, true)
         bounds.putVisible("payMethod:qris", qrisBox, topLimit = bodyTop, bottomLimit = bodyBottom)
     }
 
+    var summaryOffset = y + 128f
+    if (missingQrisForStrictPo) {
+        val warnBox = RectF(18f, y + 100f, 372f, y + 140f)
+        kit.rounded(c, warnBox, kit.dangerBorder, 10f, kit.danger)
+        kit.textEllipsized(c, "Warung ini belum memasang QRIS untuk $poQrisReason.", 30f, y + 117f, 330f, 10f, kit.danger, true)
+        kit.textEllipsized(c, "Pilih tanggal PO 1–3 hari ke depan atau hubungi penjual.", 30f, y + 132f, 330f, 9.5f, kit.ink)
+        summaryOffset = y + 162f
+    }
+
     val subtotal = lines.sumOf { (p, qty) -> p.priceIdr * qty }
-    val totalY = y + 128f
+    val totalY = summaryOffset
     kit.text(c, "Ringkasan", 22f, totalY, 15f, kit.ink, true)
     val scheduleText = if (activeMode == "pre_order") {
         "PO ${formatCalendarShortChip(chosenPoDate)} · $activeSession"
@@ -302,7 +342,12 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     summaryRow(c, "Biaya layanan", formatRupiah(SERVICE_FEE), totalY + 80f)
     kit.line(c, 22f, totalY + 98f, 368f, totalY + 98f)
     summaryRow(c, "Total", formatRupiah(subtotal + SERVICE_FEE), totalY + 126f, true)
-    kit.text(c, "Harga final dihitung ulang server dari database.", 22f, totalY + 148f, 10f, kit.muted)
+    val noteLine = if (activeMode == "pre_order") {
+        "Pesanan Pre-Order bersifat final dan tidak dapat dibatalkan oleh pembeli."
+    } else {
+        "Harga final dihitung ulang server dari database."
+    }
+    kit.textEllipsized(c, noteLine, 22f, totalY + 148f, 346f, 10f, if (activeMode == "pre_order") poAccent else kit.muted, activeMode == "pre_order")
     kit.text(c, "Jam server: ${serverClockLabel()} · live", 22f, totalY + 168f, 11f, kit.muted)
 
     c.restoreToCount(bodySave)
@@ -317,8 +362,11 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     if (placingOrder) {
         kit.rounded(c, cta, kit.muted, 14f)
         kit.centerText(c, "Membuat pesanan...", cta, 14f, Color.WHITE, true)
+    } else if (missingQrisForStrictPo) {
+        kit.rounded(c, cta, kit.muted, 14f)
+        kit.centerText(c, "QRIS Warung Belum Tersedia (Pilih 1–3 Hari)", cta, 12f, Color.WHITE, true)
     } else {
-        val activeMethod = if (qrisOffered && checkoutPayment == "qris") "qris" else "cash"
+        val activeMethod = if (qrisOffered && (poRequiresQris || checkoutPayment == "qris")) "qris" else "cash"
         val prefix = if (activeMode == "pre_order") "Buat Pre-Order" else "Buat pesanan"
         kit.button(c, if (activeMethod == "cash") "$prefix · bayar tunai" else "$prefix · bayar QRIS", cta)
         bounds["pay"] = RectF(cta)
@@ -396,15 +444,25 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
         true,
     )
     val poSummary = product.poDatesDisplaySummary
+    val poRuleLine = if (product.allowsNextDay) {
+        buildList {
+            if (poSummary.isNotBlank()) add("PO: $poSummary")
+            add("Tutup H-1 ${product.poCutoffHour}:00")
+            product.poDailyQuota?.let { add("Kuota $it/hari") }
+            if (product.poRequireQris) add("Wajib QRIS")
+        }.joinToString(" · ")
+    } else {
+        ""
+    }
     var detailY = imgBottom + 132f
-    if (poSummary.isNotBlank()) {
+    if (poRuleLine.isNotBlank()) {
         kit.textEllipsized(
             c,
-            "Tanggal PO: $poSummary",
+            poRuleLine,
             22f,
             imgBottom + 126f,
             346f,
-            11.5f,
+            11f,
             Color.rgb(183, 116, 0),
             true,
         )

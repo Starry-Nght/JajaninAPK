@@ -205,8 +205,25 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
         bounds.putVisible("myOrderPaid:${matchedOrder.id}", proofBtn, topLimit = HEADER_H, bottomLimit = h - 70f)
     }
 
+    var endContentY = y + payBoxH
+    if (matchedOrder?.isPreOrder == true && !isTerminalStatus(status)) {
+        val lockBox = RectF(20f, endContentY + 10f, 370f, endContentY + 46f)
+        kit.rounded(c, lockBox, kit.warnBox, 8f, Color.rgb(183, 116, 0))
+        kit.textEllipsized(
+            c,
+            "Pesanan Pre-Order bersifat final · tidak dapat dibatalkan pembeli.",
+            32f,
+            endContentY + 32f,
+            326f,
+            10.5f,
+            Color.rgb(183, 116, 0),
+            true,
+        )
+        endContentY = lockBox.bottom
+    }
+
     c.restoreToCount(bodySave)
-    contentHeight = (y - off) + payBoxH + 24f
+    contentHeight = (endContentY - off) + 24f
 
     // Flat Top Header
     kit.rect(c, 0f, 0f, w, HEADER_H, kit.bg)
@@ -215,8 +232,9 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     kit.line(c, 20f, HEADER_H, 370f, HEADER_H, kit.divider)
     bounds["headerBack"] = RectF(12f, 10f, 64f, HEADER_H)
 
-    // Bottom Action CTA
-    val canBuyerCancel = status.equals(STATUS_PENDING, ignoreCase = true) && !targetOrderId.isNullOrBlank()
+    // Bottom Action CTA (Pesanan Pre-Order dikunci — tidak dapat dibatalkan oleh pembeli)
+    val isPreOrderLocked = matchedOrder?.isPreOrder == true
+    val canBuyerCancel = !isPreOrderLocked && status.equals(STATUS_PENDING, ignoreCase = true) && !targetOrderId.isNullOrBlank()
     if (canBuyerCancel && targetOrderId != null) {
         val cancelBtn = RectF(20f, h - 62f, 134f, h - 14f)
         kit.rounded(c, cancelBtn, kit.card, 8f, kit.dangerBorder)
@@ -319,7 +337,7 @@ private fun JajaninView.drawBuyerOrderItem(
     visible: (Float, Float) -> Boolean,
     bottomClip: Float
 ): Float {
-    val canCancel = active && order.status.equals(STATUS_PENDING, ignoreCase = true)
+    val canCancel = active && !order.isPreOrder && order.status.equals(STATUS_PENDING, ignoreCase = true)
     val needsProof = order.paymentMethod == "qris" &&
         (order.paymentStatus == "unpaid" || order.paymentStatus == "rejected")
     val hasActionRow = active && (needsProof || canCancel)

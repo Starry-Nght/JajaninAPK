@@ -274,10 +274,22 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
         bounds["adminCancel:${order.id}"] = RectF(cancelBtn)
 
         val cta = RectF(142f, h - 58f, w - 20f, h - 10f)
-        kit.rounded(c, cta, kit.blue, 8f)
-        kit.centerText(c, "${next.first} →", cta, 14f, Color.WHITE, true)
-        press(c, "adminSet:${next.second}", cta, 8f)
-        bounds["adminSet:${next.second}"] = RectF(cta)
+        val lockReason = com.jajanin.app.data.repository.sellerPoAdvanceBlockReason(order, next.second)
+        if (lockReason != null) {
+            val lockedLabel = if (order.pickupDate.isNotBlank() && order.pickupDate > com.jajanin.app.data.repository.OrderRepository.todayWibDateString()) {
+                "Terkunci s/d ${com.jajanin.app.data.repository.formatShortIdDate(order.pickupDate)}"
+            } else {
+                "Verifikasi QRIS Dulu"
+            }
+            kit.rounded(c, cta, kit.warnBox, 8f, Color.rgb(183, 116, 0))
+            kit.centerText(c, lockedLabel, cta, 12.5f, Color.rgb(183, 116, 0), true)
+            bounds["adminSet:${next.second}"] = RectF(cta)
+        } else {
+            kit.rounded(c, cta, kit.blue, 8f)
+            kit.centerText(c, "${next.first} →", cta, 14f, Color.WHITE, true)
+            press(c, "adminSet:${next.second}", cta, 8f)
+            bounds["adminSet:${next.second}"] = RectF(cta)
+        }
     } else if (order != null) {
         val terminal = order.status.lowercase() == STATUS_CANCELLED
         val statusCard = RectF(20f, h - 58f, w - 20f, h - 10f)

@@ -168,6 +168,10 @@ internal fun MainActivity.showSellerProductPoDatePicker() {
                 Toast.makeText(this, "Pilih tanggal antara besok sampai 30 hari ke depan.", Toast.LENGTH_SHORT).show()
                 return@DatePickerDialog
             }
+            if (OrderRepository.isWeekendWib(picked)) {
+                Toast.makeText(this, "Pre-Order hanya tersedia pada hari sekolah (Senin–Jumat).", Toast.LENGTH_LONG).show()
+                return@DatePickerDialog
+            }
             if (picked in ui.productPoDates) {
                 ui.productPoDates.remove(picked)
                 Toast.makeText(this, "Tanggal ${com.jajanin.app.data.repository.formatCalendarShortChip(picked)} dihapus.", Toast.LENGTH_SHORT).show()
@@ -206,6 +210,9 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productOrderSchedule = existing.orderSchedule
         ui.productPickupSessions = LinkedHashSet(existing.parsedPickupSessions)
         ui.productPoDates = LinkedHashSet(existing.parsedPoDates)
+        ui.productPoCutoffHour = existing.poCutoffHour.coerceIn(12, 23)
+        ui.productPoDailyQuota = existing.poDailyQuota?.toString().orEmpty()
+        ui.productPoRequireQris = existing.poRequireQris
     } else {
         ui.productEditId = null
         ui.productName = ""
@@ -220,6 +227,9 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productOrderSchedule = "both"
         ui.productPickupSessions = linkedSetOf("Istirahat 1", "Istirahat 2", "Pulang")
         ui.productPoDates = linkedSetOf()
+        ui.productPoCutoffHour = 20
+        ui.productPoDailyQuota = ""
+        ui.productPoRequireQris = false
     }
     ui.productSaving = false
     ui.productError = ""
@@ -232,6 +242,7 @@ internal fun MainActivity.showProductTextField(field: String) {
     val spec = when (field) {
         "harga" -> arrayOf("Harga", "cth. 12000", ui.productPrice, "1", "9", "0")
         "stok" -> arrayOf("Stok", "Kosongkan = tanpa batas", ui.productStock, "1", "5", "0")
+        "po_quota" -> arrayOf("Kuota PO per Tanggal", "cth. 15 (kosongkan = tanpa batas)", ui.productPoDailyQuota, "1", "3", "0")
         "deskripsi" -> arrayOf("Deskripsi", "Singkat saja", ui.productDescription, "0", "200", "1")
         "bahan" -> arrayOf("Bahan", "Opsional", ui.productIngredients, "0", "120", "1")
         "ruangan" -> arrayOf("Ambil di Ruangan", "cth. Ruang XII RPL 1 / Kantin Utama", ui.productRoom, "0", "45", "0")
@@ -261,6 +272,7 @@ internal fun MainActivity.showProductTextField(field: String) {
             when (field) {
                 "harga" -> ui.productPrice = value.filter(Char::isDigit)
                 "stok" -> ui.productStock = value.filter(Char::isDigit)
+                "po_quota" -> ui.productPoDailyQuota = value.filter(Char::isDigit)
                 "deskripsi" -> ui.productDescription = value
                 "bahan" -> ui.productIngredients = value
                 "ruangan" -> ui.productRoom = value
@@ -468,10 +480,21 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
     }
     val price = ui.productPrice.filter(Char::isDigit).toIntOrNull()
     val stock = ui.productStock.filter(Char::isDigit).toIntOrNull()
+    val poDailyQuota = ui.productPoDailyQuota.filter(Char::isDigit).toIntOrNull()?.takeIf { it > 0 }?.coerceAtMost(500)
     if (price == null) {
         ui.productError = "Harga tidak valid."
         ui.productSaving = false
         ui.invalidate()
+        return
+    }
+    val validPoDates = ui.productPoDates.filter {
+        OrderRepository.isValidPreOrderDate(it) && !OrderRepository.isWeekendWib(it)
+    }.sorted()
+    if (ui.productOrderSchedule == "next_day" && validPoDates.isEmpty()) {
+        ui.productError = "Menu khusus Pre-Order wajib memilih minimal 1 tanggal kalender PO (Senin–Jumat)."
+        ui.productSaving = false
+        ui.invalidate()
+        Toast.makeText(this, ui.productError, Toast.LENGTH_LONG).show()
         return
     }
     authScope.launch {
@@ -489,11 +512,11 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
                 available = ui.productAvailable,
                 orderSchedule = ui.productOrderSchedule,
                 pickupSessions = ui.productPickupSessions.joinToString(",").ifBlank { "Istirahat 1,Istirahat 2,Pulang" },
-                poDates = if (ui.productOrderSchedule == "same_day") {
-                    ""
-                } else {
-                    ui.productPoDates.filter { OrderRepository.isValidPreOrderDate(it) }.sorted().joinToString(",")
-                },
+                poDates = if (ui.productOrderSchedule == "same_day") "" else validPoDates.joinToString(","),
+                poCutoffHour = ui.productPoCutoffHour.coerceIn(12, 23),
+                poDailyQuota = if (ui.productOrderSchedule == "same_day") null else poDailyQuota,
+                poRequireQris = if (ui.productOrderSchedule == "same_day") false else ui.productPoRequireQris,
+                poAllowWeekend = false,
             )
             val editingId = ui.productEditId
             if (editingId == null) {

@@ -31,6 +31,9 @@ import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusSortOrder
 import com.jajanin.app.data.repository.AdminOrder
 import com.jajanin.app.data.repository.OrderRepository
+import com.jajanin.app.data.repository.formatCalendarShortChip
+import com.jajanin.app.data.repository.formatShortIdDate
+import com.jajanin.app.data.repository.sellerPoAdvanceBlockReason
 import com.jajanin.app.feature.seller.SellerTokens
 import com.jajanin.app.feature.seller.loadProductImage
 import com.jajanin.app.feature.seller.sellerDivider
@@ -91,9 +94,16 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
         it.status.equals(STATUS_PREPARING, true) || it.status.equals(STATUS_PROCESSING_LEGACY, true)
     }
     val ready = today.count { it.status.equals(STATUS_READY, true) }
-    val completed = today.count { it.status.equals(STATUS_COMPLETED, true) }
+    val todayStrRevenue = OrderRepository.todayWibDateString()
+    val completed = today.count {
+        it.status.equals(STATUS_COMPLETED, true) &&
+            (it.pickupDate.isBlank() || it.pickupDate == todayStrRevenue)
+    }
     val active = pending + confirmed + preparing + ready
-    val revenue = today.filter { it.status.equals(STATUS_COMPLETED, true) }.sumOf { it.totalIdr }
+    val revenue = today.filter {
+        it.status.equals(STATUS_COMPLETED, true) &&
+            (it.pickupDate.isBlank() || it.pickupDate == todayStrRevenue)
+    }.sumOf { it.totalIdr }
 
     val off = -scroll
     val bottomLimit = h - NAV_CLEAR
@@ -376,6 +386,53 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
     }
     y += 38f
 
+    // 1c. Rekap Produksi PO per Tanggal & Sesi (tampil di tab Pre-Order)
+    if (adminScheduleFilter == "Pre-Order" || adminScheduleFilter == "PO Besok") {
+        val upcomingPo = today.filter {
+            it.isPreOrder && !isTerminalStatus(it.status) && (it.pickupDate.isBlank() || it.pickupDate >= todayStr)
+        }
+        if (upcomingPo.isNotEmpty()) {
+            val grouped = upcomingPo
+                .groupBy { (it.pickupDate.ifBlank { todayStr }) to it.pickupSession.ifBlank { "Istirahat 1" } }
+                .toSortedMap(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+            val entries = grouped.entries.take(4)
+            val recapH = 38f + entries.size * 34f
+            val recapRect = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + recapH)
+            if (visible(recapRect.top, recapRect.bottom)) {
+                val poAccent = Color.rgb(183, 116, 0)
+                kit.rounded(c, recapRect, kit.warnBox, SellerTokens.RADIUS_SURFACE, poAccent)
+                kit.text(c, "REKAP PRODUKSI PO (${upcomingPo.size} PESANAN)", 32f, y + 20f, 10f, poAccent, true)
+                var ry = y + 32f
+                entries.forEachIndexed { idx, (keyPair, grpOrders) ->
+                    val (iso, sess) = keyPair
+                    val itemCounts = LinkedHashMap<String, Int>()
+                    grpOrders.forEach { o ->
+                        o.items.forEach { itRow ->
+                            itemCounts[itRow.itemName] = (itemCounts[itRow.itemName] ?: 0) + itRow.quantity
+                        }
+                    }
+                    val itemsText = itemCounts.entries.joinToString(", ") { "${it.value}× ${it.key}" }
+                    kit.textEllipsized(
+                        c,
+                        "${formatCalendarShortChip(iso)} · $sess (${grpOrders.size} order)",
+                        32f,
+                        ry + 11f,
+                        324f,
+                        10.5f,
+                        kit.ink,
+                        true,
+                    )
+                    kit.textEllipsized(c, itemsText.ifBlank { "Pesanan PO" }, 32f, ry + 26f, 324f, 10f, kit.muted)
+                    ry += 34f
+                    if (idx < entries.size - 1) {
+                        kit.line(c, 32f, ry - 2f, 358f, ry - 2f, kit.divider)
+                    }
+                }
+            }
+            y += recapH + 10f
+        }
+    }
+
     // 2. POS Order Rows
     if (filtered.isEmpty()) {
         drawOrdersEmpty(c, y, h)
@@ -634,10 +691,22 @@ private fun JajaninView.drawOrderCard(
         bounds.putVisible("adminCancel:${order.id}", cancel, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
         val action = RectF(212f, top + 97f, 358f, top + 125f)
-        kit.rounded(c, action, kit.blue, 6f)
-        kit.centerText(c, "${nextAction.first} →", action, 11f, Color.WHITE, true)
-        press(c, "adminStatus:${order.id}", action, 6f)
-        bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        val lockReason = sellerPoAdvanceBlockReason(order, nextAction.second)
+        if (lockReason != null) {
+            val lockedLabel = if (order.pickupDate.isNotBlank() && order.pickupDate > OrderRepository.todayWibDateString()) {
+                "Hari-H: ${formatShortIdDate(order.pickupDate)}"
+            } else {
+                "Verifikasi QRIS Dulu"
+            }
+            kit.rounded(c, action, kit.warnBox, 6f, Color.rgb(183, 116, 0))
+            kit.centerText(c, lockedLabel, action, 10f, Color.rgb(183, 116, 0), true)
+            bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        } else {
+            kit.rounded(c, action, kit.blue, 6f)
+            kit.centerText(c, "${nextAction.first} →", action, 11f, Color.WHITE, true)
+            press(c, "adminStatus:${order.id}", action, 6f)
+            bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        }
     } else {
         val chatBtn = RectF(286f, top + 66f, 358f, top + 88f)
         kit.rounded(

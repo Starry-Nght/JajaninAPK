@@ -184,28 +184,54 @@ private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLi
     }
     y += 66f
 
-    // Pemilih Tanggal Kalender PO (tampil saat Pre-Order atau Keduanya aktif)
+    // Pemilih Tanggal Kalender PO + Aturan Ketat PO (tampil saat Pre-Order atau Keduanya aktif)
     if (productOrderSchedule == "next_day" || productOrderSchedule == "both") {
         val poAccent = Color.rgb(183, 116, 0)
-        val sortedDates = productPoDates.filter { OrderRepository.isValidPreOrderDate(it) }.sorted()
+        val sortedDates = productPoDates.filter {
+            OrderRepository.isValidPreOrderDate(it) && !OrderRepository.isWeekendWib(it)
+        }.sorted()
+        val mandatoryDate = productOrderSchedule == "next_day"
 
-        kit.text(c, "Tanggal Pre-Order (Kalender)", 20f, y + 10f, SellerTokens.T_LABEL, poAccent, true)
+        val dateHeader = if (mandatoryDate) {
+            "Tanggal Pre-Order (Wajib · Senin–Jumat)"
+        } else {
+            "Tanggal Pre-Order (Kalender · Senin–Jumat)"
+        }
+        kit.text(
+            c,
+            dateHeader,
+            20f,
+            y + 10f,
+            SellerTokens.T_LABEL,
+            if (mandatoryDate && sortedDates.isEmpty()) kit.danger else poAccent,
+            true,
+        )
         y += 16f
 
         val calCard = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 54f)
-        kit.rounded(c, calCard, kit.warnBox, SellerTokens.RADIUS_CONTROL, poAccent)
-        val titleStr = if (sortedDates.isEmpty()) {
-            "Semua tanggal (Besok s/d 30 hari)"
-        } else {
-            "${sortedDates.size} tanggal PO dipilih"
+        val calBorder = if (mandatoryDate && sortedDates.isEmpty()) kit.danger else poAccent
+        kit.rounded(c, calCard, kit.warnBox, SellerTokens.RADIUS_CONTROL, calBorder)
+        val titleStr = when {
+            sortedDates.isEmpty() && mandatoryDate -> "Wajib pilih min. 1 tanggal PO"
+            sortedDates.isEmpty() -> "Semua hari sekolah (Sen–Jum)"
+            else -> "${sortedDates.size} tanggal PO dipilih"
         }
         val subStr = if (sortedDates.isEmpty()) {
-            "Ketuk untuk pilih tanggal kalender tertentu"
+            "Ketuk untuk pilih tanggal kalender (Sabtu & Minggu libur)"
         } else {
             sortedDates.take(3).joinToString(" · ") { formatCalendarShortChip(it) } +
                 if (sortedDates.size > 3) " +${sortedDates.size - 3}" else ""
         }
-        kit.textEllipsized(c, titleStr, SellerTokens.PAD + 12f, y + 22f, 232f, 12f, kit.ink, true)
+        kit.textEllipsized(
+            c,
+            titleStr,
+            SellerTokens.PAD + 12f,
+            y + 22f,
+            232f,
+            12f,
+            if (mandatoryDate && sortedDates.isEmpty()) kit.danger else kit.ink,
+            true,
+        )
         kit.textEllipsized(c, subStr, SellerTokens.PAD + 12f, y + 40f, 232f, 10f, kit.muted)
 
         val calBtn = RectF(SellerTokens.RIGHT - 90f, y + 12f, SellerTokens.RIGHT - 10f, y + 42f)
@@ -215,23 +241,25 @@ private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLi
         bounds.putVisible("pfPickPoDate", calCard, topLimit = 60f, bottomLimit = bottomLimit)
         y += 62f
 
-        // Baris cepat: Besok, +2 hr, +3 hr, Bebas (reset)
-        val d1 = OrderRepository.wibDateStringOffset(1)
-        val d2 = OrderRepository.wibDateStringOffset(2)
-        val d3 = OrderRepository.wibDateStringOffset(3)
+        // Baris cepat: 3 hari sekolah terdekat yang masih buka + Reset
+        val openSchool = OrderRepository.nextOpenSchoolDatesWib(3, productPoCutoffHour)
+        val tomorrowIso = OrderRepository.tomorrowWibDateString()
+        val quickRows = buildList {
+            openSchool.forEach { iso ->
+                val lbl = if (iso == tomorrowIso) "Besok (${formatShortIdDate(iso)})" else formatCalendarShortChip(iso)
+                add("pfTogglePoDate:$iso" to lbl)
+            }
+            if (!mandatoryDate || sortedDates.isNotEmpty()) {
+                add("pfClearPoDates" to if (mandatoryDate) "Reset" else "Bebas")
+            }
+        }
         val qGap = 6f
-        val qW = (SellerTokens.WIDTH - qGap * 3f) / 4f
-        val quickRows = listOf(
-            "pfTogglePoDate:$d1" to "Besok (${formatShortIdDate(d1)})",
-            "pfTogglePoDate:$d2" to formatCalendarShortChip(d2),
-            "pfTogglePoDate:$d3" to formatCalendarShortChip(d3),
-            "pfClearPoDates" to "Bebas",
-        )
+        val qW = (SellerTokens.WIDTH - qGap * (quickRows.size - 1).coerceAtLeast(0)) / quickRows.size.coerceAtLeast(1)
         quickRows.forEachIndexed { idx, (key, label) ->
             val left = SellerTokens.PAD + idx * (qW + qGap)
             val chip = RectF(left, y, left + qW, y + 30f)
             val on = if (key == "pfClearPoDates") {
-                sortedDates.isEmpty()
+                !mandatoryDate && sortedDates.isEmpty()
             } else {
                 key.removePrefix("pfTogglePoDate:") in sortedDates
             }
@@ -248,7 +276,7 @@ private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLi
         }
         y += 38f
 
-        // Daftar chip tanggal yang dipilih (bisa ketuk untuk hapus, termasuk tanggal jauh dari kalender)
+        // Daftar chip tanggal yang dipilih (ketuk untuk hapus)
         if (sortedDates.isNotEmpty()) {
             var cx = SellerTokens.PAD
             var cy = y
@@ -269,6 +297,68 @@ private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLi
             }
             y = cy + ch + 10f
         }
+
+        // Batas tutup pemesanan PO (Cutoff H-1 WIB)
+        kit.text(c, "Batas tutup PO (H-1 sebelum hari ambil)", 20f, y + 10f, SellerTokens.T_LABEL, kit.muted, true)
+        y += 16f
+        val cutoffs = listOf(16, 18, 20, 21)
+        val cGap = 6f
+        val cW = (SellerTokens.WIDTH - cGap * (cutoffs.size - 1)) / cutoffs.size
+        cutoffs.forEachIndexed { idx, hr ->
+            val left = SellerTokens.PAD + idx * (cW + cGap)
+            val pill = RectF(left, y, left + cW, y + 32f)
+            val on = productPoCutoffHour == hr
+            kit.rounded(
+                c,
+                pill,
+                if (on) kit.warnBox else kit.card,
+                7f,
+                if (on) poAccent else kit.border,
+            )
+            kit.centerText(c, "${hr}:00 WIB", pill, 10.5f, if (on) poAccent else kit.ink, on)
+            press(c, "pfCutoff:$hr", pill, 7f)
+            bounds.putVisible("pfCutoff:$hr", pill, topLimit = 60f, bottomLimit = bottomLimit)
+        }
+        y += 42f
+
+        // Kuota PO per tanggal (opsional)
+        val quotaVal = productPoDailyQuota.toIntOrNull()?.let { "$it porsi / tanggal" }
+            ?: "Tanpa batas per tanggal (ikut stok)"
+        val quotaRect = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 46f)
+        kit.rounded(c, quotaRect, kit.card, SellerTokens.RADIUS_CONTROL, kit.border)
+        kit.text(c, "Kuota PO per tanggal", SellerTokens.PAD + 12f, y + 19f, 11.5f, kit.ink, true)
+        kit.textEllipsized(
+            c,
+            quotaVal,
+            SellerTokens.PAD + 12f,
+            y + 36f,
+            240f,
+            10.5f,
+            if (productPoDailyQuota.toIntOrNull() != null) poAccent else kit.muted,
+            productPoDailyQuota.toIntOrNull() != null,
+        )
+        kit.textRight(c, "Atur", SellerTokens.RIGHT - 12f, y + 27f, 50f, 11.5f, kit.blue, true)
+        press(c, "pfPoQuota", quotaRect, SellerTokens.RADIUS_CONTROL)
+        bounds.putVisible("pfPoQuota", quotaRect, topLimit = 60f, bottomLimit = bottomLimit)
+        y += 54f
+
+        // Toggle Wajib QRIS untuk PO (PO > 3 hari selalu otomatis wajib QRIS)
+        val qrisRow = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 54f)
+        kit.rounded(c, qrisRow, kit.card, SellerTokens.RADIUS_CONTROL, if (productPoRequireQris) poAccent else kit.border)
+        kit.text(c, "Wajib QRIS untuk semua PO", SellerTokens.PAD + 12f, y + 22f, 12f, kit.ink, true)
+        kit.textEllipsized(
+            c,
+            "PO > 3 hari otomatis wajib QRIS · aktifkan agar PO 1–3 hari juga wajib QRIS",
+            SellerTokens.PAD + 12f,
+            y + 40f,
+            262f,
+            9.5f,
+            kit.muted,
+        )
+        sellerSwitch(c, productPoRequireQris, SellerTokens.RIGHT - 12f, y + 27f)
+        press(c, "pfPoRequireQris", qrisRow, SellerTokens.RADIUS_CONTROL)
+        bounds.putVisible("pfPoRequireQris", qrisRow, topLimit = 60f, bottomLimit = bottomLimit)
+        y += 64f
     }
 
     kit.text(c, "Sesi pengambilan (bisa pilih lebih dari 1)", 20f, y + 10f, SellerTokens.T_LABEL, kit.muted, true)

@@ -240,6 +240,28 @@ internal data class ProductDraft(
     val orderSchedule: String = "both",
     val pickupSessions: String = "Istirahat 1,Istirahat 2,Pulang",
     val poDates: String = "",
+    val poCutoffHour: Int = 20,
+    val poDailyQuota: Int? = null,
+    val poRequireQris: Boolean = false,
+    val poAllowWeekend: Boolean = false,
+)
+
+@Serializable
+internal data class PoDateSlot(
+    val used: Int = 0,
+    val quota: Int? = null,
+    val remaining: Int? = null,
+    val closed: Boolean = false,
+    @SerialName("close_reason") val closeReason: String? = null,
+)
+
+@Serializable
+internal data class PoAvailabilityResponse(
+    @SerialName("cutoff_hour") val cutoffHour: Int = 20,
+    @SerialName("daily_quota") val dailyQuota: Int? = null,
+    @SerialName("require_qris") val requireQris: Boolean = false,
+    @SerialName("allow_weekend") val allowWeekend: Boolean = false,
+    val dates: Map<String, PoDateSlot> = emptyMap(),
 )
 
 @Serializable
@@ -267,7 +289,7 @@ internal object OrderRepository {
     )
 
     private val productColumns = Columns.raw(
-        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,po_dates"
+        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,po_dates,po_cutoff_hour,po_daily_quota,po_require_qris,po_allow_weekend"
     )
 
     private val realtimeJson = Json {
@@ -348,6 +370,10 @@ internal object OrderRepository {
             put("order_schedule", draft.orderSchedule)
             put("pickup_sessions", draft.pickupSessions)
             put("po_dates", draft.poDates)
+            put("po_cutoff_hour", draft.poCutoffHour.coerceIn(12, 23))
+            draft.poDailyQuota?.let { put("po_daily_quota", it) }
+            put("po_require_qris", draft.poRequireQris)
+            put("po_allow_weekend", draft.poAllowWeekend)
             draft.stock?.let { put("stock", it) }
         }
         return client.postgrest.from("menu_items").insert(payload) {
@@ -367,6 +393,10 @@ internal object OrderRepository {
             put("order_schedule", draft.orderSchedule)
             put("pickup_sessions", draft.pickupSessions)
             put("po_dates", draft.poDates)
+            put("po_cutoff_hour", draft.poCutoffHour.coerceIn(12, 23))
+            put("po_daily_quota", draft.poDailyQuota)
+            put("po_require_qris", draft.poRequireQris)
+            put("po_allow_weekend", draft.poAllowWeekend)
             put("stock", draft.stock)
         }
         val result = client.postgrest.from("menu_items").update(patch) {
@@ -540,6 +570,17 @@ internal object OrderRepository {
             clean.contains("ditangguhkan", true) -> clean.take(200)
             clean.contains("Tanggal Pre-Order", true) -> clean.take(200)
             clean.contains("Tanggal PO", true) -> clean.take(200)
+            clean.contains("Batas pemesanan PO", true) -> clean.take(220)
+            clean.contains("Kuota PO", true) -> clean.take(200)
+            clean.contains("Senin-Jumat", true) -> clean.take(200)
+            clean.contains("wajib pembayaran QRIS", true) -> clean.take(220)
+            clean.contains("lebih dari 3 hari wajib", true) -> clean.take(220)
+            clean.contains("mewajibkan pembayaran QRIS", true) -> clean.take(220)
+            clean.contains("Maksimal 2 pesanan Pre-Order", true) -> clean.take(200)
+            clean.contains("belum menentukan tanggal", true) -> clean.take(200)
+            clean.contains("tidak dapat dibatalkan oleh pembeli", true) -> clean.take(220)
+            clean.contains("pada hari pengambilan", true) -> clean.take(220)
+            clean.contains("Verifikasi pembayaran QRIS dulu", true) -> clean.take(220)
             clean.contains("Format tanggal", true) -> clean.take(200)
             clean.contains("khusus Pre-Order", true) -> clean.take(200)
             clean.contains("khusus ambil Hari Ini", true) -> clean.take(200)
@@ -927,6 +968,61 @@ internal object OrderRepository {
         return clean >= minDate && clean <= maxDate
     }
 
+    internal fun isWeekendWib(isoDate: String): Boolean {
+        val tz = TimeZone.getTimeZone("Asia/Jakarta")
+        val parsed = runCatching {
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = tz }.parse(isoDate.trim())
+        }.getOrNull() ?: return false
+        val cal = Calendar.getInstance(tz).apply { time = parsed }
+        val dow = cal.get(Calendar.DAY_OF_WEEK)
+        return dow == Calendar.SATURDAY || dow == Calendar.SUNDAY
+    }
+
+    internal fun daysAheadFromTodayWib(isoDate: String): Int {
+        val tz = TimeZone.getTimeZone("Asia/Jakarta")
+        val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = tz }
+        val todayMs = runCatching { fmt.parse(todayWibDateString())?.time }.getOrNull() ?: return 0
+        val targetMs = runCatching { fmt.parse(isoDate.trim())?.time }.getOrNull() ?: return 0
+        return ((targetMs - todayMs) / 86_400_000L).toInt()
+    }
+
+    internal fun isPastPoCutoffWib(isoDate: String, cutoffHour: Int = 20): Boolean {
+        val tz = TimeZone.getTimeZone("Asia/Jakarta")
+        val parsed = runCatching {
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = tz }.parse(isoDate.trim())
+        }.getOrNull() ?: return true
+        val cutoffCal = Calendar.getInstance(tz).apply {
+            time = parsed
+            add(Calendar.DAY_OF_YEAR, -1)
+            set(Calendar.HOUR_OF_DAY, cutoffHour.coerceIn(12, 23))
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return System.currentTimeMillis() >= cutoffCal.timeInMillis
+    }
+
+    internal fun nextOpenSchoolDatesWib(
+        count: Int = 3,
+        cutoffHour: Int = 20,
+        allowWeekend: Boolean = false,
+    ): List<String> {
+        val out = mutableListOf<String>()
+        for (offset in 1..30) {
+            val iso = wibDateStringOffset(offset)
+            if (!allowWeekend && isWeekendWib(iso)) continue
+            if (isPastPoCutoffWib(iso, cutoffHour)) continue
+            out.add(iso)
+            if (out.size >= count) break
+        }
+        return out
+    }
+
+    suspend fun fetchPoSlotAvailability(menuItemId: String): PoAvailabilityResponse? = runCatching {
+        val params = mapOf("p_menu_item_id" to kotlinx.serialization.json.JsonPrimitive(menuItemId))
+        client.postgrest.rpc("po_slot_availability", params).decodeAs<PoAvailabilityResponse>()
+    }.getOrNull()
+
     /** Riwayat order pembeli yang sedang masuk (dipakai layar Pesanan pembeli). */
     suspend fun fetchMyOrders(max: Int = 20): List<AdminOrder> {
         val uid = SupabaseRepository.currentUid() ?: return emptyList()
@@ -1033,4 +1129,22 @@ internal fun formatCalendarFullIdDate(isoDate: String): String {
         SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(isoDate.take(10))
     }.getOrNull() ?: return isoDate.take(10)
     return SimpleDateFormat("EEEE, d MMM yyyy", Locale("id", "ID")).format(parsed)
+}
+
+/**
+ * Mengembalikan pesan alasan bila status pesanan PO belum boleh dimajukan ke `nextStatus`
+ * (kunci sebelum Hari-H atau QRIS PO belum lunas). Null bila diizinkan.
+ */
+internal fun sellerPoAdvanceBlockReason(order: AdminOrder, nextStatus: String): String? {
+    if (!order.isPreOrder) return null
+    val target = nextStatus.lowercase()
+    if (target !in setOf(STATUS_PREPARING, STATUS_PROCESSING_LEGACY, STATUS_READY, STATUS_COMPLETED)) return null
+    val today = OrderRepository.todayWibDateString()
+    if (order.pickupDate.isNotBlank() && order.pickupDate > today) {
+        return "Pesanan PO untuk ${formatCalendarShortChip(order.pickupDate)} baru bisa disiapkan pada Hari-H."
+    }
+    if (order.paymentMethod.equals("qris", ignoreCase = true) && !order.paymentStatus.equals("paid", ignoreCase = true)) {
+        return "Verifikasi pembayaran QRIS dulu sebelum menyiapkan pesanan PO."
+    }
+    return null
 }
