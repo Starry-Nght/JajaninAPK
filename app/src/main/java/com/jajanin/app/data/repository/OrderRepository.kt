@@ -41,6 +41,7 @@ import java.util.TimeZone
 internal data class OrderRow(
     val id: String,
     @SerialName("user_id") val userId: String,
+    @SerialName("stall_id") val stallId: String? = null,
     val status: String,
     @SerialName("total_idr") val totalIdr: Int,
     @SerialName("pickup_code") val pickupCode: String,
@@ -88,6 +89,7 @@ internal data class SalesStat(
 internal data class RealtimeOrderPatch(
     val id: String,
     @SerialName("user_id") val userId: String? = null,
+    @SerialName("stall_id") val stallId: String? = null,
     val status: String? = null,
     @SerialName("payment_status") val paymentStatus: String? = null,
     @SerialName("payment_reference") val paymentReference: String? = null,
@@ -115,6 +117,7 @@ internal data class AdminOrder(
     val orderMode: String = "same_day",
     val pickupDate: String = "",
     val pickupSession: String = "Istirahat 1",
+    val stallId: String = "",
 ) {
     val itemCount: Int
         get() = items.sumOf { it.quantity }
@@ -258,7 +261,7 @@ internal object OrderRepository {
     // Kolom eksplisit + embed order_items: respons tidak pernah membawa kolom
     // tak dikenal dan daftar order tidak memicu N+1 query per item.
     private val orderColumns = Columns.raw(
-        "id,user_id,status,total_idr,pickup_code,created_at,payment_method,payment_status,payment_reference," +
+        "id,user_id,stall_id,status,total_idr,pickup_code,created_at,payment_method,payment_status,payment_reference," +
             "order_mode,pickup_date,pickup_session," +
             "order_items(id,menu_item_id,item_name,unit_price_idr,quantity)"
     )
@@ -740,11 +743,23 @@ internal object OrderRepository {
     }
 
     suspend fun fetchAdminTodayOrders(): List<AdminOrder> {
-        // Ambil SEMUA pesanan aktif (belum selesai/batal) dari hari apa pun,
-        // ditambah pesanan yang selesai/dibatalkan hari ini.
+        // Isolasi ketat per warung penjual: hanya pesanan masuk untuk warung milik uid ini
+        // (tidak pernah menyertakan pesanan milik sendiri sebagai pembeli di warung orang lain).
+        val uid = SupabaseRepository.currentUid() ?: return emptyList()
+        val myStallIds = runCatching {
+            client.postgrest.from("stalls").select(Columns.list("id")) {
+                filter { eq("owner_id", uid) }
+            }.decodeList<IdRow>().map { it.id }
+        }.getOrDefault(emptyList())
+        if (myStallIds.isEmpty()) return emptyList()
+        val quotedStalls = myStallIds.map { id -> "\"$id\"" }
+        val stallIdSet = myStallIds.toSet()
+
         val active = runCatching {
             client.postgrest.from("orders").select(orderColumns) {
                 filter {
+                    isIn("stall_id", quotedStalls)
+                    neq("user_id", uid)
                     isIn("status", listOf(STATUS_PENDING, STATUS_CONFIRMED, STATUS_PREPARING, STATUS_PROCESSING_LEGACY, STATUS_READY))
                 }
                 order("created_at", Order.DESCENDING)
@@ -755,6 +770,8 @@ internal object OrderRepository {
         val todayDone = runCatching {
             client.postgrest.from("orders").select(orderColumns) {
                 filter {
+                    isIn("stall_id", quotedStalls)
+                    neq("user_id", uid)
                     gte("created_at", todayStartIso())
                     isIn("status", listOf(STATUS_COMPLETED, STATUS_CANCELLED))
                 }
@@ -763,8 +780,12 @@ internal object OrderRepository {
             }.decodeList<OrderRow>()
         }.getOrDefault(emptyList())
 
-        val combined = (active + todayDone).distinctBy { it.id }
-        return hydrate(combined)
+        val combined = (active + todayDone)
+            .distinctBy { it.id }
+            .filter { row -> row.userId != uid && (row.stallId == null || row.stallId in stallIdSet) }
+        return hydrate(combined).filter { order ->
+            order.userId != uid && (order.stallId.isBlank() || order.stallId in stallIdSet)
+        }
     }
 
     /** Mengambil satu order berdasar id (dipakai deep-link notifikasi). Null bila tak terlihat oleh RLS. */
@@ -842,7 +863,7 @@ internal object OrderRepository {
         val buyerNames = buyerNamesDeferred.await()
         val menuLookup = menuLookupDeferred.await()
 
-        val stallIds = menuLookup.values.map { it.stallId }.distinct()
+        val stallIds = (menuLookup.values.map { it.stallId } + rows.mapNotNull { it.stallId?.takeIf(String::isNotBlank) }).distinct()
         val stallLookup = if (stallIds.isEmpty()) emptyMap() else runCatching {
             client.postgrest.from("stalls")
                 .select(Columns.raw("id,name,location,description,owner_id,qris_image_url")) {
@@ -855,7 +876,8 @@ internal object OrderRepository {
         rows.map { row ->
             val firstMenuId = row.items.firstNotNullOfOrNull { it.menuItemId?.takeIf(String::isNotBlank) }
             val menuRow = firstMenuId?.let { menuLookup[it] }
-            val stall = menuRow?.let { stallLookup[it.stallId] }
+            val resolvedStallId = row.stallId?.takeIf(String::isNotBlank) ?: menuRow?.stallId.orEmpty()
+            val stall = resolvedStallId.takeIf(String::isNotBlank)?.let { stallLookup[it] }
             val itemRoom = menuRow?.let { com.jajanin.app.data.model.extractRoomTag(it.ingredients) }.orEmpty()
             val resolvedRoom = itemRoom.ifBlank { stall?.location?.takeIf { it != "Kantin" }.orEmpty() }
 
@@ -879,6 +901,7 @@ internal object OrderRepository {
                 orderMode = row.orderMode,
                 pickupDate = row.pickupDate,
                 pickupSession = row.pickupSession,
+                stallId = resolvedStallId,
             )
         }
     }

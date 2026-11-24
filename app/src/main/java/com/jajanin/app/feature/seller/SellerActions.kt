@@ -836,9 +836,20 @@ internal fun MainActivity.startAdminOrders() {
 }
 
 private fun MainActivity.applyRealtimeOrderToSeller(action: PostgresAction): Boolean {
+    val myUid = SupabaseRepository.currentUid()
+    val myStall = ui.myStallId
     return when (action) {
+        is PostgresAction.Insert -> {
+            val patch = OrderRepository.decodeOrderPatch(action.record) ?: return false
+            // Abaikan pesanan yang dibuat akun ini sendiri sebagai pembeli atau untuk warung lain.
+            if (myUid != null && patch.userId == myUid) return true
+            if (!myStall.isNullOrBlank() && !patch.stallId.isNullOrBlank() && patch.stallId != myStall) return true
+            false
+        }
         is PostgresAction.Update -> {
             val patch = OrderRepository.decodeOrderPatch(action.record) ?: return false
+            if (myUid != null && patch.userId == myUid) return true
+            if (!myStall.isNullOrBlank() && !patch.stallId.isNullOrBlank() && patch.stallId != myStall) return true
             if (ui.adminOrders.none { it.id == patch.id }) return false
             patchAdminOrderLocal(
                 patch.id,
