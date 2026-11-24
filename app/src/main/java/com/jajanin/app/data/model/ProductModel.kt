@@ -1,5 +1,8 @@
 package com.jajanin.app.data.model
 
+import com.jajanin.app.data.repository.OrderRepository
+import com.jajanin.app.data.repository.formatCalendarShortChip
+import com.jajanin.app.data.repository.formatShortIdDate
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -24,6 +27,7 @@ internal data class ProductRow(
     @SerialName("ingredients") val ingredients: String = "",
     @SerialName("order_schedule") val orderSchedule: String = "both",
     @SerialName("pickup_sessions") val pickupSessions: String = "Istirahat 1,Istirahat 2,Pulang",
+    @SerialName("po_dates") val poDates: String = "",
 ) {
     /** Ruangan pengambilan yang disematkan pada produk (jika ada). */
     val pickupRoom: String
@@ -39,11 +43,39 @@ internal data class ProductRow(
     val allowsNextDay: Boolean
         get() = orderSchedule == "next_day" || orderSchedule == "both"
 
+    /** Daftar tanggal PO (YYYY-MM-DD) yang valid dan akan datang (besok s/d +30 hari). Kosong = fleksibel. */
+    val parsedPoDates: List<String>
+        get() = poDates
+            .split(',')
+            .map { it.trim() }
+            .filter { OrderRepository.isValidPreOrderDate(it) }
+            .distinct()
+            .sorted()
+
+    /** Ringkasan tanggal kalender PO untuk ditampilkan di detail produk. */
+    val poDatesDisplaySummary: String
+        get() {
+            val dates = parsedPoDates
+            if (dates.isEmpty()) return ""
+            val shown = dates.take(3).joinToString(" · ") { formatCalendarShortChip(it) }
+            return if (dates.size > 3) "$shown (+${dates.size - 3} tgl)" else shown
+        }
+
     val scheduleBadgeLabel: String
-        get() = when (orderSchedule) {
-            "same_day" -> "Hari Ini"
-            "next_day" -> "Pre-Order (PO)"
-            else -> "Hari Ini / PO"
+        get() {
+            val dates = parsedPoDates
+            return when (orderSchedule) {
+                "same_day" -> "Hari Ini"
+                "next_day" -> when {
+                    dates.size == 1 -> "PO ${formatShortIdDate(dates[0])}"
+                    dates.size > 1 -> "PO ${formatShortIdDate(dates[0])} +${dates.size - 1}"
+                    else -> "Pre-Order (PO)"
+                }
+                else -> when {
+                    dates.isNotEmpty() -> "Hari Ini / PO ${formatShortIdDate(dates[0])}"
+                    else -> "Hari Ini / PO"
+                }
+            }
         }
 
     val parsedPickupSessions: List<String>

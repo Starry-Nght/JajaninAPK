@@ -162,11 +162,25 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
 
     // 1b. Pemilih Tanggal Kalender (tampil saat Pre-Order aktif)
     val tomorrowIso = OrderRepository.tomorrowWibDateString()
-    val chosenPoDate = if (OrderRepository.isValidPreOrderDate(checkoutPickupDate)) checkoutPickupDate else tomorrowIso
+    var commonPoDates: Set<String>? = null
+    lines.forEach { (p, _) ->
+        val d = p.parsedPoDates
+        if (d.isNotEmpty()) {
+            val s = d.toSet()
+            commonPoDates = if (commonPoDates == null) s else commonPoDates?.intersect(s)
+        }
+    }
+    val sellerPoDates = commonPoDates?.sorted().orEmpty()
+    val chosenPoDate = when {
+        sellerPoDates.isNotEmpty() -> if (checkoutPickupDate in sellerPoDates) checkoutPickupDate else sellerPoDates.first()
+        OrderRepository.isValidPreOrderDate(checkoutPickupDate) -> checkoutPickupDate
+        else -> tomorrowIso
+    }
     if (poSelected) {
         val dateCard = RectF(18f, y + 4f, 372f, y + 60f)
         kit.rounded(c, dateCard, kit.warnBox, 12f, poAccent)
-        kit.text(c, "TANGGAL PENGAMBILAN PO", 32f, y + 22f, 9.5f, poAccent, true)
+        val headerLabel = if (sellerPoDates.isNotEmpty()) "TANGGAL PO DARI PENJUAL" else "TANGGAL PENGAMBILAN PO"
+        kit.text(c, headerLabel, 32f, y + 22f, 9.5f, poAccent, true)
         val fullLabel = formatCalendarFullIdDate(chosenPoDate)
         val dateDisplay = if (chosenPoDate == tomorrowIso) "$fullLabel (Besok)" else fullLabel
         kit.textEllipsized(c, dateDisplay, 32f, y + 44f, 232f, 13f, kit.ink, true)
@@ -174,26 +188,43 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         val calPill = RectF(272f, y + 17f, 360f, y + 47f)
         kit.rounded(c, calPill, kit.card, 8f, poAccent)
         kit.centerText(c, "Kalender", calPill, 11f, poAccent, true)
-        bounds.putVisible("pickPoDate", dateCard, topLimit = bodyTop, bottomLimit = bodyBottom)
-        press(c, "pickPoDate", dateCard, 12f)
+        bounds.putVisible("pickPoDateCard", dateCard, topLimit = bodyTop, bottomLimit = bodyBottom)
+        press(c, "pickPoDateCard", dateCard, 12f)
 
-        // Baris cepat: Besok, +2 hari, +3 hari, Tanggal Lain
-        val d1 = OrderRepository.wibDateStringOffset(1)
-        val d2 = OrderRepository.wibDateStringOffset(2)
-        val d3 = OrderRepository.wibDateStringOffset(3)
-        val quickChoices = listOf(
-            "poQuickDate:$d1" to "Besok (${formatShortIdDate(d1)})",
-            "poQuickDate:$d2" to formatCalendarShortChip(d2),
-            "poQuickDate:$d3" to formatCalendarShortChip(d3),
-            "pickPoDate" to "Lainnya...",
-        )
+        // Baris cepat: tanggal PO penjual (bila dikunci) atau Besok, +2 hr, +3 hr, Lainnya...
+        val quickChoices: List<Pair<String, String>> = if (sellerPoDates.isNotEmpty()) {
+            if (sellerPoDates.size <= 4) {
+                sellerPoDates.map { iso ->
+                    val lbl = if (iso == tomorrowIso) "Besok (${formatShortIdDate(iso)})" else formatCalendarShortChip(iso)
+                    "poQuickDate:$iso" to lbl
+                }
+            } else {
+                sellerPoDates.take(3).map { iso ->
+                    val lbl = if (iso == tomorrowIso) "Besok (${formatShortIdDate(iso)})" else formatCalendarShortChip(iso)
+                    "poQuickDate:$iso" to lbl
+                } + ("pickPoDateMore" to "Kalender...")
+            }
+        } else {
+            val d1 = OrderRepository.wibDateStringOffset(1)
+            val d2 = OrderRepository.wibDateStringOffset(2)
+            val d3 = OrderRepository.wibDateStringOffset(3)
+            listOf(
+                "poQuickDate:$d1" to "Besok (${formatShortIdDate(d1)})",
+                "poQuickDate:$d2" to formatCalendarShortChip(d2),
+                "poQuickDate:$d3" to formatCalendarShortChip(d3),
+                "pickPoDateMore" to "Kalender...",
+            )
+        }
         val qGap = 6f
-        val qW = (354f - qGap * 3f) / 4f
+        val qW = (354f - qGap * (quickChoices.size - 1).coerceAtLeast(0)) / quickChoices.size.coerceAtLeast(1)
+        val shownQuickIsos = quickChoices.mapNotNull { (k, _) ->
+            if (k.startsWith("poQuickDate:")) k.removePrefix("poQuickDate:") else null
+        }.toSet()
         quickChoices.forEachIndexed { idx, (key, label) ->
             val left = 18f + idx * (qW + qGap)
             val chip = RectF(left, y + 68f, left + qW, y + 98f)
             val isQuickSelected = when (key) {
-                "pickPoDate" -> chosenPoDate != d1 && chosenPoDate != d2 && chosenPoDate != d3
+                "pickPoDateMore" -> chosenPoDate !in shownQuickIsos
                 else -> key.removePrefix("poQuickDate:") == chosenPoDate
             }
             kit.rounded(
@@ -364,9 +395,24 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
         kit.blue,
         true,
     )
-    kit.text(c, "Deskripsi", 22f, imgBottom + 136f, 14f, kit.ink, true)
+    val poSummary = product.poDatesDisplaySummary
+    var detailY = imgBottom + 132f
+    if (poSummary.isNotBlank()) {
+        kit.textEllipsized(
+            c,
+            "Tanggal PO: $poSummary",
+            22f,
+            imgBottom + 126f,
+            346f,
+            11.5f,
+            Color.rgb(183, 116, 0),
+            true,
+        )
+        detailY = imgBottom + 148f
+    }
+    kit.text(c, "Deskripsi", 22f, detailY, 14f, kit.ink, true)
     val lines = product.description.ifBlank { "Belum ada deskripsi produk." }.chunked(43).take(3)
-    var nextY = imgBottom + 158f
+    var nextY = detailY + 22f
     lines.forEach { line ->
         kit.text(c, line, 22f, nextY, 12f, kit.muted)
         nextY += 19f

@@ -13,6 +13,9 @@ import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.util.formatRupiah
+import com.jajanin.app.data.repository.OrderRepository
+import com.jajanin.app.data.repository.formatCalendarShortChip
+import com.jajanin.app.data.repository.formatShortIdDate
 
 /**
  * Form tambah/ubah produk sebagai HALAMAN:
@@ -180,6 +183,93 @@ private fun JajaninView.scheduleAndSessionPicker(c: Canvas, top: Float, bottomLi
         bounds.putVisible("pfSchedule:$value", chip, topLimit = 60f, bottomLimit = bottomLimit)
     }
     y += 66f
+
+    // Pemilih Tanggal Kalender PO (tampil saat Pre-Order atau Keduanya aktif)
+    if (productOrderSchedule == "next_day" || productOrderSchedule == "both") {
+        val poAccent = Color.rgb(183, 116, 0)
+        val sortedDates = productPoDates.filter { OrderRepository.isValidPreOrderDate(it) }.sorted()
+
+        kit.text(c, "Tanggal Pre-Order (Kalender)", 20f, y + 10f, SellerTokens.T_LABEL, poAccent, true)
+        y += 16f
+
+        val calCard = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 54f)
+        kit.rounded(c, calCard, kit.warnBox, SellerTokens.RADIUS_CONTROL, poAccent)
+        val titleStr = if (sortedDates.isEmpty()) {
+            "Semua tanggal (Besok s/d 30 hari)"
+        } else {
+            "${sortedDates.size} tanggal PO dipilih"
+        }
+        val subStr = if (sortedDates.isEmpty()) {
+            "Ketuk untuk pilih tanggal kalender tertentu"
+        } else {
+            sortedDates.take(3).joinToString(" · ") { formatCalendarShortChip(it) } +
+                if (sortedDates.size > 3) " +${sortedDates.size - 3}" else ""
+        }
+        kit.textEllipsized(c, titleStr, SellerTokens.PAD + 12f, y + 22f, 232f, 12f, kit.ink, true)
+        kit.textEllipsized(c, subStr, SellerTokens.PAD + 12f, y + 40f, 232f, 10f, kit.muted)
+
+        val calBtn = RectF(SellerTokens.RIGHT - 90f, y + 12f, SellerTokens.RIGHT - 10f, y + 42f)
+        kit.rounded(c, calBtn, kit.card, 8f, poAccent)
+        kit.centerText(c, "+ Kalender", calBtn, 10.5f, poAccent, true)
+        press(c, "pfPickPoDate", calCard, SellerTokens.RADIUS_CONTROL)
+        bounds.putVisible("pfPickPoDate", calCard, topLimit = 60f, bottomLimit = bottomLimit)
+        y += 62f
+
+        // Baris cepat: Besok, +2 hr, +3 hr, Bebas (reset)
+        val d1 = OrderRepository.wibDateStringOffset(1)
+        val d2 = OrderRepository.wibDateStringOffset(2)
+        val d3 = OrderRepository.wibDateStringOffset(3)
+        val qGap = 6f
+        val qW = (SellerTokens.WIDTH - qGap * 3f) / 4f
+        val quickRows = listOf(
+            "pfTogglePoDate:$d1" to "Besok (${formatShortIdDate(d1)})",
+            "pfTogglePoDate:$d2" to formatCalendarShortChip(d2),
+            "pfTogglePoDate:$d3" to formatCalendarShortChip(d3),
+            "pfClearPoDates" to "Bebas",
+        )
+        quickRows.forEachIndexed { idx, (key, label) ->
+            val left = SellerTokens.PAD + idx * (qW + qGap)
+            val chip = RectF(left, y, left + qW, y + 30f)
+            val on = if (key == "pfClearPoDates") {
+                sortedDates.isEmpty()
+            } else {
+                key.removePrefix("pfTogglePoDate:") in sortedDates
+            }
+            kit.rounded(
+                c,
+                chip,
+                if (on) kit.warnBox else kit.card,
+                7f,
+                if (on) poAccent else kit.border,
+            )
+            kit.centerText(c, label, chip, 9.5f, if (on) poAccent else kit.ink, on)
+            press(c, key, chip, 7f)
+            bounds.putVisible(key, chip, topLimit = 60f, bottomLimit = bottomLimit)
+        }
+        y += 38f
+
+        // Daftar chip tanggal yang dipilih (bisa ketuk untuk hapus, termasuk tanggal jauh dari kalender)
+        if (sortedDates.isNotEmpty()) {
+            var cx = SellerTokens.PAD
+            var cy = y
+            val ch = 26f
+            val cGap = 6f
+            sortedDates.forEach { iso ->
+                val chipText = "${formatCalendarShortChip(iso)}  ×"
+                val cw = (kit.measure(chipText, 9.5f, true) + 18f).coerceAtMost(150f)
+                if (cx + cw > SellerTokens.RIGHT) {
+                    cx = SellerTokens.PAD
+                    cy += ch + cGap
+                }
+                val r = RectF(cx, cy, cx + cw, cy + ch)
+                kit.rounded(c, r, kit.warnBox, 6f, poAccent)
+                kit.centerText(c, chipText, r, 9.5f, poAccent, true)
+                bounds.putVisible("pfRemovePoDate:$iso", r, topLimit = 60f, bottomLimit = bottomLimit)
+                cx += cw + cGap
+            }
+            y = cy + ch + 10f
+        }
+    }
 
     kit.text(c, "Sesi pengambilan (bisa pilih lebih dari 1)", 20f, y + 10f, SellerTokens.T_LABEL, kit.muted, true)
     val sessions = com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS

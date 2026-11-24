@@ -236,6 +236,7 @@ internal data class ProductDraft(
     val available: Boolean = true,
     val orderSchedule: String = "both",
     val pickupSessions: String = "Istirahat 1,Istirahat 2,Pulang",
+    val poDates: String = "",
 )
 
 @Serializable
@@ -263,7 +264,7 @@ internal object OrderRepository {
     )
 
     private val productColumns = Columns.raw(
-        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions"
+        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,po_dates"
     )
 
     private val realtimeJson = Json {
@@ -343,6 +344,7 @@ internal object OrderRepository {
             put("ingredients", draft.ingredients)
             put("order_schedule", draft.orderSchedule)
             put("pickup_sessions", draft.pickupSessions)
+            put("po_dates", draft.poDates)
             draft.stock?.let { put("stock", it) }
         }
         return client.postgrest.from("menu_items").insert(payload) {
@@ -361,6 +363,7 @@ internal object OrderRepository {
             put("ingredients", draft.ingredients)
             put("order_schedule", draft.orderSchedule)
             put("pickup_sessions", draft.pickupSessions)
+            put("po_dates", draft.poDates)
             put("stock", draft.stock)
         }
         val result = client.postgrest.from("menu_items").update(patch) {
@@ -533,6 +536,7 @@ internal object OrderRepository {
             clean.contains("tepat 1", true) -> clean.take(200)
             clean.contains("ditangguhkan", true) -> clean.take(200)
             clean.contains("Tanggal Pre-Order", true) -> clean.take(200)
+            clean.contains("Tanggal PO", true) -> clean.take(200)
             clean.contains("Format tanggal", true) -> clean.take(200)
             clean.contains("khusus Pre-Order", true) -> clean.take(200)
             clean.contains("khusus ambil Hari Ini", true) -> clean.take(200)

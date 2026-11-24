@@ -393,6 +393,21 @@ internal fun MainActivity.allowedCartPickupSessions(): List<String> {
     return common?.toList()?.takeIf { it.isNotEmpty() } ?: com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
 }
 
+private fun MainActivity.allowedCartPoDates(): List<String> {
+    var common: Set<String>? = null
+    ui.cart.keys.forEach { pid ->
+        val prod = ui.products.firstOrNull { it.id == pid }
+            ?: ui.sellerProducts.firstOrNull { it.id == pid }
+            ?: return@forEach
+        val dates = prod.parsedPoDates
+        if (dates.isNotEmpty()) {
+            val s = dates.toSet()
+            common = if (common == null) s else common?.intersect(s)
+        }
+    }
+    return common?.sorted().orEmpty()
+}
+
 private fun MainActivity.syncCheckoutScheduleDefaults() {
     val modes = allowedCartOrderModes()
     if (ui.checkoutOrderMode !in modes) {
@@ -402,7 +417,12 @@ private fun MainActivity.syncCheckoutScheduleDefaults() {
             else -> "same_day"
         }
     }
-    if (!OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
+    val sellerPoDates = allowedCartPoDates()
+    if (sellerPoDates.isNotEmpty()) {
+        if (ui.checkoutPickupDate !in sellerPoDates) {
+            ui.checkoutPickupDate = sellerPoDates.first()
+        }
+    } else if (!OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
         ui.checkoutPickupDate = OrderRepository.tomorrowWibDateString()
     }
     val sessions = allowedCartPickupSessions()
@@ -417,6 +437,14 @@ internal fun MainActivity.setCheckoutPickupDate(isoDate: String) {
         Toast.makeText(this, "Pilih tanggal Pre-Order antara besok sampai 30 hari ke depan.", Toast.LENGTH_SHORT).show()
         return
     }
+    val sellerPoDates = allowedCartPoDates()
+    if (sellerPoDates.isNotEmpty() && clean !in sellerPoDates) {
+        val avail = sellerPoDates.take(4).joinToString(", ") {
+            com.jajanin.app.data.repository.formatCalendarShortChip(it)
+        }
+        Toast.makeText(this, "Penjual hanya membuka PO pada: $avail", Toast.LENGTH_LONG).show()
+        return
+    }
     ui.checkoutPickupDate = clean
     if ("pre_order" in allowedCartOrderModes()) {
         ui.checkoutOrderMode = "pre_order"
@@ -426,6 +454,7 @@ internal fun MainActivity.setCheckoutPickupDate(isoDate: String) {
 
 internal fun MainActivity.showPreOrderDatePicker() {
     val wibTz = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+    val sellerPoDates = allowedCartPoDates()
     val minCal = java.util.Calendar.getInstance(wibTz).apply {
         add(java.util.Calendar.DAY_OF_YEAR, 1)
         set(java.util.Calendar.HOUR_OF_DAY, 0)
@@ -440,12 +469,27 @@ internal fun MainActivity.showPreOrderDatePicker() {
         set(java.util.Calendar.SECOND, 59)
         set(java.util.Calendar.MILLISECOND, 999)
     }
+    val isoFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+        timeZone = wibTz
+    }
+    if (sellerPoDates.isNotEmpty()) {
+        runCatching { isoFmt.parse(sellerPoDates.first()) }.getOrNull()?.let { firstDate ->
+            minCal.time = firstDate
+            minCal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            minCal.set(java.util.Calendar.MINUTE, 0)
+            minCal.set(java.util.Calendar.SECOND, 0)
+            minCal.set(java.util.Calendar.MILLISECOND, 0)
+        }
+        runCatching { isoFmt.parse(sellerPoDates.last()) }.getOrNull()?.let { lastDate ->
+            maxCal.time = lastDate
+            maxCal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+            maxCal.set(java.util.Calendar.MINUTE, 59)
+            maxCal.set(java.util.Calendar.SECOND, 59)
+            maxCal.set(java.util.Calendar.MILLISECOND, 999)
+        }
+    }
     val curCal = java.util.Calendar.getInstance(wibTz)
-    val parsedCur = runCatching {
-        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
-            timeZone = wibTz
-        }.parse(ui.checkoutPickupDate)
-    }.getOrNull()
+    val parsedCur = runCatching { isoFmt.parse(ui.checkoutPickupDate) }.getOrNull()
     if (parsedCur != null && parsedCur.time in minCal.timeInMillis..maxCal.timeInMillis) {
         curCal.time = parsedCur
     } else {
@@ -570,8 +614,13 @@ internal fun MainActivity.setCheckoutOrderMode(mode: String) {
         return
     }
     ui.checkoutOrderMode = target
-    if (target == "pre_order" && !OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
-        ui.checkoutPickupDate = OrderRepository.tomorrowWibDateString()
+    if (target == "pre_order") {
+        val sellerPoDates = allowedCartPoDates()
+        if (sellerPoDates.isNotEmpty() && ui.checkoutPickupDate !in sellerPoDates) {
+            ui.checkoutPickupDate = sellerPoDates.first()
+        } else if (!OrderRepository.isValidPreOrderDate(ui.checkoutPickupDate)) {
+            ui.checkoutPickupDate = OrderRepository.tomorrowWibDateString()
+        }
     }
     ui.invalidate()
 }

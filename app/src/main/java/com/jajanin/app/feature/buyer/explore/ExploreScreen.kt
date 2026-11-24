@@ -93,11 +93,7 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
             kit.rounded(c, RectF(left + 8f, top + 8f, left + 96f, top + 30f), Color.argb(200, 20, 25, 40), 8f)
             kit.centerText(c, "Sisa ${product.stock}", RectF(left + 8f, top + 8f, left + 96f, top + 30f), 10f, Color.WHITE, true)
         }
-        val schedShort = when (product.orderSchedule) {
-            "same_day" -> "Hari Ini"
-            "next_day" -> "Pre-Order"
-            else -> "Hari Ini / PO"
-        }
+        val schedShort = product.scheduleBadgeLabel
         val schedW = (kit.measure(schedShort, 9f, true) + 14f).coerceAtMost(tileW - 14f)
         val schedRect = RectF(left + 7f, top + photoH - 24f, left + 7f + schedW, top + photoH - 6f)
         val schedBg = if (product.orderSchedule == "next_day") Color.argb(225, 183, 116, 0) else Color.argb(215, 0, 99, 214)

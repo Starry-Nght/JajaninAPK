@@ -136,6 +136,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productAvailable = true
     internal var productOrderSchedule = "both"
     internal var productPickupSessions = linkedSetOf("Istirahat 1", "Istirahat 2", "Pulang")
+    internal var productPoDates = linkedSetOf<String>()
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
     internal var productSaving = false
@@ -959,7 +960,7 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("cartRemove:") -> activity()?.setCartQty(hit.substringAfter(':'), 0)
                     hit.startsWith("payMethod:") -> activity()?.setCheckoutPayment(hit.substringAfter(':'))
                     hit.startsWith("orderMode:") -> activity()?.setCheckoutOrderMode(hit.substringAfter(':'))
-                    hit == "pickPoDate" -> activity()?.showPreOrderDatePicker()
+                    hit == "pickPoDate" || hit == "pickPoDateCard" || hit == "pickPoDateMore" -> activity()?.showPreOrderDatePicker()
                     hit.startsWith("poQuickDate:") -> activity()?.setCheckoutPickupDate(hit.substringAfter(':'))
                     hit.startsWith("pickupSession:") -> {
                         checkoutPickupSession = hit.substringAfter(':')
@@ -972,6 +973,24 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "activateSeller" -> activity()?.showSellerOtpActivationDialog()
                     hit.startsWith("pfSchedule:") -> {
                         productOrderSchedule = hit.substringAfter(':')
+                        invalidate()
+                    }
+                    hit == "pfPickPoDate" -> activity()?.showSellerProductPoDatePicker()
+                    hit == "pfClearPoDates" -> {
+                        productPoDates.clear()
+                        invalidate()
+                    }
+                    hit.startsWith("pfTogglePoDate:") -> {
+                        val iso = hit.substringAfter(':')
+                        if (iso in productPoDates) {
+                            productPoDates.remove(iso)
+                        } else if (productPoDates.size < 14) {
+                            productPoDates.add(iso)
+                        }
+                        invalidate()
+                    }
+                    hit.startsWith("pfRemovePoDate:") -> {
+                        productPoDates.remove(hit.substringAfter(':'))
                         invalidate()
                     }
                     hit.startsWith("pfSession:") -> {

@@ -125,6 +125,70 @@ internal fun MainActivity.recordRecentSellerRoom(room: String) {
 }
 
 /** Buka halaman form produk (geser, bukan dialog). */
+internal fun MainActivity.showSellerProductPoDatePicker() {
+    val wibTz = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+    val minCal = java.util.Calendar.getInstance(wibTz).apply {
+        add(java.util.Calendar.DAY_OF_YEAR, 1)
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }
+    val maxCal = java.util.Calendar.getInstance(wibTz).apply {
+        add(java.util.Calendar.DAY_OF_YEAR, 30)
+        set(java.util.Calendar.HOUR_OF_DAY, 23)
+        set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59)
+        set(java.util.Calendar.MILLISECOND, 999)
+    }
+    val curCal = java.util.Calendar.getInstance(wibTz).apply { timeInMillis = minCal.timeInMillis }
+    val lastSelected = ui.productPoDates.filter { OrderRepository.isValidPreOrderDate(it) }.sorted().lastOrNull()
+    if (lastSelected != null) {
+        runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply {
+                timeZone = wibTz
+            }.parse(lastSelected)
+        }.getOrNull()?.let { parsed ->
+            if (parsed.time in minCal.timeInMillis..maxCal.timeInMillis) {
+                curCal.time = parsed
+            }
+        }
+    }
+    val themeRes = if (isDarkMode()) {
+        android.R.style.Theme_DeviceDefault_Dialog_Alert
+    } else {
+        android.R.style.Theme_DeviceDefault_Light_Dialog_Alert
+    }
+    val picker = android.app.DatePickerDialog(
+        this,
+        themeRes,
+        { _, year, month, dayOfMonth ->
+            val picked = String.format(java.util.Locale.US, "%04d-%02d-%02d", year, month + 1, dayOfMonth)
+            if (!OrderRepository.isValidPreOrderDate(picked)) {
+                Toast.makeText(this, "Pilih tanggal antara besok sampai 30 hari ke depan.", Toast.LENGTH_SHORT).show()
+                return@DatePickerDialog
+            }
+            if (picked in ui.productPoDates) {
+                ui.productPoDates.remove(picked)
+                Toast.makeText(this, "Tanggal ${com.jajanin.app.data.repository.formatCalendarShortChip(picked)} dihapus.", Toast.LENGTH_SHORT).show()
+            } else if (ui.productPoDates.size >= 14) {
+                Toast.makeText(this, "Maksimal 14 tanggal PO per produk.", Toast.LENGTH_SHORT).show()
+            } else {
+                ui.productPoDates.add(picked)
+                Toast.makeText(this, "Tanggal PO ditambahkan: ${com.jajanin.app.data.repository.formatCalendarShortChip(picked)}", Toast.LENGTH_SHORT).show()
+            }
+            ui.invalidate()
+        },
+        curCal.get(java.util.Calendar.YEAR),
+        curCal.get(java.util.Calendar.MONTH),
+        curCal.get(java.util.Calendar.DAY_OF_MONTH),
+    )
+    picker.datePicker.minDate = minCal.timeInMillis
+    picker.datePicker.maxDate = maxCal.timeInMillis
+    picker.setTitle("Pilih Tanggal Pre-Order")
+    picker.show()
+}
+
 internal fun MainActivity.openProductForm(existing: ProductRow?) {
     val recent = loadRecentSellerRooms()
     val fallbackRoom = recent.firstOrNull() ?: ui.myStallRoom
@@ -141,6 +205,7 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productAvailable = existing.available
         ui.productOrderSchedule = existing.orderSchedule
         ui.productPickupSessions = LinkedHashSet(existing.parsedPickupSessions)
+        ui.productPoDates = LinkedHashSet(existing.parsedPoDates)
     } else {
         ui.productEditId = null
         ui.productName = ""
@@ -154,6 +219,7 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productAvailable = true
         ui.productOrderSchedule = "both"
         ui.productPickupSessions = linkedSetOf("Istirahat 1", "Istirahat 2", "Pulang")
+        ui.productPoDates = linkedSetOf()
     }
     ui.productSaving = false
     ui.productError = ""
@@ -423,6 +489,11 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
                 available = ui.productAvailable,
                 orderSchedule = ui.productOrderSchedule,
                 pickupSessions = ui.productPickupSessions.joinToString(",").ifBlank { "Istirahat 1,Istirahat 2,Pulang" },
+                poDates = if (ui.productOrderSchedule == "same_day") {
+                    ""
+                } else {
+                    ui.productPoDates.filter { OrderRepository.isValidPreOrderDate(it) }.sorted().joinToString(",")
+                },
             )
             val editingId = ui.productEditId
             if (editingId == null) {
