@@ -55,22 +55,6 @@ internal fun JajaninView.drawNotif(c: Canvas, w: Float, h: Float) {
         }
     }
 
-    val invites = myInvites.filter { it.status == "pending" }
-    if (invites.isNotEmpty()) {
-        kit.text(c, "UNDANGAN TOKO", 20f, y + 14f, 11f, kit.muted, true)
-        y += 28f
-        invites.forEach { inv ->
-            val rowH = 62f
-            if (y + rowH >= 78f && y <= h - 82f) {
-                kit.rounded(c, RectF(20f, y, 370f, y + rowH), kit.tint, 12f)
-                kit.text(c, "Undangan jadi penjual", 34f, y + 25f, 13f, kit.ink, true)
-                kit.text(c, "Ketuk untuk Terima / Tolak", 34f, y + 47f, 11f, kit.blue, true)
-                bounds["notifInvite:${inv.id}"] = RectF(20f, y, 370f, y + rowH)
-            }
-            y += rowH + 10f
-        }
-    }
-
     if (myRole != "developer" && !seller && myOrders.isNotEmpty()) {
         kit.text(c, "STATUS PESANAN (${myOrders.size})", 20f, y + 14f, 11f, kit.muted, true)
         y += 28f
@@ -123,26 +107,6 @@ internal fun JajaninView.drawNotif(c: Canvas, w: Float, h: Float) {
                     isCancelled || isReady,
                 )
                 bounds["buyerOrder:${order.id}"] = cardRect
-            }
-            y += rowH + 10f
-        }
-    }
-
-    if (myRole == "developer") {
-        val sent = devInvites.filter { it.status == "pending" }
-        kit.text(c, "UNDANGAN TERKIRIM · ${sent.size}".uppercase(), 20f, y + 14f, 11f, kit.muted, true)
-        y += 28f
-        if (sent.isEmpty()) {
-            kit.text(c, "Tidak ada undangan menunggu.", 20f, y + 22f, 13f, kit.muted)
-            y += 44f
-        }
-        sent.take(10).forEach { inv ->
-            val rowH = 56f
-            if (y + rowH >= 78f && y <= h - 82f) {
-                kit.card(c, RectF(20f, y, 370f, y + rowH), 12f)
-                kit.text(c, "Menunggu diverifikasi pembeli", 34f, y + 24f, 13f, kit.ink, true)
-                kit.text(c, "Ketuk untuk batalkan", 34f, y + 44f, 11f, kit.danger, true)
-                bounds["devNotifInviteCancel:${inv.id}"] = RectF(20f, y, 370f, y + rowH)
             }
             y += rowH + 10f
         }

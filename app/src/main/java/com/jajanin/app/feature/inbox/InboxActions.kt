@@ -98,7 +98,7 @@ internal fun MainActivity.refreshInbox() {
     inboxRefreshJob = authScope.launch {
         ui.myWarnings = runCatching { DeveloperRepository.fetchMyWarnings() }.getOrDefault(emptyList())
         ui.myAnnouncements = runCatching { DeveloperRepository.fetchMyAnnouncements() }.getOrDefault(emptyList())
-        ui.myInvites = runCatching { DeveloperRepository.fetchMyInvites() }.getOrDefault(emptyList())
+        ui.myInvites = emptyList()
         ui.invalidate()
     }
 }
@@ -113,28 +113,19 @@ internal fun MainActivity.showInbox() {
     authScope.launch {
         val warnings = runCatching { DeveloperRepository.fetchMyWarnings() }.getOrDefault(emptyList())
         val anns = runCatching { DeveloperRepository.fetchMyAnnouncements() }.getOrDefault(emptyList())
-        val invites = runCatching { DeveloperRepository.fetchMyInvites() }.getOrDefault(emptyList())
         ui.myWarnings = warnings
         ui.myAnnouncements = anns
-        ui.myInvites = invites
+        ui.myInvites = emptyList()
         ui.invalidate()
         val items = ArrayList<String>()
         val warnIds = ArrayList<String?>()
-        val inviteIds = ArrayList<String?>()
-        invites.filter { it.status == "pending" }.forEach { inv ->
-            items.add("[Toko] Undangan jadi penjual — ketuk untuk verifikasi (Terima/Tolak)")
-            warnIds.add(null)
-            inviteIds.add(inv.id)
-        }
         warnings.forEach { w ->
             items.add("[${w.severity}] ${w.title} — ${w.message.take(60)}${if (w.isRead) "" else " (BARU)"}")
             warnIds.add(w.id)
-            inviteIds.add(null)
         }
         anns.forEach { a ->
             items.add("[Info ${a.targetRole}] ${a.title} — ${a.message.take(60)}")
             warnIds.add(null)
-            inviteIds.add(null)
         }
         if (items.isEmpty()) {
             android.app.AlertDialog.Builder(self).setTitle("Notifikasi")
@@ -144,11 +135,6 @@ internal fun MainActivity.showInbox() {
         }
         android.app.AlertDialog.Builder(self).setTitle("Notifikasi")
             .setItems(items.toTypedArray()) { _, which ->
-                val invId = inviteIds[which]
-                if (invId != null) {
-                    showInviteVerify(invId)
-                    return@setItems
-                }
                 val wid = warnIds[which]
                 if (wid != null) {
                     authScope.launch {
@@ -170,96 +156,6 @@ internal fun MainActivity.showInbox() {
     }
 }
 
-// ================= Seller invites (dev undang -> buyer verifikasi) =================
-
-/** Developer mengundang pembeli jadi penjual (konfirmasi dulu). */
-internal fun MainActivity.confirmInviteSeller(targetUserId: String) {
-    val self = this
-    val user = ui.devUsers.firstOrNull { it.id == targetUserId }
-    android.app.AlertDialog.Builder(this)
-        .setTitle("Undang jadi penjual?")
-        .setMessage("${user?.displayName ?: "Pengguna"} (${user?.email ?: "-"}) akan menerima undangan di Notifikasi. Bila diterima, akunnya berubah jadi penjual.")
-        .setPositiveButton("Undang") { _, _ ->
-            authScope.launch {
-                try {
-                    DeveloperRepository.inviteSeller(targetUserId)
-                    Toast.makeText(self, "Undangan terkirim.", Toast.LENGTH_SHORT).show()
-                    refreshDeveloper()
-                } catch (error: Throwable) {
-                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-        .setNegativeButton("Batal", null)
-        .show()
-}
-
-/** Developer membatalkan undangan pending. */
-internal fun MainActivity.confirmCancelInvite(inviteId: String) {
-    val self = this
-    android.app.AlertDialog.Builder(this)
-        .setTitle("Batalkan undangan?")
-        .setMessage("Undangan yang menunggu akan dibatalkan dan hilang dari notifikasi pembeli.")
-        .setPositiveButton("Batalkan") { _, _ ->
-            authScope.launch {
-                try {
-                    DeveloperRepository.cancelInvite(inviteId)
-                    Toast.makeText(self, "Undangan dibatalkan.", Toast.LENGTH_SHORT).show()
-                    refreshDeveloper()
-                } catch (error: Throwable) {
-                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-        .setNegativeButton("Kembali", null)
-        .show()
-}
-
-/** Verifikasi pembeli dari Notifikasi: terima = jadi penjual, tolak = tetap pembeli. */
-internal fun MainActivity.showInviteVerify(inviteId: String) {
-    showThemedInfo(
-        title = "Undangan jadi penjual",
-        message = "Developer Jajanin mengundangmu membuka toko dan mengelola menu + pesanan kantin.\n\nTerima undangan ini?",
-        posLabel = "Terima",
-        onPos = { acceptSellerInvite(inviteId) },
-        negLabel = "Tolak",
-        onNeg = { declineSellerInvite(inviteId) },
-    )
-}
-
-internal fun MainActivity.acceptSellerInvite(inviteId: String) {
-    val self = this
-    authScope.launch {
-        try {
-            DeveloperRepository.acceptInvite(inviteId)
-            // Undangan diterima = unlock perangkat ini juga (flag server
-            // seller_invited jadi bukti di HP lain).
-            sellerUnlocked = true
-            Toast.makeText(self, "Selamat! Akunmu sekarang penjual.", Toast.LENGTH_LONG).show()
-            refreshInbox()
-            // Rute ulang sesuai role baru: langsung nama toko + dashboard.
-            routeSignedInUser()
-        } catch (error: Throwable) {
-            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
-            refreshInbox()
-        }
-    }
-}
-
-internal fun MainActivity.declineSellerInvite(inviteId: String) {
-    val self = this
-    authScope.launch {
-        try {
-            DeveloperRepository.declineInvite(inviteId)
-            Toast.makeText(self, "Undangan ditolak. Kamu tetap sebagai pembeli.", Toast.LENGTH_SHORT).show()
-            refreshInbox()
-        } catch (error: Throwable) {
-            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
-            refreshInbox()
-        }
-    }
-}
-
 /** Lonceng -> halaman Notifikasi (tujuan nyata, bukan popup). */
 internal fun MainActivity.openNotif() {
     if (!SupabaseRepository.hasSession()) {
@@ -270,11 +166,11 @@ internal fun MainActivity.openNotif() {
     ui.unreadOrderNotifCount = 0
     ui.go(Screen.NOTIF)
     if (ui.myRole == "developer") {
-        // Developer melihat riwayat yang ia kirim + undangan menunggu.
+        // Developer melihat riwayat peringatan & pengumuman yang ia kirim.
         authScope.launch {
             ui.devWarnings = runCatching { DeveloperRepository.fetchWarningHistory() }.getOrDefault(emptyList())
             ui.devAnnouncements = runCatching { DeveloperRepository.fetchAnnouncements() }.getOrDefault(emptyList())
-            ui.devInvites = runCatching { DeveloperRepository.fetchPendingInvites() }.getOrDefault(emptyList())
+            ui.devInvites = emptyList()
             ui.myWarnings = ui.devWarnings
             ui.myAnnouncements = ui.devAnnouncements
             ui.invalidate()

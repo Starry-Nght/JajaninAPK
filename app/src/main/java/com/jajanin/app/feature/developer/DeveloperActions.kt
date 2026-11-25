@@ -122,7 +122,7 @@ internal fun MainActivity.refreshDeveloper() {
             ui.devOrders = DeveloperRepository.fetchAllOrders()
             ui.devWarnings = DeveloperRepository.fetchWarningHistory()
             ui.devAnnouncements = DeveloperRepository.fetchAnnouncements()
-            ui.devInvites = DeveloperRepository.fetchPendingInvites()
+            ui.devInvites = emptyList()
             ui.devError = null
         } catch (ce: kotlinx.coroutines.CancellationException) {
             throw ce

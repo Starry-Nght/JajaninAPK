@@ -385,7 +385,7 @@ private fun JajaninView.drawDevUsers(
         rows.forEach { u ->
             val isExpanded = u.id == devSelectedUserId
             val isOnline = u.id in onlineUserIds
-            val hasRow2 = u.stallId != null || u.role == "buyer"
+            val hasRow2 = u.stallId != null
             val baseH = 66f
             val expandH = if (isExpanded) (if (hasRow2) 86f else 50f) else 0f
             val rowH = baseH + expandH
@@ -497,7 +497,7 @@ private fun JajaninView.drawDevUsers(
                     bounds.putVisible(if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, HEADER_H, navClear)
                     press(c, if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, 6f)
 
-                    // Row 2: Stall Toggle (for Seller) or Invite + Reset Quota (for Buyer)
+                    // Row 2: Stall Toggle (for Seller only; developer tidak dapat mengundang user jadi penjual)
                     if (u.stallId != null) {
                         val b3 = RectF(28f, btnY + 38f, 362f, btnY + 68f)
                         val isOpen = u.stallOpen == true
@@ -505,20 +505,6 @@ private fun JajaninView.drawDevUsers(
                         kit.centerText(c, if (isOpen) "Tutup Warung Sementara" else "Buka Kembali Warung", b3, 10.5f, kit.blue, true)
                         bounds.putVisible("devStall:${u.stallId}:${!isOpen}", b3, HEADER_H, navClear)
                         press(c, "devStall:${u.stallId}:${!isOpen}", b3, 6f)
-                    } else if (u.role == "buyer") {
-                        val b3 = RectF(28f, btnY + 38f, 362f, btnY + 68f)
-                        val pending = devInvites.firstOrNull { it.targetUserId == u.id && it.status == "pending" }
-                        if (pending != null) {
-                            kit.rounded(c, b3, kit.warnSoft, 6f)
-                            kit.centerText(c, "Batal Undang Jadi Penjual", b3, 10.5f, kit.blue, true)
-                            bounds.putVisible("devInviteCancel:${pending.id}", b3, HEADER_H, navClear)
-                            press(c, "devInviteCancel:${pending.id}", b3, 6f)
-                        } else {
-                            kit.rounded(c, b3, kit.tint, 6f)
-                            kit.centerText(c, "Undang Jadi Penjual", b3, 10.5f, kit.blue, true)
-                            bounds.putVisible("devInvite:${u.id}", b3, HEADER_H, navClear)
-                            press(c, "devInvite:${u.id}", b3, 6f)
-                        }
                     }
                 } else {
                     kit.line(c, 20f, y + rowH, 370f, y + rowH, kit.divider)
@@ -765,8 +751,7 @@ private fun JajaninView.drawDevAnnouncements(c: Canvas, w: Float, h: Float, off:
 // ================= HELPERS =================
 
 internal fun JajaninView.inboxUnreadCount(): Int =
-    myWarnings.count { !it.isRead } + myAnnouncements.size +
-        myInvites.count { it.status == "pending" } + unreadOrderNotifCount
+    myWarnings.count { !it.isRead } + myAnnouncements.size + unreadOrderNotifCount
 
 private fun displayLocalPhone(raw: String): String =
     if (raw.startsWith("+62")) "0" + raw.removePrefix("+62") else raw

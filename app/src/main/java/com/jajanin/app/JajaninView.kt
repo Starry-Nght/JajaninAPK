@@ -1163,8 +1163,6 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "infoPage" -> go(Screen.INFO)
                     hit == "checkOta" -> activity()?.checkForOtaUpdate(silent = false)
                     hit == "devPublishOta" -> activity()?.showDevOtaPublishForm()
-                    hit.startsWith("notifInvite:") -> activity()?.showInviteVerify(hit.substringAfter(':'))
-                    hit.startsWith("devNotifInviteCancel:") -> activity()?.confirmCancelInvite(hit.substringAfter(':'))
                     hit.startsWith("notifWarn:") -> activity()?.showNotifWarning(hit.substringAfter(':'))
                     hit.startsWith("notifAnn:") -> activity()?.showNotifAnn(hit.substringAfter(':'))
                     hit.startsWith("notifOrder:") -> {
@@ -1204,8 +1202,6 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     hit.startsWith("devWarn:") -> activity()?.showWarningForm(hit.substringAfter(':'))
-                    hit.startsWith("devInvite:") -> activity()?.confirmInviteSeller(hit.substringAfter(':'))
-                    hit.startsWith("devInviteCancel:") -> activity()?.confirmCancelInvite(hit.substringAfter(':'))
                     hit.startsWith("devActive:") -> activity()?.setDevUserStatus(hit.substringAfter(':'), "active")
                     hit.startsWith("devSuspend:") -> activity()?.setDevUserStatus(hit.substringAfter(':'), "suspended")
                     hit.startsWith("devStall:") -> {
