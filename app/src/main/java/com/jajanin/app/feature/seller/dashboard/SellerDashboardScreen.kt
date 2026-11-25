@@ -518,10 +518,20 @@ private fun JajaninView.drawCompactOrderRow(
         bounds.putVisible("adminCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
         val actionBtn = RectF(244f, top + 66f, 358f, top + 94f)
-        kit.rounded(c, actionBtn, kit.blue, 6f)
-        kit.centerText(c, nextAction.first, actionBtn, 10.5f, Color.WHITE, true)
-        press(c, "adminStatus:${order.id}", actionBtn, 6f)
-        bounds.putVisible("adminStatus:${order.id}", actionBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        val lockReason = sellerPoAdvanceBlockReason(order, nextAction.second)
+        if (lockReason != null) {
+            val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&
+                !order.paymentStatus.equals("paid", ignoreCase = true)
+            val lockLabel = if (needsQris) "Cek QRIS" else "Terkunci"
+            kit.rounded(c, actionBtn, kit.warnBox, 6f, Color.rgb(183, 116, 0))
+            kit.centerText(c, lockLabel, actionBtn, 10.5f, Color.rgb(183, 116, 0), true)
+            bounds.putVisible("adminStatus:${order.id}", actionBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        } else {
+            kit.rounded(c, actionBtn, kit.blue, 6f)
+            kit.centerText(c, nextAction.first, actionBtn, 10.5f, Color.WHITE, true)
+            press(c, "adminStatus:${order.id}", actionBtn, 6f)
+            bounds.putVisible("adminStatus:${order.id}", actionBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        }
     }
 }
 
@@ -693,7 +703,11 @@ private fun JajaninView.drawOrderCard(
         val action = RectF(212f, top + 97f, 358f, top + 125f)
         val lockReason = sellerPoAdvanceBlockReason(order, nextAction.second)
         if (lockReason != null) {
-            val lockedLabel = if (order.pickupDate.isNotBlank() && order.pickupDate > OrderRepository.todayWibDateString()) {
+            val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&
+                !order.paymentStatus.equals("paid", ignoreCase = true)
+            val lockedLabel = if (needsQris) {
+                "Verifikasi QRIS Dulu"
+            } else if (order.pickupDate.isNotBlank() && order.pickupDate > OrderRepository.todayWibDateString()) {
                 "Hari-H: ${formatShortIdDate(order.pickupDate)}"
             } else {
                 "Verifikasi QRIS Dulu"

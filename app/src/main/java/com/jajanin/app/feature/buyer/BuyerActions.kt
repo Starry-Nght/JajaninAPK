@@ -87,6 +87,7 @@ internal fun MainActivity.refreshMyOrders() {
     ui.invalidate()
     myOrdersJob = authScope.launch {
         try {
+            OrderRepository.expireUnpaidQrisOrders()
             val fresh = withTimeout(12_000L) { OrderRepository.fetchMyOrders() }
             detectAndNotifyBuyerOrderChanges(fresh)
             ui.myOrders = fresh
@@ -126,6 +127,15 @@ internal suspend fun MainActivity.silentRefreshBuyerTick() {
         }
     }
     if (SupabaseRepository.hasSession() && !ui.placingOrder) {
+        val hasExpiredQris = ui.myOrders.any { o ->
+            o.status.equals(STATUS_PENDING, ignoreCase = true) &&
+                o.paymentMethod.equals("qris", ignoreCase = true) &&
+                (o.paymentStatus == "unpaid" || o.paymentStatus == "rejected") &&
+                (com.jajanin.app.data.repository.remainingPaymentSeconds(o.paymentExpiresAt) ?: 1L) <= 0L
+        }
+        if (hasExpiredQris) {
+            runCatching { OrderRepository.expireUnpaidQrisOrders() }
+        }
         runCatching {
             val freshOrders = OrderRepository.fetchMyOrders()
             detectAndNotifyBuyerOrderChanges(freshOrders)
@@ -179,6 +189,9 @@ private fun MainActivity.applyRealtimeOrderToBuyer(action: PostgresAction): Bool
                         status = patch.status ?: order.status,
                         paymentStatus = patch.paymentStatus ?: order.paymentStatus,
                         cancelReason = patch.paymentReference?.trim() ?: order.cancelReason,
+                        paymentProofUrl = patch.paymentProofUrl?.trim() ?: order.paymentProofUrl,
+                        paymentExpiresAt = patch.paymentExpiresAt ?: order.paymentExpiresAt,
+                        stockDeducted = patch.stockDeducted ?: order.stockDeducted,
                     )
                 } else {
                     order
@@ -957,9 +970,17 @@ internal fun MainActivity.placeCartOrder() {
             ui.lastOrderMethod = placed.paymentMethod
             recordBuyerOrderSeed(placed.id, placed.status, placed.paymentStatus)
             if (method == "qris") {
-                // Ambil QR warung lalu tampilkan layar bayar.
+                // Ambil QR warung lalu tampilkan layar bayar + timer 10 menit + unggah bukti wajib.
                 ui.lastOrderStatus = placed.status
-                openQrisPayment(placed.id, placed.totalIdr, stallId, verifiedQris)
+                refreshMyOrders()
+                openQrisPayment(
+                    orderId = placed.id,
+                    amountIdr = placed.totalIdr,
+                    stallId = stallId,
+                    preloadedQris = verifiedQris,
+                    expiresAt = placed.paymentExpiresAt,
+                    existingProofUrl = null,
+                )
             } else {
                 refreshMyOrders()
                 ui.lastOrderStatus = placed.status
@@ -985,15 +1006,22 @@ internal fun MainActivity.placeCartOrder() {
     }
 }
 
-/** Layar QRIS: tampilkan QR warung + nominal pas untuk order yang baru dibuat. */
+/** Layar QRIS: tampilkan QR warung + nominal pas + batas waktu 10 menit + unggah bukti bayar wajib. */
 internal fun MainActivity.openQrisPayment(
     orderId: String,
     amountIdr: Int,
     stallId: String?,
     preloadedQris: String? = null,
+    expiresAt: String? = null,
+    existingProofUrl: String? = null,
 ) {
     ui.qrisOrderId = orderId
     ui.qrisAmount = amountIdr
+    ui.qrisExpiresAt = expiresAt
+    ui.qrisProofUrl = existingProofUrl?.takeIf { it.isNotBlank() }
+    ui.qrisProofUploading = false
+    ui.qrisProofSubmitting = false
+    ui.qrisExpiryTriggeredForId = null
     val cachedUrl = preloadedQris?.trim()?.takeIf { it.isNotBlank() }
     if (cachedUrl != null) {
         ui.qrisImageUrl = cachedUrl
@@ -1002,9 +1030,9 @@ internal fun MainActivity.openQrisPayment(
         return
     }
     ui.qrisImageUrl = null
-    ui.qrisLoading = stallId != null
+    ui.qrisLoading = !stallId.isNullOrBlank()
     ui.go(Screen.QRIS)
-    if (stallId == null) {
+    if (stallId.isNullOrBlank()) {
         ui.qrisLoading = false
         ui.invalidate()
         return
@@ -1018,44 +1046,227 @@ internal fun MainActivity.openQrisPayment(
     }
 }
 
-/** Pembeli menekan "Saya sudah membayar": status -> waiting_verification (bukan paid). */
-internal fun MainActivity.submitPaymentProof() {
+/** Buka kembali layar QRIS & unggah bukti untuk pesanan yang belum bayar / ditolak dari riwayat pesanan. */
+internal fun MainActivity.openPaymentProofForOrder(orderId: String) {
+    val cached = ui.myOrders.firstOrNull { it.id == orderId }
+    if (cached != null) {
+        val rem = com.jajanin.app.data.repository.remainingPaymentSeconds(cached.paymentExpiresAt)
+        if (rem != null && rem <= 0L) {
+            onQrisTimerExpired(orderId)
+            return
+        }
+        ui.lastOrderId = cached.id
+        ui.selectedBuyerOrderId = cached.id
+        ui.lastOrderPickup = cached.pickupCode
+        ui.lastOrderTotal = cached.totalIdr
+        ui.lastOrderMethod = cached.paymentMethod ?: "qris"
+        ui.lastOrderStatus = cached.status
+        if (cached.sellerStoreName.isNotBlank()) ui.cartStallName = cached.sellerStoreName
+        openQrisPayment(
+            orderId = cached.id,
+            amountIdr = cached.totalIdr,
+            stallId = cached.stallId.takeIf { it.isNotBlank() },
+            expiresAt = cached.paymentExpiresAt,
+            existingProofUrl = cached.paymentProofUrl.takeIf { it.isNotBlank() },
+        )
+        return
+    }
+    authScope.launch {
+        val fresh = runCatching { OrderRepository.fetchOrderById(orderId) }.getOrNull() ?: return@launch
+        ui.lastOrderId = fresh.id
+        ui.selectedBuyerOrderId = fresh.id
+        ui.lastOrderPickup = fresh.pickupCode
+        ui.lastOrderTotal = fresh.totalIdr
+        ui.lastOrderMethod = fresh.paymentMethod ?: "qris"
+        ui.lastOrderStatus = fresh.status
+        if (fresh.sellerStoreName.isNotBlank()) ui.cartStallName = fresh.sellerStoreName
+        openQrisPayment(
+            orderId = fresh.id,
+            amountIdr = fresh.totalIdr,
+            stallId = fresh.stallId.takeIf { it.isNotBlank() },
+            expiresAt = fresh.paymentExpiresAt,
+            existingProofUrl = fresh.paymentProofUrl.takeIf { it.isNotBlank() },
+        )
+    }
+}
+
+/** Buka pemilih galeri untuk unggah screenshot bukti bayar QRIS. */
+internal fun MainActivity.pickPaymentProofImage() {
+    val orderId = ui.qrisOrderId ?: return
+    val rem = com.jajanin.app.data.repository.remainingPaymentSeconds(ui.qrisExpiresAt)
+    if (rem != null && rem <= 0L) {
+        onQrisTimerExpired(orderId)
+        return
+    }
+    if (ui.qrisProofUploading || ui.qrisProofSubmitting) return
+    val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(android.content.Intent.CATEGORY_OPENABLE)
+        type = "image/*"
+    }
+    startActivityForResult(intent, REQUEST_PAYMENT_PROOF)
+}
+
+/** Unggah screenshot bukti bayar QRIS ke bucket `payment-proofs/$uid/<orderId>_<ts>.jpg`. */
+internal fun MainActivity.uploadPaymentProofImage(uri: android.net.Uri) {
     val self = this
     val orderId = ui.qrisOrderId ?: return
-    val previousOrders = ui.myOrders
-    val previousStatus = ui.lastOrderStatus
-    ui.myOrders = previousOrders.map { if (it.id == orderId) it.copy(paymentStatus = "waiting_verification") else it }
-    ui.lastOrderStatus = "pending"
-    ui.go(Screen.READY)
-    authScope.launch {
+    ui.qrisProofUploading = true
+    ui.invalidate()
+    authScope.launch(Dispatchers.IO) {
         try {
-            OrderRepository.submitPaymentProof(orderId)
-            refreshMyOrders()
-            Toast.makeText(self, "Menunggu verifikasi penjual.", Toast.LENGTH_LONG).show()
+            val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("Gambar bukti tidak bisa dibaca.")
+            val bytes = compressForUpload(raw, maxEdge = 1280, quality = 82)
+            require(bytes.size <= 5 * 1024 * 1024) { "Ukuran foto bukti maksimal 5MB." }
+            val token = SupabaseRepository.currentAccessToken() ?: error("Sesi habis, masuk ulang.")
+            val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
+            val path = "$uid/${orderId}_${System.currentTimeMillis()}.jpg"
+            val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/payment-proofs/$path")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "PUT"
+                doOutput = true
+                setFixedLengthStreamingMode(bytes.size)
+                setRequestProperty("apikey", SupabaseRepository.publishableKey)
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", "image/jpeg")
+                setRequestProperty("x-upsert", "true")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+            conn.outputStream.use { it.write(bytes) }
+            val code = conn.responseCode
+            if (code !in 200..299) error("Unggah bukti gagal (HTTP $code).")
+            val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/payment-proofs/$path"
+            val previewBmp = runCatching {
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+            launch(Dispatchers.Main) {
+                if (previewBmp != null) {
+                    com.jajanin.app.core.ui.ProductImageCache.images[publicUrl] = previewBmp
+                }
+                ui.qrisProofUrl = publicUrl
+                ui.qrisProofUploading = false
+                ui.invalidate()
+                Toast.makeText(self, "Foto bukti terunggah. Tekan Kirim Bukti di bawah.", Toast.LENGTH_SHORT).show()
+            }
         } catch (error: Throwable) {
-            ui.myOrders = previousOrders
-            ui.lastOrderStatus = previousStatus
-            ui.invalidate()
-            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            launch(Dispatchers.Main) {
+                ui.qrisProofUploading = false
+                ui.invalidate()
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
         }
     }
 }
 
-/** Pembeli mengajukan bukti dari kartu riwayat pesanannya sendiri. */
-internal fun MainActivity.submitPaymentProofFor(orderId: String) {
+/** Tampilkan foto bukti transfer QRIS dalam dialog penuh (dipakai Pembeli & Penjual). */
+internal fun MainActivity.showPaymentProofPreview(url: String, title: String = "Bukti Transfer QRIS") {
     val self = this
+    val cached = com.jajanin.app.core.ui.ProductImageCache.images[url]
+    if (cached != null) {
+        val view = android.widget.ImageView(self).apply {
+            setImageBitmap(cached)
+            adjustViewBounds = true
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            setPadding(24, 24, 24, 16)
+        }
+        android.app.AlertDialog.Builder(self)
+            .setTitle(title)
+            .setView(view)
+            .setPositiveButton("Tutup", null)
+            .show()
+        return
+    }
+    Toast.makeText(self, "Memuat foto bukti bayar...", Toast.LENGTH_SHORT).show()
+    authScope.launch(Dispatchers.IO) {
+        val bmp = runCatching {
+            val conn = java.net.URL(url).openConnection().apply { connectTimeout = 10000; readTimeout = 10000 }
+            conn.getInputStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+        }.getOrNull()
+        launch(Dispatchers.Main) {
+            if (bmp != null) {
+                com.jajanin.app.core.ui.ProductImageCache.images[url] = bmp
+                val view = android.widget.ImageView(self).apply {
+                    setImageBitmap(bmp)
+                    adjustViewBounds = true
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    setPadding(24, 24, 24, 16)
+                }
+                android.app.AlertDialog.Builder(self)
+                    .setTitle(title)
+                    .setView(view)
+                    .setPositiveButton("Tutup", null)
+                    .show()
+            } else {
+                Toast.makeText(self, "Foto bukti tidak bisa dimuat.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+}
+
+/** Dipanggil otomatis saat timer 10 menit QRIS habis di layar pembeli. */
+internal fun MainActivity.onQrisTimerExpired(orderId: String) {
+    if (ui.qrisExpiryTriggeredForId == orderId) return
+    ui.qrisExpiryTriggeredForId = orderId
+    val self = this
+    authScope.launch {
+        runCatching { OrderRepository.expireUnpaidQrisOrders() }
+        refreshMyOrders()
+        refreshProducts()
+        Toast.makeText(
+            self,
+            "Batas waktu bayar QRIS (10 menit) habis. Pesanan otomatis dibatalkan.",
+            Toast.LENGTH_LONG,
+        ).show()
+        if (ui.currentScreen == Screen.QRIS && ui.qrisOrderId == orderId) {
+            ui.go(Screen.ORDERS)
+        }
+    }
+}
+
+/** Pembeli menekan "Kirim Bukti & Konfirmasi Bayar": wajib sudah mengunggah screenshot bukti QRIS. */
+internal fun MainActivity.submitPaymentProof() {
+    val self = this
+    val orderId = ui.qrisOrderId ?: return
+    if (ui.qrisProofSubmitting) return
+    if (ui.qrisProofUploading) {
+        Toast.makeText(this, "Tunggu foto bukti selesai diunggah.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val rem = com.jajanin.app.data.repository.remainingPaymentSeconds(ui.qrisExpiresAt)
+    if (rem != null && rem <= 0L) {
+        onQrisTimerExpired(orderId)
+        return
+    }
+    val proofUrl = ui.qrisProofUrl?.trim().orEmpty()
+    if (proofUrl.isBlank()) {
+        Toast.makeText(this, "Unggah foto screenshot bukti transfer QRIS terlebih dahulu.", Toast.LENGTH_LONG).show()
+        pickPaymentProofImage()
+        return
+    }
+    ui.qrisProofSubmitting = true
     val previousOrders = ui.myOrders
-    ui.myOrders = previousOrders.map { if (it.id == orderId) it.copy(paymentStatus = "waiting_verification") else it }
+    val previousStatus = ui.lastOrderStatus
+    ui.myOrders = previousOrders.map {
+        if (it.id == orderId) it.copy(paymentStatus = "waiting_verification", paymentProofUrl = proofUrl, paymentExpiresAt = null)
+        else it
+    }
+    ui.lastOrderStatus = "pending"
     ui.invalidate()
     authScope.launch {
         try {
-            OrderRepository.submitPaymentProof(orderId)
+            OrderRepository.submitPaymentProof(orderId, proofUrl)
+            ui.qrisProofSubmitting = false
+            ui.go(Screen.READY)
             refreshMyOrders()
-            Toast.makeText(self, "Menunggu verifikasi penjual.", Toast.LENGTH_LONG).show()
+            Toast.makeText(self, "Bukti transfer terkirim. Menunggu verifikasi penjual.", Toast.LENGTH_LONG).show()
         } catch (error: Throwable) {
+            ui.qrisProofSubmitting = false
             ui.myOrders = previousOrders
+            ui.lastOrderStatus = previousStatus
             ui.invalidate()
-            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
+            Toast.makeText(self, msg, Toast.LENGTH_LONG).show()
         }
     }
 }

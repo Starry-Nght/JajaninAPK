@@ -182,6 +182,11 @@ internal class JajaninView(context: Context) : View(context) {
     internal var qrisAmount: Int = 0
     internal var qrisImageUrl: String? = null
     internal var qrisLoading = false
+    internal var qrisExpiresAt: String? = null
+    internal var qrisProofUrl: String? = null
+    internal var qrisProofUploading = false
+    internal var qrisProofSubmitting = false
+    internal var qrisExpiryTriggeredForId: String? = null
     // --- Seller settings state ---
     internal var myStallId: String? = null
     internal var myStallName: String = ""
@@ -1042,8 +1047,22 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     hit == "placeOrder" -> if (!placingOrder) activity()?.placeCartOrder()
+                    hit == "qrisPickProof" || hit == "qrisPickProofCard" -> activity()?.pickPaymentProofImage()
+                    hit == "qrisViewProof" || hit == "qrisViewProofThumb" || hit == "qrisViewProofBtn" ->
+                        qrisProofUrl?.takeIf { it.isNotBlank() }?.let {
+                            activity()?.showPaymentProofPreview(it, "Bukti Transfer QRIS")
+                        }
+                    hit.startsWith("viewProof:") -> {
+                        val targetOrderId = hit.substringAfter(':')
+                        val url = adminDetailOrder?.takeIf { it.id == targetOrderId }?.paymentProofUrl
+                            ?: myOrders.firstOrNull { it.id == targetOrderId }?.paymentProofUrl
+                            ?: adminOrders.firstOrNull { it.id == targetOrderId }?.paymentProofUrl
+                        if (!url.isNullOrBlank()) {
+                            activity()?.showPaymentProofPreview(url, "Bukti Transfer QRIS")
+                        }
+                    }
                     hit == "paid" -> activity()?.submitPaymentProof()
-                    hit.startsWith("myOrderPaid:") -> activity()?.submitPaymentProofFor(hit.substringAfter(':'))
+                    hit.startsWith("myOrderPaid:") -> activity()?.openPaymentProofForOrder(hit.substringAfter(':'))
                     hit.startsWith("buyerCancel:") -> activity()?.cancelBuyerOrder(hit.substringAfter(':'))
                     hit.startsWith("buyerOrder:") -> {
                         selectedBuyerOrderId = hit.substringAfter(':')
@@ -1124,6 +1143,9 @@ internal class JajaninView(context: Context) : View(context) {
                             val lockMsg = sellerPoAdvanceBlockReason(current, next)
                             if (lockMsg != null) {
                                 android.widget.Toast.makeText(context, lockMsg, android.widget.Toast.LENGTH_LONG).show()
+                                if (lockMsg.contains("QRIS", ignoreCase = true)) {
+                                    activity()?.openOrderDetail(orderId)
+                                }
                             } else {
                                 // Optimis: status kartu langsung bergerak; server mengonfirmasi lewat refresh.
                                 adminOrders = adminOrders.map { if (it.id == orderId) it.copy(status = next) else it }

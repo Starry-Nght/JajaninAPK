@@ -611,6 +611,9 @@ private fun MainActivity.patchAdminOrderLocal(
     status: String? = null,
     paymentStatus: String? = null,
     cancelReason: String? = null,
+    paymentProofUrl: String? = null,
+    paymentExpiresAt: String? = null,
+    stockDeducted: Boolean? = null,
 ) {
     ui.adminOrders = ui.adminOrders.map { order ->
         if (order.id == orderId) {
@@ -618,6 +621,9 @@ private fun MainActivity.patchAdminOrderLocal(
                 status = status ?: order.status,
                 paymentStatus = paymentStatus ?: order.paymentStatus,
                 cancelReason = cancelReason ?: order.cancelReason,
+                paymentProofUrl = paymentProofUrl ?: order.paymentProofUrl,
+                paymentExpiresAt = paymentExpiresAt ?: order.paymentExpiresAt,
+                stockDeducted = stockDeducted ?: order.stockDeducted,
             )
         } else {
             order
@@ -629,6 +635,9 @@ private fun MainActivity.patchAdminOrderLocal(
                 status = status ?: detail.status,
                 paymentStatus = paymentStatus ?: detail.paymentStatus,
                 cancelReason = cancelReason ?: detail.cancelReason,
+                paymentProofUrl = paymentProofUrl ?: detail.paymentProofUrl,
+                paymentExpiresAt = paymentExpiresAt ?: detail.paymentExpiresAt,
+                stockDeducted = stockDeducted ?: detail.stockDeducted,
             )
         }
     }
@@ -639,17 +648,20 @@ internal fun MainActivity.markOrderPaid(orderId: String) {
     val self = this
     val previousOrders = ui.adminOrders
     val previousDetail = ui.adminDetailOrder
-    patchAdminOrderLocal(orderId, paymentStatus = "paid")
+    patchAdminOrderLocal(orderId, paymentStatus = "paid", stockDeducted = true)
     authScope.launch {
         try {
             OrderRepository.markOrderPaid(orderId)
             refreshAdminOrders()
-            Toast.makeText(self, "Pembayaran ditandai lunas.", Toast.LENGTH_SHORT).show()
+            refreshSellerProducts()
+            refreshProducts()
+            Toast.makeText(self, "Pembayaran diverifikasi lunas & stok terpotong otomatis.", Toast.LENGTH_SHORT).show()
         } catch (error: Throwable) {
             ui.adminOrders = previousOrders
             ui.adminDetailOrder = previousDetail
             ui.invalidate()
-            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
+            Toast.makeText(self, msg, Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -659,12 +671,12 @@ internal fun MainActivity.rejectOrderPayment(orderId: String) {
     val self = this
     val previousOrders = ui.adminOrders
     val previousDetail = ui.adminDetailOrder
-    patchAdminOrderLocal(orderId, paymentStatus = "rejected")
+    patchAdminOrderLocal(orderId, paymentStatus = "rejected", paymentProofUrl = "")
     authScope.launch {
         try {
             OrderRepository.rejectOrderPayment(orderId)
             refreshAdminOrders()
-            Toast.makeText(self, "Bukti pembayaran ditolak.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(self, "Bukti ditolak. Pembeli diberi waktu 10 menit untuk unggah ulang.", Toast.LENGTH_LONG).show()
         } catch (error: Throwable) {
             ui.adminOrders = previousOrders
             ui.adminDetailOrder = previousDetail
@@ -870,6 +882,9 @@ private fun MainActivity.applyRealtimeOrderToSeller(action: PostgresAction): Boo
                 status = patch.status,
                 paymentStatus = patch.paymentStatus,
                 cancelReason = patch.paymentReference,
+                paymentProofUrl = patch.paymentProofUrl,
+                paymentExpiresAt = patch.paymentExpiresAt,
+                stockDeducted = patch.stockDeducted,
             )
             detectAndNotifySellerOrderChanges(ui.adminOrders)
             true
@@ -1219,6 +1234,7 @@ internal fun MainActivity.refreshAdminOrders() {
     ui.invalidate()
     adminRefreshJob = authScope.launch {
         try {
+            OrderRepository.expireUnpaidQrisOrders()
             val freshOrders = OrderRepository.fetchAdminTodayOrders()
             detectAndNotifySellerOrderChanges(freshOrders)
             ui.adminOrders = freshOrders
@@ -1243,6 +1259,15 @@ internal fun MainActivity.refreshAdminOrders() {
 /** Auto-refresh penjual setiap 1 detik di latar belakang tanpa mengaktifkan spinner loading. */
 internal suspend fun MainActivity.silentRefreshSellerTick() {
     if (!SupabaseRepository.hasSession() || adminStatusBusy) return
+    val hasExpiredQris = ui.adminOrders.any { o ->
+        o.status.equals(STATUS_PENDING, ignoreCase = true) &&
+            o.paymentMethod.equals("qris", ignoreCase = true) &&
+            (o.paymentStatus == "unpaid" || o.paymentStatus == "rejected") &&
+            (com.jajanin.app.data.repository.remainingPaymentSeconds(o.paymentExpiresAt) ?: 1L) <= 0L
+    }
+    if (hasExpiredQris) {
+        runCatching { OrderRepository.expireUnpaidQrisOrders() }
+    }
     runCatching {
         val freshOrders = OrderRepository.fetchAdminTodayOrders()
         detectAndNotifySellerOrderChanges(freshOrders)
@@ -1273,15 +1298,44 @@ internal fun MainActivity.cancelAdminOrder(orderId: String) {
         setSingleLine(false)
         maxLines = 3
     }
+    val restoreStockCheck = android.widget.CheckBox(this).apply {
+        text = "Kembalikan stok menu ke etalase"
+        isChecked = order.stockDeducted
+        visibility = if (order.stockDeducted) View.VISIBLE else View.GONE
+    }
+    val markEmptyCheck = android.widget.CheckBox(this).apply {
+        text = "Tandai stok menu pesanan jadi 0 (Habis)"
+        isChecked = false
+    }
+    val stockNote = TextView(this).apply {
+        text = if (order.stockDeducted) {
+            "Pilih salah satu: kembalikan stok jika menu masih ada, atau tandai 0 jika stok benar-benar habis."
+        } else {
+            "Stok menu belum terpotong karena pembayaran QRIS belum diverifikasi lunas."
+        }
+        textSize = 12f
+        setPadding(0, 14, 0, 8)
+    }
+
+    markEmptyCheck.setOnCheckedChangeListener { _, checked ->
+        if (checked) restoreStockCheck.isChecked = false
+    }
+    restoreStockCheck.setOnCheckedChangeListener { _, checked ->
+        if (checked) markEmptyCheck.isChecked = false
+    }
+
     val container = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(48, 20, 48, 8)
         addView(input)
+        addView(stockNote)
+        addView(restoreStockCheck)
+        addView(markEmptyCheck)
     }
 
     val dialog = android.app.AlertDialog.Builder(this)
         .setTitle("Batalkan pesanan #${order.pickupCode}?")
-        .setMessage("${order.buyerName}\nMasukkan alasan pembatalan (wajib diisi): Jatah pesanan harian pembeli & stok menu akan dikembalikan otomatis.")
+        .setMessage("${order.buyerName}\nMasukkan alasan pembatalan (wajib diisi):")
         .setView(container)
         .setPositiveButton("Batalkan Pesanan", null)
         .setNegativeButton("Kembali", null)
@@ -1295,32 +1349,46 @@ internal fun MainActivity.cancelAdminOrder(orderId: String) {
                 Toast.makeText(self, "Wajib mengisi alasan pembatalan pesanan.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
+            val markEmpty = markEmptyCheck.isChecked
+            val restoreStock = order.stockDeducted && restoreStockCheck.isChecked && !markEmpty
             dialog.dismiss()
-            submitAdminOrderCancel(orderId, reason)
+            submitAdminOrderCancel(orderId, reason, restoreStock, markEmpty)
         }
     }
     dialog.show()
     input.requestFocus()
 }
 
-internal fun MainActivity.submitAdminOrderCancel(orderId: String, reason: String) {
+internal fun MainActivity.submitAdminOrderCancel(
+    orderId: String,
+    reason: String,
+    restoreStock: Boolean = true,
+    markOutOfStock: Boolean = false,
+) {
     val self = this
     if (adminStatusBusy) return
     adminStatusBusy = true
     val previousOrders = ui.adminOrders
     val previousDetail = ui.adminDetailOrder
-    patchAdminOrderLocal(orderId, status = STATUS_CANCELLED, cancelReason = reason)
+    patchAdminOrderLocal(orderId, status = STATUS_CANCELLED, cancelReason = reason, stockDeducted = false)
     authScope.launch {
         try {
-            OrderRepository.cancelSellerOrder(orderId, reason)
+            OrderRepository.cancelSellerOrder(orderId, reason, restoreStock, markOutOfStock)
             refreshAdminOrders()
             refreshSellerProducts()
-            Toast.makeText(self, "Pesanan dibatalkan & kuota pembeli dikembalikan.", Toast.LENGTH_SHORT).show()
+            refreshProducts()
+            val msg = when {
+                markOutOfStock -> "Pesanan dibatalkan & stok menu ditandai habis (0)."
+                restoreStock -> "Pesanan dibatalkan & stok menu dikembalikan."
+                else -> "Pesanan dibatalkan (stok tidak berubah)."
+            }
+            Toast.makeText(self, msg, Toast.LENGTH_SHORT).show()
         } catch (error: Throwable) {
             ui.adminOrders = previousOrders
             ui.adminDetailOrder = previousDetail
             ui.invalidate()
-            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
+            Toast.makeText(self, msg, Toast.LENGTH_LONG).show()
         } finally {
             adminStatusBusy = false
         }

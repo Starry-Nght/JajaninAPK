@@ -179,25 +179,60 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     // 3. Payment Info Row
     val (payLabel, payColor) = paymentLabel(payStatus)
     val methodLabel = if (method == "cash") "Tunai (Bayar saat ambil)" else "QRIS"
-    val needsProof = method == "qris" && (payStatus == "unpaid" || payStatus == "rejected")
-    val payBoxH = if (needsProof) 86f else 48f
+    val activeOrder = !isTerminalStatus(status)
+    val needsProof = activeOrder && method == "qris" && (payStatus == "unpaid" || payStatus == "rejected")
+    val hasProofPhoto = method == "qris" && !matchedOrder?.paymentProofUrl.isNullOrBlank()
+    val remSec = if (needsProof) com.jajanin.app.data.repository.remainingPaymentSeconds(matchedOrder?.paymentExpiresAt) else null
+    if (remSec != null && remSec > 0L && currentScreen == com.jajanin.app.core.navigation.Screen.READY) {
+        postInvalidateDelayed(1000)
+    }
+    val payBoxH = when {
+        needsProof && remSec != null -> 104f
+        needsProof -> 86f
+        hasProofPhoto -> 86f
+        else -> 48f
+    }
     val payRect = RectF(20f, y, 370f, y + payBoxH)
     kit.rounded(c, payRect, kit.card, 8f, kit.border)
     kit.text(c, "Metode: $methodLabel", 34f, y + 28f, 12.5f, kit.ink, true)
     kit.textRight(c, payLabel, 356f, y + 28f, 130f, 11.5f, payColor, true)
 
     if (needsProof && matchedOrder != null) {
-        val proofBtn = RectF(34f, y + 44f, 356f, y + 76f)
+        var btnTop = y + 44f
+        if (remSec != null) {
+            val timerText = if (remSec <= 0L) {
+                "Batas bayar QRIS habis · pesanan segera dibatalkan"
+            } else {
+                "Sisa waktu bayar QRIS: ${com.jajanin.app.data.repository.formatCountdownMmSs(remSec)}"
+            }
+            kit.textEllipsized(
+                c,
+                timerText,
+                34f,
+                y + 48f,
+                322f,
+                10.5f,
+                if (remSec <= 120L) kit.danger else Color.rgb(183, 116, 0),
+                true,
+            )
+            btnTop = y + 60f
+        }
+        val proofBtn = RectF(34f, btnTop, 356f, btnTop + 32f)
         kit.rounded(c, proofBtn, kit.tint, 6f, kit.blue)
         kit.centerText(
             c,
-            if (payStatus == "rejected") "Bukti ditolak · Konfirmasi ulang" else "Saya sudah membayar",
+            if (payStatus == "rejected") "Bukti ditolak · Unggah bukti ulang" else "Bayar QRIS & Unggah Bukti",
             proofBtn,
             11.5f,
             kit.blue,
             true
         )
         bounds.putVisible("myOrderPaid:${matchedOrder.id}", proofBtn, topLimit = HEADER_H, bottomLimit = h - 70f)
+    } else if (hasProofPhoto && matchedOrder != null) {
+        val viewBtn = RectF(34f, y + 44f, 356f, y + 76f)
+        kit.rounded(c, viewBtn, kit.bg, 6f, kit.border)
+        kit.centerText(c, "Lihat Foto Bukti Transfer", viewBtn, 11.5f, kit.blue, true)
+        bounds.putVisible("viewProof:${matchedOrder.id}", viewBtn, topLimit = HEADER_H, bottomLimit = h - 70f)
     }
 
     var endContentY = y + payBoxH
@@ -395,8 +430,19 @@ private fun JajaninView.drawBuyerOrderItem(
         val cancelInfo = order.cancelReason.takeIf {
             it.isNotBlank() && order.status.equals(STATUS_CANCELLED, ignoreCase = true)
         }
+        val orderRemSec = if (active && needsProof) {
+            com.jajanin.app.data.repository.remainingPaymentSeconds(order.paymentExpiresAt)
+        } else {
+            null
+        }
+        if (orderRemSec != null && orderRemSec > 0L && currentScreen == com.jajanin.app.core.navigation.Screen.ORDERS) {
+            postInvalidateDelayed(1000)
+        }
         if (cancelInfo != null) {
             kit.textEllipsized(c, "Alasan: $cancelInfo", 32f, top + 106f, 200f, 10.5f, kit.danger, true)
+        } else if (orderRemSec != null) {
+            val timerInfo = if (orderRemSec <= 0L) "QRIS · Waktu habis" else "QRIS · Sisa ${com.jajanin.app.data.repository.formatCountdownMmSs(orderRemSec)}"
+            kit.textEllipsized(c, timerInfo, 32f, top + 106f, 190f, 10.5f, if (orderRemSec <= 120L) kit.danger else Color.rgb(183, 116, 0), true)
         } else {
             kit.text(c, "$methodName · $payLabel", 32f, top + 106f, 10.5f, payColor, true)
         }
@@ -433,7 +479,7 @@ private fun JajaninView.drawBuyerOrderItem(
             kit.rounded(c, payBtn, kit.tint, 6f, kit.blue)
             kit.centerText(
                 c,
-                if (order.paymentStatus == "rejected") "Konfirmasi bayar ulang" else "Saya sudah membayar",
+                if (order.paymentStatus == "rejected") "Unggah bukti ulang" else "Bayar & Unggah Bukti",
                 payBtn,
                 11f,
                 kit.blue,
@@ -451,7 +497,7 @@ private fun JajaninView.drawBuyerOrderItem(
             kit.rounded(c, payBtn, kit.tint, 6f, kit.blue)
             kit.centerText(
                 c,
-                if (order.paymentStatus == "rejected") "Ditolak · Konfirmasi bayar ulang" else "Saya sudah membayar",
+                if (order.paymentStatus == "rejected") "Ditolak · Unggah bukti ulang" else "Bayar QRIS & Unggah Bukti",
                 payBtn,
                 11f,
                 kit.blue,

@@ -93,6 +93,7 @@ class MainActivity : Activity() {
     internal val REQUEST_PRODUCT_IMAGE = 8301
     internal val REQUEST_QRIS_IMAGE = 8302
     internal val REQUEST_OTA_APK = 8303
+    internal val REQUEST_PAYMENT_PROOF = 8304
     internal var pendingOtaRelease: OtaRelease? = null
     internal var pendingOtaPublishDraft: OtaPublishDraft? = null
     internal var otaPromptedVersion: Int = -1
@@ -586,6 +587,15 @@ class MainActivity : Activity() {
             REQUEST_OTA_APK -> {
                 val uri = data?.data ?: return
                 publishOtaApkFromUri(uri)
+            }
+            REQUEST_PAYMENT_PROOF -> {
+                val uri = data?.data ?: return
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                uploadPaymentProofImage(uri)
             }
         }
     }

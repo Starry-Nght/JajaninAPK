@@ -49,6 +49,9 @@ internal data class OrderRow(
     @SerialName("payment_method") val paymentMethod: String? = null,
     @SerialName("payment_status") val paymentStatus: String = "unpaid",
     @SerialName("payment_reference") val paymentReference: String? = null,
+    @SerialName("payment_proof_url") val paymentProofUrl: String? = null,
+    @SerialName("payment_expires_at") val paymentExpiresAt: String? = null,
+    @SerialName("stock_deducted") val stockDeducted: Boolean = true,
     @SerialName("order_mode") val orderMode: String = "same_day",
     @SerialName("pickup_date") val pickupDate: String = "",
     @SerialName("pickup_session") val pickupSession: String = "Istirahat 1",
@@ -93,6 +96,9 @@ internal data class RealtimeOrderPatch(
     val status: String? = null,
     @SerialName("payment_status") val paymentStatus: String? = null,
     @SerialName("payment_reference") val paymentReference: String? = null,
+    @SerialName("payment_proof_url") val paymentProofUrl: String? = null,
+    @SerialName("payment_expires_at") val paymentExpiresAt: String? = null,
+    @SerialName("stock_deducted") val stockDeducted: Boolean? = null,
 )
 
 /** Model siap-tampil untuk layar admin & pembeli: nama pembeli, jam, ruangan ambil, dan kontak penjual sudah diresolusi saat fetch. */
@@ -118,6 +124,9 @@ internal data class AdminOrder(
     val pickupDate: String = "",
     val pickupSession: String = "Istirahat 1",
     val stallId: String = "",
+    val paymentProofUrl: String = "",
+    val paymentExpiresAt: String? = null,
+    val stockDeducted: Boolean = true,
 ) {
     val itemCount: Int
         get() = items.sumOf { it.quantity }
@@ -171,6 +180,12 @@ private data class CancelPatch(
 private data class PaymentPatch(@SerialName("payment_status") val paymentStatus: String)
 
 @Serializable
+private data class PaymentProofPatch(
+    @SerialName("payment_status") val paymentStatus: String,
+    @SerialName("payment_proof_url") val paymentProofUrl: String,
+)
+
+@Serializable
 internal data class PlacedOrder(
     val id: String,
     @SerialName("pickup_code") val pickupCode: String,
@@ -181,6 +196,8 @@ internal data class PlacedOrder(
     @SerialName("order_mode") val orderMode: String = "same_day",
     @SerialName("pickup_date") val pickupDate: String = "",
     @SerialName("pickup_session") val pickupSession: String = "Istirahat 1",
+    @SerialName("payment_expires_at") val paymentExpiresAt: String? = null,
+    @SerialName("stock_deducted") val stockDeducted: Boolean = true,
 )
 
 @Serializable
@@ -284,6 +301,7 @@ internal object OrderRepository {
     // tak dikenal dan daftar order tidak memicu N+1 query per item.
     private val orderColumns = Columns.raw(
         "id,user_id,stall_id,status,total_idr,pickup_code,created_at,payment_method,payment_status,payment_reference," +
+            "payment_proof_url,payment_expires_at,stock_deducted," +
             "order_mode,pickup_date,pickup_session," +
             "order_items(id,menu_item_id,item_name,unit_price_idr,quantity)"
     )
@@ -581,16 +599,28 @@ internal object OrderRepository {
             clean.contains("tidak dapat dibatalkan oleh pembeli", true) -> clean.take(220)
             clean.contains("pada hari pengambilan", true) -> clean.take(220)
             clean.contains("Verifikasi pembayaran QRIS dulu", true) -> clean.take(220)
+            clean.contains("Verifikasi bukti bayar QRIS", true) -> clean.take(220)
+            clean.contains("foto bukti transfer", true) -> clean.take(220)
+            clean.contains("Batas waktu bayar QRIS", true) -> clean.take(220)
+            clean.contains("belum dibayar", true) -> clean.take(220)
+            clean.contains("menunggu verifikasi", true) -> clean.take(220)
+            clean.contains("Warung sedang tutup", true) -> clean.take(200)
+            clean.contains("belum memasang kode QRIS", true) -> clean.take(200)
             clean.contains("Format tanggal", true) -> clean.take(200)
             clean.contains("khusus Pre-Order", true) -> clean.take(200)
             clean.contains("khusus ambil Hari Ini", true) -> clean.take(200)
             clean.contains("tidak valid", true) -> clean.take(160)
             clean.contains("tidak ditemukan", true) -> "Menu tidak ditemukan."
             clean.contains("tidak tersedia", true) -> clean.take(160)
-            clean.contains("Stok", true) -> clean.take(160)
+            clean.contains("Stok", true) -> clean.take(200)
             else -> SupabaseRepository.errorMessage(t)
         }
     }
+
+    /** Sapu pesanan QRIS yang melewati batas bayar 10 menit di server (idempoten, aman dipanggil berkala). */
+    suspend fun expireUnpaidQrisOrders(): Int = runCatching {
+        client.postgrest.rpc("expire_unpaid_qris_orders").decodeAs<Int>()
+    }.getOrDefault(0)
 
     /**
      * Mengubah status satu order (dipakai aksi tombol detail admin).
@@ -600,27 +630,44 @@ internal object OrderRepository {
      * perubahan dianggap gagal.
      */
     suspend fun updateOrderStatus(orderId: String, status: String) {
-        val result = client.postgrest.from("orders")
-            .update(StatusPatch(status)) {
-                select()
-                filter { eq("id", orderId) }
-            }
+        val result = try {
+            client.postgrest.from("orders")
+                .update(StatusPatch(status)) {
+                    select()
+                    filter { eq("id", orderId) }
+                }
+        } catch (t: Throwable) {
+            throw IllegalStateException(parseDbError(t), t)
+        }
         if (result.decodeList<OrderRow>().isEmpty()) {
             error("Perubahan status gagal disimpan. Pastikan kamu masih masuk sebagai admin.")
         }
     }
 
-    /** Penjual membatalkan pesanan disertai alasan wajib yang disimpan di payment_reference. */
-    suspend fun cancelSellerOrder(orderId: String, reason: String) {
+    /**
+     * Penjual membatalkan pesanan disertai alasan wajib dan kontrol stok eksplisit
+     * (kembalikan stok bila sudah terpotong, atau set stok = 0 bila alasan stok habis).
+     */
+    suspend fun cancelSellerOrder(
+        orderId: String,
+        reason: String,
+        restoreStock: Boolean = true,
+        markOutOfStock: Boolean = false,
+    ) {
         val cleanReason = reason.trim()
         require(cleanReason.isNotBlank()) { "Alasan pembatalan wajib diisi." }
-        val result = client.postgrest.from("orders")
-            .update(CancelPatch(status = STATUS_CANCELLED, paymentReference = cleanReason)) {
-                select(Columns.raw("id"))
-                filter { eq("id", orderId) }
-            }
-        if (result.decodeList<IdRow>().isEmpty()) {
-            error("Gagal membatalkan pesanan. Pastikan ini pesanan warungmu.")
+        try {
+            client.postgrest.rpc(
+                "cancel_seller_order_v2",
+                buildJsonObject {
+                    put("p_order_id", orderId)
+                    put("p_reason", cleanReason)
+                    put("p_restore_stock", restoreStock)
+                    put("p_mark_out_of_stock", markOutOfStock)
+                },
+            )
+        } catch (t: Throwable) {
+            throw IllegalStateException(parseDbError(t), t)
         }
     }
 
@@ -678,27 +725,37 @@ internal object OrderRepository {
     }
 
     /**
-     * Pembeli mengajukan bukti bayar QRIS: unpaid|rejected -> waiting_verification.
-     * Trigger DB menolak perubahan lain; penjual yang memverifikasi.
+     * Pembeli mengajukan bukti bayar QRIS disertai URL foto bukti transfer wajib:
+     * unpaid|rejected -> waiting_verification. Trigger DB memvalidasi URL & batas waktu 10 menit.
      */
-    suspend fun submitPaymentProof(orderId: String) {
-        val result = client.postgrest.from("orders")
-            .update(PaymentPatch("waiting_verification")) {
-                select(Columns.raw("id"))
-                filter { eq("id", orderId) }
-            }
+    suspend fun submitPaymentProof(orderId: String, proofUrl: String) {
+        val cleanUrl = proofUrl.trim()
+        require(cleanUrl.isNotBlank()) { "Wajib mengunggah foto bukti transfer QRIS terlebih dahulu." }
+        val result = try {
+            client.postgrest.from("orders")
+                .update(PaymentProofPatch("waiting_verification", cleanUrl)) {
+                    select(Columns.raw("id"))
+                    filter { eq("id", orderId) }
+                }
+        } catch (t: Throwable) {
+            throw IllegalStateException(parseDbError(t), t)
+        }
         if (result.decodeList<IdRow>().isEmpty()) {
             error("Konfirmasi bayar gagal disimpan.")
         }
     }
 
-    /** Penjual menandai lunas (tunai saat ambil, atau verifikasi QRIS). paid_at + verified_by diisi server. */
+    /** Penjual menandai lunas (tunai saat ambil, atau verifikasi QRIS). Untuk QRIS, stok dipotong atomis di server saat ini. */
     suspend fun markOrderPaid(orderId: String) {
-        val result = client.postgrest.from("orders")
-            .update(PaymentPatch("paid")) {
-                select(Columns.raw("id"))
-                filter { eq("id", orderId) }
-            }
+        val result = try {
+            client.postgrest.from("orders")
+                .update(PaymentPatch("paid")) {
+                    select(Columns.raw("id"))
+                    filter { eq("id", orderId) }
+                }
+        } catch (t: Throwable) {
+            throw IllegalStateException(parseDbError(t), t)
+        }
         if (result.decodeList<IdRow>().isEmpty()) {
             error("Gagal menandai lunas. Pastikan ini order warungmu.")
         }
@@ -943,6 +1000,9 @@ internal object OrderRepository {
                 pickupDate = row.pickupDate,
                 pickupSession = row.pickupSession,
                 stallId = resolvedStallId,
+                paymentProofUrl = row.paymentProofUrl?.trim().orEmpty(),
+                paymentExpiresAt = row.paymentExpiresAt?.trim()?.takeIf { it.isNotBlank() },
+                stockDeducted = row.stockDeducted,
             )
         }
     }
@@ -1132,19 +1192,47 @@ internal fun formatCalendarFullIdDate(isoDate: String): String {
 }
 
 /**
- * Mengembalikan pesan alasan bila status pesanan PO belum boleh dimajukan ke `nextStatus`
- * (kunci sebelum Hari-H atau QRIS PO belum lunas). Null bila diizinkan.
+ * Mengembalikan pesan alasan bila status pesanan belum boleh dimajukan ke `nextStatus`:
+ * - Semua pesanan QRIS (Hari Ini maupun Pre-Order) wajib diverifikasi lunas dulu sebelum diterima/diproses.
+ * - Pesanan Pre-Order baru bisa disiapkan/diselesaikan pada Hari-H.
  */
 internal fun sellerPoAdvanceBlockReason(order: AdminOrder, nextStatus: String): String? {
-    if (!order.isPreOrder) return null
     val target = nextStatus.lowercase()
+    if (order.paymentMethod.equals("qris", ignoreCase = true)
+        && target in setOf(STATUS_CONFIRMED, STATUS_PREPARING, STATUS_PROCESSING_LEGACY, STATUS_READY, STATUS_COMPLETED)
+        && !order.paymentStatus.equals("paid", ignoreCase = true)
+    ) {
+        return "Verifikasi bukti bayar QRIS dulu sebelum menerima atau memproses pesanan."
+    }
+    if (!order.isPreOrder) return null
     if (target !in setOf(STATUS_PREPARING, STATUS_PROCESSING_LEGACY, STATUS_READY, STATUS_COMPLETED)) return null
     val today = OrderRepository.todayWibDateString()
     if (order.pickupDate.isNotBlank() && order.pickupDate > today) {
         return "Pesanan PO untuk ${formatCalendarShortChip(order.pickupDate)} baru bisa disiapkan pada Hari-H."
     }
-    if (order.paymentMethod.equals("qris", ignoreCase = true) && !order.paymentStatus.equals("paid", ignoreCase = true)) {
-        return "Verifikasi pembayaran QRIS dulu sebelum menyiapkan pesanan PO."
-    }
     return null
+}
+
+/** Parse timestamp ISO-8601 Postgres (UTC / +00:00 / Z) ke epoch millis. */
+internal fun parseIsoInstantMillis(raw: String?): Long? {
+    val s = raw?.trim()?.takeIf { it.length >= 19 } ?: return null
+    val base = s.substring(0, 19) // yyyy-MM-dd'T'HH:mm:ss
+    return runCatching {
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.parse(base)?.time
+    }.getOrNull()
+}
+
+/** Sisa detik pembayaran QRIS (<= 0 jika sudah lewat batas 10 menit), atau null bila tidak ada batas waktu. */
+internal fun remainingPaymentSeconds(expiresAtIso: String?): Long? {
+    val expMs = parseIsoInstantMillis(expiresAtIso) ?: return null
+    return ((expMs - System.currentTimeMillis()) / 1000L)
+}
+
+internal fun formatCountdownMmSs(seconds: Long): String {
+    if (seconds <= 0L) return "00:00"
+    val m = seconds / 60L
+    val s = seconds % 60L
+    return String.format(Locale.US, "%02d:%02d", m, s)
 }

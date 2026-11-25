@@ -18,6 +18,7 @@ import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.ui.statusLabel
 import com.jajanin.app.core.ui.statusNextAction
 import com.jajanin.app.core.util.formatRupiah
+import com.jajanin.app.feature.seller.loadProductImage
 import com.jajanin.app.feature.seller.SellerTokens
 import com.jajanin.app.feature.seller.sellerHeader
 import com.jajanin.app.feature.seller.sellerPill
@@ -207,9 +208,24 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
 
             // 4. Payment Verification Strip (Radius 8f)
             val isCash = order.paymentMethod == "cash"
-            val needsAction = (isCash && order.paymentStatus == "unpaid") ||
-                (!isCash && order.paymentStatus == "waiting_verification")
-            val payH = if (needsAction) 98f else 62f
+            val isCancelled = order.status.equals(STATUS_CANCELLED, ignoreCase = true)
+            val proofUrl = order.paymentProofUrl.takeIf { it.isNotBlank() }
+            val hasProof = !isCash && proofUrl != null
+            val needsAction = !isCancelled && (
+                (isCash && order.paymentStatus == "unpaid") ||
+                    (!isCash && order.paymentStatus == "waiting_verification")
+                )
+            val qrisRemSec = if (!isCash && !isCancelled && (order.paymentStatus == "unpaid" || order.paymentStatus == "rejected")) {
+                com.jajanin.app.data.repository.remainingPaymentSeconds(order.paymentExpiresAt)
+            } else {
+                null
+            }
+            if (qrisRemSec != null && qrisRemSec > 0L && currentScreen == com.jajanin.app.core.navigation.Screen.ADMIN_DETAIL) {
+                postInvalidateDelayed(1000)
+            }
+            val proofStripH = if (hasProof) 62f else 0f
+            val basePayH = if (needsAction) 98f else 62f
+            val payH = basePayH + proofStripH
             val payCard = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + payH)
             sellerSurface(c, payCard)
 
@@ -224,39 +240,68 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 height = 20f, size = 9.5f,
             )
 
-            if (isCash && order.paymentStatus == "unpaid") {
+            var innerY = y + 44f
+            if (hasProof && proofUrl != null) {
+                val strip = RectF(34f, y + 38f, 356f, y + 92f)
+                kit.rounded(c, strip, kit.bg, 7f, kit.blue)
+                val thumb = RectF(40f, y + 44f, 82f, y + 86f)
+                kit.rounded(c, thumb, kit.card, 5f, kit.border)
+                val bmp = com.jajanin.app.core.ui.ProductImageCache.images[proofUrl]
+                if (bmp != null) {
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                    val path = android.graphics.Path().apply { addRoundRect(thumb, 5f, 5f, android.graphics.Path.Direction.CW) }
+                    val save = c.save()
+                    c.clipPath(path)
+                    c.drawBitmap(bmp, null, thumb, paint)
+                    c.restoreToCount(save)
+                } else {
+                    kit.centerText(c, "Foto", thumb, 9.5f, kit.muted)
+                    activity()?.loadProductImage(proofUrl)
+                }
+                kit.textEllipsized(c, "Foto Bukti Transfer QRIS", 92f, y + 61f, 185f, 12f, kit.ink, true)
+                kit.textEllipsized(c, "Ketuk untuk perbesar & cek nominal", 92f, y + 78f, 185f, 10f, kit.muted)
+                kit.textRight(c, "Lihat →", 346f, y + 69f, 56f, 11.5f, kit.blue, true)
+                press(c, "viewProof:${order.id}", strip, 7f)
+                bounds.putVisible("viewProof:${order.id}", strip, topLimit = 60f, bottomLimit = h - 68f)
+                innerY = y + 108f
+            }
+
+            if (isCash && !isCancelled && order.paymentStatus == "unpaid") {
                 kit.textEllipsized(
                     c, "Tandai lunas setelah pembeli menyerahkan uang tunai.",
-                    34f, y + 44f, 310f, 10.5f, kit.muted,
+                    34f, innerY, 310f, 10.5f, kit.muted,
                 )
-                val paidBtn = RectF(34f, y + 54f, 356f, y + 86f)
+                val paidBtn = RectF(34f, innerY + 10f, 356f, innerY + 42f)
                 kit.rounded(c, paidBtn, kit.successSoft, 6f, kit.success)
                 kit.centerText(c, "Tandai Sudah Dibayar Lunas", paidBtn, 11.5f, kit.success, true)
                 press(c, "payPaid:${order.id}", paidBtn, 6f)
                 bounds.putVisible("payPaid:${order.id}", paidBtn, topLimit = 60f, bottomLimit = h - 68f)
-            } else if (!isCash && order.paymentStatus == "waiting_verification") {
+            } else if (!isCash && !isCancelled && order.paymentStatus == "waiting_verification") {
                 kit.textEllipsized(
-                    c, "Pembeli konfirmasi sudah bayar QRIS. Cek mutasi lalu verifikasi.",
-                    34f, y + 44f, 316f, 10.5f, kit.muted,
+                    c, "Cek foto bukti & mutasi dulu. Stok dipotong saat Lunas.",
+                    34f, innerY, 322f, 10.5f, kit.muted,
                 )
-                val verifyBtn = RectF(34f, y + 54f, 226f, y + 86f)
+                val verifyBtn = RectF(34f, innerY + 10f, 226f, innerY + 42f)
                 kit.rounded(c, verifyBtn, kit.success, 6f)
                 kit.centerText(c, "Verifikasi Lunas", verifyBtn, 11.5f, Color.WHITE, true)
                 press(c, "payPaid:${order.id}", verifyBtn, 6f)
                 bounds.putVisible("payPaid:${order.id}", verifyBtn, topLimit = 60f, bottomLimit = h - 68f)
 
-                val rejectBtn = RectF(234f, y + 54f, 356f, y + 86f)
+                val rejectBtn = RectF(234f, innerY + 10f, 356f, innerY + 42f)
                 kit.rounded(c, rejectBtn, kit.card, 6f, kit.dangerBorder)
                 kit.centerText(c, "Tolak Bukti", rejectBtn, 11.5f, kit.danger, true)
                 press(c, "payReject:${order.id}", rejectBtn, 6f)
                 bounds.putVisible("payReject:${order.id}", rejectBtn, topLimit = 60f, bottomLimit = h - 68f)
             } else {
-                val hint = when (order.paymentStatus) {
-                    "paid" -> "Pembayaran telah diverifikasi lunas."
-                    "rejected" -> "Bukti ditolak — menunggu pembeli konfirmasi ulang."
-                    else -> "Menunggu konfirmasi pembayaran dari pembeli."
+                val hint = when {
+                    isCancelled -> "Pesanan dibatalkan."
+                    order.paymentStatus == "paid" -> "Pembayaran telah diverifikasi lunas."
+                    qrisRemSec != null && qrisRemSec <= 0L -> "Batas waktu bayar QRIS habis · segera dibatalkan otomatis."
+                    qrisRemSec != null -> "Menunggu bukti bayar (sisa ${com.jajanin.app.data.repository.formatCountdownMmSs(qrisRemSec)}) · Stok belum terpotong."
+                    order.paymentStatus == "rejected" -> "Bukti ditolak — menunggu pembeli unggah bukti baru."
+                    else -> "Menunggu bukti pembayaran dari pembeli · Stok belum terpotong."
                 }
-                kit.textEllipsized(c, hint, 34f, y + 46f, 310f, 10.5f, kit.muted)
+                kit.textEllipsized(c, hint, 34f, innerY + 2f, 322f, 10.5f, kit.muted)
             }
 
             c.restoreToCount(bodySave)
@@ -276,7 +321,11 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
         val cta = RectF(142f, h - 58f, w - 20f, h - 10f)
         val lockReason = com.jajanin.app.data.repository.sellerPoAdvanceBlockReason(order, next.second)
         if (lockReason != null) {
-            val lockedLabel = if (order.pickupDate.isNotBlank() && order.pickupDate > com.jajanin.app.data.repository.OrderRepository.todayWibDateString()) {
+            val needsQrisFirst = order.paymentMethod.equals("qris", ignoreCase = true) &&
+                !order.paymentStatus.equals("paid", ignoreCase = true)
+            val lockedLabel = if (needsQrisFirst) {
+                "Verifikasi QRIS Dulu"
+            } else if (order.pickupDate.isNotBlank() && order.pickupDate > com.jajanin.app.data.repository.OrderRepository.todayWibDateString()) {
                 "Terkunci s/d ${com.jajanin.app.data.repository.formatShortIdDate(order.pickupDate)}"
             } else {
                 "Verifikasi QRIS Dulu"
