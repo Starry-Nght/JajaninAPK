@@ -304,21 +304,42 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 kit.textEllipsized(c, hint, 34f, innerY + 2f, 322f, 10.5f, kit.muted)
             }
 
+            var endPayY = y + payH
+            if (!isCancelled && !com.jajanin.app.core.ui.isTerminalStatus(order.status) && !com.jajanin.app.data.repository.sellerCanCancelOrder(order)) {
+                val lockBanner = RectF(SellerTokens.PAD, endPayY + 10f, SellerTokens.RIGHT, endPayY + 46f)
+                kit.rounded(c, lockBanner, kit.warnBox, 7f, Color.rgb(183, 116, 0))
+                kit.textEllipsized(
+                    c,
+                    "Pesanan terkunci · pembayaran sudah diajukan/lunas, penjual tidak bisa membatalkan.",
+                    32f,
+                    endPayY + 32f,
+                    326f,
+                    10f,
+                    Color.rgb(183, 116, 0),
+                    true,
+                )
+                endPayY = lockBanner.bottom
+            }
+
             c.restoreToCount(bodySave)
-            contentHeight = (y - off) + payH + 24f
+            contentHeight = (endPayY - off) + 24f
         }
     }
 
     // Sticky Bottom Order Status Action (Radius 8f)
     val next = statusNextAction(order?.status ?: "")
     if (next != null && order != null) {
-        val cancelBtn = RectF(20f, h - 58f, 132f, h - 10f)
-        kit.rounded(c, cancelBtn, kit.card, 8f, kit.dangerBorder)
-        kit.centerText(c, "Batalkan", cancelBtn, 13f, kit.danger, true)
-        press(c, "adminCancel:${order.id}", cancelBtn, 8f)
-        bounds["adminCancel:${order.id}"] = RectF(cancelBtn)
+        val canCancel = com.jajanin.app.data.repository.sellerCanCancelOrder(order)
+        if (canCancel) {
+            val cancelBtn = RectF(20f, h - 58f, 132f, h - 10f)
+            kit.rounded(c, cancelBtn, kit.card, 8f, kit.dangerBorder)
+            kit.centerText(c, "Batalkan", cancelBtn, 13f, kit.danger, true)
+            press(c, "adminCancel:${order.id}", cancelBtn, 8f)
+            bounds["adminCancel:${order.id}"] = RectF(cancelBtn)
+        }
 
-        val cta = RectF(142f, h - 58f, w - 20f, h - 10f)
+        val ctaLeft = if (canCancel) 142f else 20f
+        val cta = RectF(ctaLeft, h - 58f, w - 20f, h - 10f)
         val lockReason = com.jajanin.app.data.repository.sellerPoAdvanceBlockReason(order, next.second)
         if (lockReason != null) {
             val needsQrisFirst = order.paymentMethod.equals("qris", ignoreCase = true) &&

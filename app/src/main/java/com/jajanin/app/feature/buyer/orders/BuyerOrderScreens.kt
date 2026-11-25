@@ -262,9 +262,9 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
     kit.line(c, 20f, HEADER_H, 370f, HEADER_H, kit.divider)
     bounds["headerBack"] = RectF(12f, 10f, 64f, HEADER_H)
 
-    // Bottom Action CTA (Pesanan Pre-Order dikunci — tidak dapat dibatalkan oleh pembeli)
-    val isPreOrderLocked = matchedOrder?.isPreOrder == true
-    val canBuyerCancel = !isPreOrderLocked && status.equals(STATUS_PENDING, ignoreCase = true) && !targetOrderId.isNullOrBlank()
+    // Bottom Action CTA (Pre-Order & pesanan yang sudah bayar / unggah bukti QRIS dikunci — tidak bisa dibatalkan)
+    val canBuyerCancel = matchedOrder?.let { com.jajanin.app.data.repository.buyerCanCancelOrder(it) }
+        ?: (status.equals(STATUS_PENDING, ignoreCase = true) && payStatus == "unpaid" && !targetOrderId.isNullOrBlank())
     if (canBuyerCancel && targetOrderId != null) {
         val cancelBtn = RectF(20f, h - 62f, 134f, h - 14f)
         kit.rounded(c, cancelBtn, kit.card, 8f, kit.dangerBorder)
@@ -367,7 +367,7 @@ private fun JajaninView.drawBuyerOrderItem(
     visible: (Float, Float) -> Boolean,
     bottomClip: Float
 ): Float {
-    val canCancel = active && !order.isPreOrder && order.status.equals(STATUS_PENDING, ignoreCase = true)
+    val canCancel = active && com.jajanin.app.data.repository.buyerCanCancelOrder(order)
     val needsProof = order.paymentMethod == "qris" &&
         (order.paymentStatus == "unpaid" || order.paymentStatus == "rejected")
     val hasActionRow = active && (needsProof || canCancel)

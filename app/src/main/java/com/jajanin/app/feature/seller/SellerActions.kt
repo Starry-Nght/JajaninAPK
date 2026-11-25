@@ -1292,6 +1292,15 @@ internal fun MainActivity.cancelAdminOrder(orderId: String) {
         ?: ui.adminDetailOrder?.takeIf { it.id == orderId }
         ?: return
     if (isTerminalStatus(order.status)) return
+    if (!com.jajanin.app.data.repository.sellerCanCancelOrder(order)) {
+        val lockMsg = if (order.paymentStatus.equals("paid", ignoreCase = true)) {
+            "Pesanan yang sudah lunas tidak dapat dibatalkan oleh penjual."
+        } else {
+            "Pembeli sudah mengunggah bukti bayar QRIS. Penjual tidak dapat membatalkan pesanan — verifikasi lunas atau tolak bukti jika tidak valid."
+        }
+        Toast.makeText(this, lockMsg, Toast.LENGTH_LONG).show()
+        return
+    }
 
     val input = EditText(this).apply {
         hint = "cth. Stok menu habis / Warung tutup"

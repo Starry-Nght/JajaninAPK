@@ -1283,6 +1283,18 @@ internal fun MainActivity.cancelBuyerOrder(orderId: String) {
         ).show()
         return
     }
+    if (order != null && !com.jajanin.app.data.repository.buyerCanCancelOrder(order)) {
+        val msg = if (order.paymentStatus.equals("paid", ignoreCase = true)
+            || order.paymentStatus.equals("waiting_verification", ignoreCase = true)
+            || order.paymentProofUrl.isNotBlank()
+        ) {
+            "Pesanan yang sudah dibayar / mengunggah bukti QRIS tidak dapat dibatalkan."
+        } else {
+            "Pesanan sudah dikonfirmasi penjual dan tidak bisa dibatalkan."
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        return
+    }
     val currentStatus = order?.status ?: if (ui.lastOrderId == orderId) ui.lastOrderStatus else null
     if (currentStatus != null && !currentStatus.equals(STATUS_PENDING, ignoreCase = true)) {
         Toast.makeText(this, "Pesanan sudah dikonfirmasi penjual dan tidak bisa dibatalkan.", Toast.LENGTH_LONG).show()

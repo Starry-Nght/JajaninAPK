@@ -511,13 +511,16 @@ private fun JajaninView.drawCompactOrderRow(
 
     val nextAction = statusNextAction(order.status)
     if (nextAction != null) {
-        val cancelBtn = RectF(168f, top + 66f, 238f, top + 94f)
-        kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
-        kit.centerText(c, "Batal", cancelBtn, 10.5f, kit.danger, true)
-        press(c, "adminCancel:${order.id}", cancelBtn, 6f)
-        bounds.putVisible("adminCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        val canCancel = com.jajanin.app.data.repository.sellerCanCancelOrder(order)
+        if (canCancel) {
+            val cancelBtn = RectF(168f, top + 66f, 238f, top + 94f)
+            kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
+            kit.centerText(c, "Batal", cancelBtn, 10.5f, kit.danger, true)
+            press(c, "adminCancel:${order.id}", cancelBtn, 6f)
+            bounds.putVisible("adminCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        }
 
-        val actionBtn = RectF(244f, top + 66f, 358f, top + 94f)
+        val actionBtn = RectF(if (canCancel) 244f else 168f, top + 66f, 358f, top + 94f)
         val lockReason = sellerPoAdvanceBlockReason(order, nextAction.second)
         if (lockReason != null) {
             val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&
@@ -694,13 +697,16 @@ private fun JajaninView.drawOrderCard(
         press(c, "chatOrder:${order.id}", chatBtn, 6f)
         bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
 
-        val cancel = RectF(118f, top + 97f, 204f, top + 125f)
-        kit.rounded(c, cancel, kit.card, 6f, kit.dangerBorder)
-        kit.centerText(c, "Batalkan", cancel, 10.5f, kit.danger, true)
-        press(c, "adminCancel:${order.id}", cancel, 6f)
-        bounds.putVisible("adminCancel:${order.id}", cancel, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        val canCancel = com.jajanin.app.data.repository.sellerCanCancelOrder(order)
+        if (canCancel) {
+            val cancel = RectF(118f, top + 97f, 204f, top + 125f)
+            kit.rounded(c, cancel, kit.card, 6f, kit.dangerBorder)
+            kit.centerText(c, "Batalkan", cancel, 10.5f, kit.danger, true)
+            press(c, "adminCancel:${order.id}", cancel, 6f)
+            bounds.putVisible("adminCancel:${order.id}", cancel, topLimit = HEADER_H, bottomLimit = bottomLimit)
+        }
 
-        val action = RectF(212f, top + 97f, 358f, top + 125f)
+        val action = RectF(if (canCancel) 212f else 118f, top + 97f, 358f, top + 125f)
         val lockReason = sellerPoAdvanceBlockReason(order, nextAction.second)
         if (lockReason != null) {
             val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&

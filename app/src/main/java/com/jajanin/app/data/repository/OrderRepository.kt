@@ -600,6 +600,10 @@ internal object OrderRepository {
             clean.contains("pada hari pengambilan", true) -> clean.take(220)
             clean.contains("Verifikasi pembayaran QRIS dulu", true) -> clean.take(220)
             clean.contains("Verifikasi bukti bayar QRIS", true) -> clean.take(220)
+            clean.contains("sudah lunas tidak dapat dibatalkan", true) -> clean.take(220)
+            clean.contains("Pembeli sudah mengunggah bukti bayar QRIS", true) -> clean.take(240)
+            clean.contains("tidak dapat dibatalkan manual oleh penjual", true) -> clean.take(240)
+            clean.contains("sudah dibayar / mengunggah bukti QRIS", true) -> clean.take(220)
             clean.contains("foto bukti transfer", true) -> clean.take(220)
             clean.contains("Batas waktu bayar QRIS", true) -> clean.take(220)
             clean.contains("belum dibayar", true) -> clean.take(220)
@@ -1211,6 +1215,33 @@ internal fun sellerPoAdvanceBlockReason(order: AdminOrder, nextStatus: String): 
         return "Pesanan PO untuk ${formatCalendarShortChip(order.pickupDate)} baru bisa disiapkan pada Hari-H."
     }
     return null
+}
+
+/**
+ * Penjual TIDAK boleh membatalkan pesanan yang sudah lunas ATAU pesanan QRIS yang buktinya
+ * sudah diunggah pembeli (`waiting_verification` / `paid` / `rejected`) untuk mencegah penipuan.
+ */
+internal fun sellerCanCancelOrder(order: AdminOrder): Boolean {
+    if (com.jajanin.app.core.ui.isTerminalStatus(order.status)) return false
+    val pay = order.paymentStatus.lowercase()
+    if (pay == "paid") return false
+    val isQris = order.paymentMethod.equals("qris", ignoreCase = true)
+    if (isQris && (pay == "waiting_verification" || pay == "rejected" || order.paymentProofUrl.isNotBlank())) {
+        return false
+    }
+    return true
+}
+
+/**
+ * Pembeli hanya boleh membatalkan pesanan hari-ini yang masih pending & belum dibayar/diunggah bukti QRIS.
+ */
+internal fun buyerCanCancelOrder(order: AdminOrder): Boolean {
+    if (order.isPreOrder) return false
+    if (!order.status.equals(STATUS_PENDING, ignoreCase = true)) return false
+    val pay = order.paymentStatus.lowercase()
+    if (pay == "paid" || pay == "waiting_verification") return false
+    if (order.paymentMethod.equals("qris", ignoreCase = true) && order.paymentProofUrl.isNotBlank()) return false
+    return true
 }
 
 /** Parse timestamp ISO-8601 Postgres (UTC / +00:00 / Z) ke epoch millis. */
