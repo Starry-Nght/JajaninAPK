@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.press
@@ -250,23 +251,26 @@ private fun JajaninView.drawConversationItem(
         kit.rounded(c, ctxRect, ctxBg, 4.5f)
         kit.textEllipsized(c, ctxLabel, ctxRect.left + 6f, ctxRect.top + 12f, pillW - 12f, 9.5f, ctxFg, true)
 
-        // Row 3: Last Message Preview + Unread Counter Badge
+        // Row 3: Last Message Preview + Read Receipt Vector Icon + Unread Counter Badge
         val rawPreview = convo.lastMessageBody.trim()
-        val previewPrefix = when {
-            rawPreview.isEmpty() -> ""
-            convo.lastMessageSenderId == myUid -> if (convo.lastMessageIsRead) "✓✓ Anda: " else "✓ Anda: "
-            else -> ""
+        val sentByMe = rawPreview.isNotEmpty() && convo.lastMessageSenderId == myUid
+        var previewStartX = 86f
+        if (sentByMe) {
+            val iconKey = if (convo.lastMessageIsRead) "checkDouble" else "check"
+            val iconClr = if (convo.lastMessageIsRead) kit.blue else kit.muted
+            AppIcon.draw(c, iconKey, 92.5f, top + 67f, 13f, iconClr)
+            previewStartX = 103f
         }
-        val previewText = if (rawPreview.isEmpty()) {
-            "Belum ada pesan · Ketuk untuk mulai chat"
-        } else {
-            "$previewPrefix$rawPreview"
+        val previewText = when {
+            rawPreview.isEmpty() -> "Belum ada pesan · Ketuk untuk mulai chat"
+            sentByMe -> "Anda: $rawPreview"
+            else -> rawPreview
         }
-        val previewMaxW = if (hasUnread) 232f else 266f
+        val previewMaxW = (if (hasUnread) 318f else 352f) - previewStartX
         kit.textEllipsized(
             c,
             previewText,
-            86f,
+            previewStartX,
             top + 71f,
             previewMaxW,
             11.5f,

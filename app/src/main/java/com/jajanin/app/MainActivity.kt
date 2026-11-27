@@ -34,6 +34,7 @@ import com.jajanin.app.core.constants.STATUS_READY
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.LiquidGlassNavHost
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.isTerminalStatus
 import com.jajanin.app.core.ui.showThemedInfo
 import com.jajanin.app.core.ui.showThemedOptions
@@ -94,6 +95,8 @@ class MainActivity : Activity() {
     internal val REQUEST_QRIS_IMAGE = 8302
     internal val REQUEST_OTA_APK = 8303
     internal val REQUEST_PAYMENT_PROOF = 8304
+    internal val REQUEST_STORE_LOGO = 8305
+    internal val REQUEST_STORE_BANNER = 8306
     internal var pendingOtaRelease: OtaRelease? = null
     internal var pendingOtaPublishDraft: OtaPublishDraft? = null
     internal var otaPromptedVersion: Int = -1
@@ -355,6 +358,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(1024, 1024)
+        AppIcon.init(this)
         ui = JajaninView(this)
         loadFavorites()
         ui.setDarkMode(resolveTheme())
@@ -596,6 +600,24 @@ class MainActivity : Activity() {
                     )
                 }
                 uploadPaymentProofImage(uri)
+            }
+            REQUEST_STORE_LOGO -> {
+                val uri = data?.data ?: return
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                uploadSellerStoreImage(uri, isBanner = false)
+            }
+            REQUEST_STORE_BANNER -> {
+                val uri = data?.data ?: return
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                uploadSellerStoreImage(uri, isBanner = true)
             }
         }
     }
@@ -1048,10 +1070,15 @@ class MainActivity : Activity() {
         LOCATION_OPTIONS.forEach { option ->
             val selected = option == ui.location
             val row = TextView(this).apply {
-                text = if (selected) "✓  $option" else option
+                text = option
                 setTextColor(if (selected) Color.rgb(0, 99, 214) else Color.rgb(27, 35, 53))
                 textSize = 15f
                 setPadding(padH, padV, padH, padV)
+                if (selected) {
+                    val checkIcon = AppIcon.drawable(this@MainActivity, "check", 16f, Color.rgb(0, 99, 214))
+                    setCompoundDrawables(checkIcon, null, null, null)
+                    compoundDrawablePadding = (10 * density).toInt()
+                }
                 isClickable = true
                 setBackgroundResource(R.drawable.bg_option)
             }
@@ -1110,6 +1137,20 @@ class MainActivity : Activity() {
                 ui.mySellerVerifiedEmail = ""
                 ui.myStallId = null
                 ui.myStallName = ""
+                ui.myStallLogoUrl = ""
+                ui.myStallBannerUrl = ""
+                ui.myStallBio = ""
+                ui.myStallCategory = "Makanan & Minuman"
+                ui.myStallIsOpen = true
+                ui.myStallIsVerified = false
+                ui.myStallCompletedOrders = 0
+                ui.storeDirectoryById = emptyMap()
+                ui.storeSearchQuery = ""
+                ui.storeSearchCategory = "All"
+                ui.storeSearchResults = emptyList()
+                ui.selectedStoreId = null
+                ui.storeProfileDetail = null
+                ui.storeProfileProducts = emptyList()
                 ui.selectedRole = "buyer"
                 ui.myOrders = emptyList()
                 ui.myOrdersError = null

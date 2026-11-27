@@ -59,6 +59,7 @@ import com.jajanin.app.feature.buyer.exp.ExpEntry
 import com.jajanin.app.feature.buyer.exp.ExpRepository
 import com.jajanin.app.feature.buyer.exp.expLevel
 import com.jajanin.app.feature.buyer.exp.expNextAt
+import com.jajanin.app.feature.buyer.store_discovery.StoreSearchViewModel
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -124,6 +125,9 @@ internal suspend fun MainActivity.silentRefreshBuyerTick() {
                 ui.topSellingStats = freshStats
                 ui.invalidate()
             }
+        }
+        if (SupabaseRepository.hasSession() && buyerTopSellingTick % 10 == 1) {
+            StoreSearchViewModel.refreshStoreDirectory(this)
         }
     }
     if (SupabaseRepository.hasSession() && !ui.placingOrder) {
@@ -325,6 +329,7 @@ internal fun MainActivity.refreshProducts(manual: Boolean = false) {
             ui.productsLoading = false
             ui.invalidate()
 
+            StoreSearchViewModel.refreshStoreDirectory(this@refreshProducts)
             val freshStats = OrderRepository.fetchTopSellingStats()
             ui.topSellingStats = freshStats
             if (manual) {
@@ -360,7 +365,7 @@ internal fun MainActivity.toggleFavorite(productId: String) {
         true
     }
     appPrefs().edit().putStringSet("buyer_favorite_ids", HashSet(ui.favoriteIds)).apply()
-    val name = ui.products.firstOrNull { it.id == productId }?.name ?: "Menu"
+    val name = resolveKnownProduct(productId)?.name ?: "Menu"
     Toast.makeText(
         this,
         if (added) "$name disimpan ke Favorit" else "$name dihapus dari Favorit",
@@ -379,10 +384,13 @@ internal fun MainActivity.addProductToOrder() {
     addToCart(product.id, ui.quantity)
 }
 
+internal fun MainActivity.resolveKnownProduct(productId: String): ProductRow? =
+    ui.products.firstOrNull { it.id == productId }
+        ?: ui.storeProfileProducts.firstOrNull { it.id == productId }
+        ?: ui.sellerProducts.firstOrNull { it.id == productId }
+
 internal fun MainActivity.cartProducts(): List<ProductRow> =
-    ui.cart.keys.mapNotNull { pid ->
-        ui.products.firstOrNull { it.id == pid } ?: ui.sellerProducts.firstOrNull { it.id == pid }
-    }
+    ui.cart.keys.mapNotNull { pid -> resolveKnownProduct(pid) }
 
 internal fun MainActivity.allowedCartOrderModes(): Set<String> {
     val items = cartProducts()
@@ -409,9 +417,7 @@ internal fun MainActivity.allowedCartPickupSessions(): List<String> {
 private fun MainActivity.allowedCartPoDates(): List<String> {
     var common: Set<String>? = null
     ui.cart.keys.forEach { pid ->
-        val prod = ui.products.firstOrNull { it.id == pid }
-            ?: ui.sellerProducts.firstOrNull { it.id == pid }
-            ?: return@forEach
+        val prod = resolveKnownProduct(pid) ?: return@forEach
         val dates = prod.openParsedPoDates
         if (prod.poDates.isNotBlank() || prod.orderSchedule == "next_day") {
             val s = dates.toSet()
@@ -597,10 +603,15 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
         Toast.makeText(this, "Akun ditangguhkan. Kamu tidak bisa memesan.", Toast.LENGTH_LONG).show()
         return
     }
-    val product = ui.products.firstOrNull { it.id == productId }
-        ?: ui.sellerProducts.firstOrNull { it.id == productId } ?: return
+    val product = resolveKnownProduct(productId) ?: return
     if (!ui.myStallId.isNullOrBlank() && product.stallId == ui.myStallId) {
         Toast.makeText(this, "Kamu tidak bisa memesan dari warungmu sendiri.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val storeClosed = (!product.stallId.isNullOrBlank() && ui.storeProfileDetail?.id == product.stallId && ui.storeProfileDetail?.isOpen == false) ||
+        (!product.stallId.isNullOrBlank() && ui.storeDirectoryById[product.stallId]?.isOpen == false)
+    if (storeClosed) {
+        Toast.makeText(this, "Warung sedang tutup sementara.", Toast.LENGTH_SHORT).show()
         return
     }
     if (product.stock != null && product.stock <= 0) {
@@ -679,8 +690,7 @@ internal fun MainActivity.setCartQty(productId: String, qty: Int) {
             syncCheckoutScheduleDefaults()
         }
     } else {
-        val product = ui.products.firstOrNull { it.id == productId }
-            ?: ui.sellerProducts.firstOrNull { it.id == productId }
+        val product = resolveKnownProduct(productId)
         val maxAllowed = product?.stock?.takeIf { it > 0 }?.coerceAtMost(99) ?: 99
         val clamped = qty.coerceAtMost(maxAllowed)
         if (qty > maxAllowed) {
@@ -750,10 +760,7 @@ internal fun MainActivity.openCheckout() {
     // Pastikan cartStallId selalu terisi dari item keranjang.
     if (ui.cartStallId.isNullOrBlank()) {
         val firstPid = ui.cart.keys.firstOrNull()
-        ui.cartStallId = firstPid?.let { pid ->
-            ui.products.firstOrNull { it.id == pid }?.stallId
-                ?: ui.sellerProducts.firstOrNull { it.id == pid }?.stallId
-        }
+        ui.cartStallId = firstPid?.let { pid -> resolveKnownProduct(pid)?.stallId }
     }
     // Nomor HP wajib sebelum memesan (akun lama yang belum punya).
     if (ui.myPhone.isBlank()) {

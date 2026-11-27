@@ -8,8 +8,8 @@ internal enum class Screen {
     // Fondasi: splash, onboarding, autentikasi (tanpa layar pilih role)
     SPLASH, ONBOARD, WELCOME, LOGIN,
 
-    // Pembeli (buyer): katalog, pesanan, profil
-    HOME, EXPLORE, DETAIL, CHECKOUT, QRIS,
+    // Pembeli (buyer): katalog, pencarian toko, profil toko publik, pesanan, profil
+    HOME, EXPLORE, STORE_SEARCH, STORE_PROFILE, DETAIL, CHECKOUT, QRIS,
     READY, ORDERS, PROFILE, EXP_HISTORY,
 
     // Penjual (seller): dashboard, detail pesanan, form produk, menu dagangan

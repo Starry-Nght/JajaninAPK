@@ -3,6 +3,7 @@ package com.jajanin.app.feature.buyer.exp
 import android.graphics.Canvas
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
+import com.jajanin.app.core.ui.components.AppIcon
 
 /**
  * Riwayat EXP: saldo + legenda level + daftar transaksi (terbaru dulu).
@@ -20,7 +21,12 @@ internal fun JajaninView.drawExpHistory(c: Canvas, w: Float, h: Float) {
     val badge = RectF(286f, 112f + off, 354f, 162f + off)
     kit.rounded(c, badge, kit.tint, 25f)
     kit.centerText(c, "Lv $level", badge, 14f, kit.blue, true)
-    kit.text(c, if (level >= EXP_MAX_LEVEL) "★ Prestise" else "Pembeli Level $level", 36f, 172f + off, 10f, kit.muted)
+    if (level >= EXP_MAX_LEVEL) {
+        AppIcon.draw(c, "star", 41f, 168.5f + off, 11f, kit.star)
+        kit.text(c, "Prestise", 50f, 172f + off, 10f, kit.muted)
+    } else {
+        kit.text(c, "Pembeli Level $level", 36f, 172f + off, 10f, kit.muted)
+    }
 
     kit.text(c, "Lv2·100  Lv3·250  Lv4·500  Lv5·1000  Lv6·2000", 20f, 210f + off, 10f, kit.muted)
     kit.text(c, "Lv7·3500  Lv8·5500  Lv9·8000  Lv10·12000+", 20f, 228f + off, 10f, kit.muted)

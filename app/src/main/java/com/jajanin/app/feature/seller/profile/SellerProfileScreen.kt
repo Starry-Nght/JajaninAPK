@@ -5,6 +5,9 @@ import android.graphics.RectF
 import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.components.StoreAvatar
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
+import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.data.repository.SupabaseRepository
@@ -36,25 +39,46 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
     if (visible(y, y + 70f)) {
         val stall = myStallName.takeIf { it.isNotBlank() } ?: "Warung Saya"
         val ownerName = myDisplayName.takeIf { it.isNotBlank() } ?: "Pemilik Warung"
-        val initial = (stall.firstOrNull() ?: ownerName.firstOrNull() ?: 'W')
-            .uppercaseChar().toString()
         val avatar = RectF(20f, y, 72f, y + 52f)
-        kit.rounded(c, avatar, kit.tint, 10f)
-        kit.centerText(c, initial, avatar, 21f, kit.blue, true)
+        StoreAvatar.draw(this, c, stall, myStallLogoUrl, avatar, cornerRadius = 10f)
 
         val suspended = myAccountStatus == "suspended"
+        val statusText = when {
+            suspended -> "Ditangguhkan"
+            myStallIsOpen -> "Buka"
+            else -> "Tutup"
+        }
+        val statusBg = when {
+            suspended || !myStallIsOpen -> kit.dangerBorder
+            else -> kit.successSoft
+        }
+        val statusFg = when {
+            suspended || !myStallIsOpen -> kit.danger
+            else -> kit.success
+        }
         val statusRect = sellerPill(
             c,
-            if (suspended) "Ditangguhkan" else "Aktif",
+            statusText,
             370f,
             y + 14f,
-            if (suspended) kit.dangerBorder else kit.successSoft,
-            if (suspended) kit.danger else kit.success,
+            statusBg,
+            statusFg,
             height = 20f,
             size = 9.5f,
         )
         val nameWidth = (statusRect.left - 84f - 10f).coerceAtLeast(90f)
-        kit.textEllipsized(c, stall, 84f, y + 19f, nameWidth, 16.5f, kit.ink, true)
+        StoreVerifiedBadge.drawInlineWithStoreName(
+            view = this,
+            c = c,
+            storeName = stall,
+            isVerified = myStallIsVerified,
+            x = 84f,
+            baselineY = y + 19f,
+            maxTotalWidth = nameWidth,
+            textSize = 16.5f,
+            textColor = kit.ink,
+            bold = true,
+        )
         val ownerWithNis = buildString {
             append("Pemilik: $ownerName")
             if (myNis.isNotBlank()) append("  ·  NIS: $myNis")
@@ -111,7 +135,45 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
             bottomLimit = navClear,
         )
     }
-    y += 70f
+    y += 62f
+
+    // 2a. Automatic Store Verification Progress Card (Server-managed 20+ completed orders)
+    val verifCard = RectF(20f, y, 370f, y + 56f)
+    if (visible(verifCard.top, verifCard.bottom)) {
+        sellerSurface(c, verifCard)
+        if (myStallIsVerified) {
+            StoreVerifiedBadge.drawPill(
+                view = this,
+                c = c,
+                left = 32f,
+                top = y + 10f,
+                label = "Terverifikasi Jajanin",
+                height = 20f,
+                textSize = 9.5f,
+            )
+            kit.textEllipsized(
+                c,
+                "$myStallCompletedOrders pesanan selesai · Lencana tampil di profil & menu",
+                32f,
+                y + 45f,
+                326f,
+                10.5f,
+                kit.muted,
+            )
+        } else {
+            val done = myStallCompletedOrders.coerceIn(0, 20)
+            kit.text(c, "Progres Verifikasi Toko Otomatis", 32f, y + 22f, 12f, kit.ink, true)
+            kit.textRight(c, "$done/20 selesai", 358f, y + 22f, 96f, 11f, kit.blue, true)
+            val track = RectF(32f, y + 32f, 358f, y + 37f)
+            kit.rounded(c, track, kit.divider, 2.5f)
+            if (done > 0) {
+                val fillW = track.width() * (done / 20f)
+                kit.rounded(c, RectF(track.left, track.top, track.left + fillW, track.bottom), kit.blue, 2.5f)
+            }
+            kit.text(c, "Otomatis aktif saat warung menyelesaikan 20 pesanan.", 32f, y + 49f, 9.5f, kit.muted)
+        }
+    }
+    y += 68f
 
     // 2b. Switch back to Buyer Mode (1 Akun Dual-Mode)
     val buyerModeCard = RectF(20f, y, 370f, y + 54f)
@@ -120,7 +182,7 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
         kit.rect(c, 20f, y + 10f, 24f, y + 44f, kit.blue)
         kit.textEllipsized(c, "Beralih ke Mode Pembeli", 36f, y + 23f, 240f, 13.5f, kit.blue, true)
         kit.textEllipsized(c, "Belanja & pesan menu dari warung lain", 36f, y + 40f, 240f, 10.5f, kit.muted)
-        kit.textRight(c, "Belanja →", 356f, y + 31f, 76f, 11.5f, kit.blue, true)
+        drawTrailingActionWithArrow(c, "Belanja", 356f, y + 31f, 11.5f, kit.blue)
         bounds.putVisible("switchToBuyer", buyerModeCard, topLimit = HEADER_H, bottomLimit = navClear)
         press(c, "switchToBuyer", buyerModeCard, 10f)
     }
@@ -135,6 +197,20 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
     y = sellerSettingsGroup(
         c, y,
         listOf(
+            SellerSettingRow(
+                title = "Lihat Profil Publik Warung",
+                key = "profileStorePublic",
+                subtitle = "Tampilan etalase publik warungmu seperti yang dilihat pembeli",
+                chevron = true,
+            ),
+            SellerSettingRow(
+                title = "Status Operasional Warung",
+                key = "profileStoreOpenToggle",
+                subtitle = if (myStallIsOpen) "Menerima pesanan pembeli saat ini" else "Warung sedang tutup sementara",
+                badge = if (myStallIsOpen) "Buka" else "Tutup",
+                badgeColor = if (myStallIsOpen) kit.success else kit.danger,
+                chevron = true,
+            ),
             SellerSettingRow(
                 title = "Menu Dagangan",
                 key = "openSellerMenu",
@@ -154,6 +230,38 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
                 value = "Ubah",
                 valueColor = kit.blue,
                 chevron = false,
+            ),
+            SellerSettingRow(
+                title = "Kategori Warung",
+                key = "profileStoreCategory",
+                subtitle = myStallCategory,
+                value = "Pilih",
+                valueColor = kit.blue,
+                chevron = true,
+            ),
+            SellerSettingRow(
+                title = "Deskripsi Publik Warung",
+                key = "profileStoreBio",
+                subtitle = myStallBio.takeIf { it.isNotBlank() } ?: "Tambahkan deskripsi singkat tentang warungmu",
+                value = if (myStallBio.isBlank()) "Isi" else "Ubah",
+                valueColor = kit.blue,
+                chevron = false,
+            ),
+            SellerSettingRow(
+                title = "Logo / Foto Profil Warung",
+                key = "profileStoreLogo",
+                subtitle = if (myStallLogoUrl.isBlank()) "Menggunakan inisial default warung" else "Foto profil warung terpasang",
+                badge = if (myStallLogoUrl.isBlank()) "Default" else "Terpasang",
+                badgeColor = if (myStallLogoUrl.isBlank()) kit.muted else kit.success,
+                chevron = true,
+            ),
+            SellerSettingRow(
+                title = "Sampul / Banner Warung",
+                key = "profileStoreBanner",
+                subtitle = if (myStallBannerUrl.isBlank()) "Menggunakan sampul standar Jajanin" else "Foto sampul warung terpasang",
+                badge = if (myStallBannerUrl.isBlank()) "Default" else "Terpasang",
+                badgeColor = if (myStallBannerUrl.isBlank()) kit.muted else kit.success,
+                chevron = true,
             ),
             SellerSettingRow(
                 title = "Nomor Telepon Penjual (Wajib)",

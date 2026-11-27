@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.navigation.Screen
+import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.drawIcon
 
 private data class OnboardPage(
@@ -91,7 +92,11 @@ internal fun JajaninView.drawOnboard(c: Canvas, w: Float, h: Float) {
         if (onboardPage > 0) {
             val back = RectF(20f, h - 140f, 170f, h - 84f)
             kit.rounded(c, back, kit.card, 14f, kit.border)
-            kit.centerText(c, "‹ Kembali", back, 15f, kit.ink, true)
+            val labelW = kit.measure("Kembali", 15f, true)
+            val totalW = 16f + 6f + labelW
+            val startX = back.centerX() - totalW * 0.5f
+            AppIcon.draw(c, "chevronLeft", startX + 8f, back.centerY(), 16f, kit.ink)
+            kit.text(c, "Kembali", startX + 22f, back.centerY() + 5.2f, 15f, kit.ink, true)
             bounds["obBack"] = RectF(back)
         }
         val next = RectF(if (onboardPage > 0) 182f else 20f, h - 140f, w - 20f, h - 84f)

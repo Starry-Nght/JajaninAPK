@@ -18,6 +18,7 @@ import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.NavVariant
 import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.adminActionableCount
+import com.jajanin.app.core.ui.components.drawCenteredButtonWithArrow
 import com.jajanin.app.core.ui.drawFloatingNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.isTerminalStatus
@@ -178,8 +179,9 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
                 c,
                 "Pesanan Aktif (${urgentOrders.size})",
                 y + 12f,
-                trailing = "Semua pesanan →",
-                trailingColor = kit.blue
+                trailing = "Semua pesanan",
+                trailingColor = kit.blue,
+                trailingArrow = true,
             )
             bounds.putVisible(
                 "sellerPipeline:Semua",
@@ -723,7 +725,7 @@ private fun JajaninView.drawOrderCard(
             bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
         } else {
             kit.rounded(c, action, kit.blue, 6f)
-            kit.centerText(c, "${nextAction.first} →", action, 11f, Color.WHITE, true)
+            drawCenteredButtonWithArrow(c, nextAction.first, action, 11f, Color.WHITE)
             press(c, "adminStatus:${order.id}", action, 6f)
             bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
         }

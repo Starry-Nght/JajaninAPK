@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.jajanin.app.MainActivity
+import com.jajanin.app.core.ui.components.AppIcon
 
 /**
  * Dialog bertema Jajanin (pengganti AlertDialog Material putih generik).
@@ -149,12 +150,21 @@ internal fun MainActivity.showThemedOptions(
     val dialog = parts.dialog
     val root = parts.root
     options.forEachIndexed { index, option ->
+        val selected = index == checked
         val row = TextView(this).apply {
-            text = "${if (index == checked) "● " else "○ "}${option.take(30)}"
-            setTextColor(if (index == checked) dialogBlue() else dialogInk())
+            text = option.take(36)
+            setTextColor(if (selected) dialogBlue() else dialogInk())
             textSize = 15f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             setPadding((4 * d).toInt(), (13 * d).toInt(), (4 * d).toInt(), (13 * d).toInt())
+            val radioIcon = AppIcon.drawable(
+                this@showThemedOptions,
+                if (selected) "radioChecked" else "radioUnchecked",
+                17f,
+                if (selected) dialogBlue() else dialogMuted(),
+            )
+            setCompoundDrawables(radioIcon, null, null, null)
+            compoundDrawablePadding = (10 * d).toInt()
             isClickable = true
             isFocusable = true
             setOnClickListener { dialog.dismiss(); onPick(index) }

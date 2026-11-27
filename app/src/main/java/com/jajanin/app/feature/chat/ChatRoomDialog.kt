@@ -25,6 +25,7 @@ import android.widget.Toast
 import com.jajanin.app.MainActivity
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
 import com.jajanin.app.data.model.ChatMessage
@@ -171,13 +172,11 @@ internal class ChatRoomDialog(
             setPadding(dp(12), dp(12), dp(14), dp(12))
         }
 
-        val backBtn = TextView(activity).apply {
-            text = "←"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            setTextColor(kit.blue)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setPadding(dp(8), dp(4), dp(10), dp(4))
+        val backBtn = ImageView(activity).apply {
+            scaleType = ImageView.ScaleType.CENTER
+            contentDescription = AppIcon.contentDescription("arrowLeft")
+            setImageDrawable(AppIcon.drawable(activity, "arrowLeft", 20f, kit.blue))
+            setPadding(dp(8), dp(6), dp(10), dp(6))
             setOnClickListener { dismiss() }
         }
         header.addView(backBtn)
@@ -498,10 +497,14 @@ internal class ChatRoomDialog(
             card.addView(infoCol)
 
             val actionBtn = TextView(activity).apply {
-                text = "Lihat Pesanan →"
+                text = "Lihat Pesanan"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER_VERTICAL
+                val arrowIcon = AppIcon.drawable(activity, "arrowRight", 12.5f, Color.WHITE)
+                setCompoundDrawables(null, null, arrowIcon, null)
+                compoundDrawablePadding = dp(5)
                 background = roundedDrawable(kit.blue, dpF(6f))
                 setPadding(dp(10), dp(6), dp(10), dp(6))
                 setOnClickListener {
@@ -1091,7 +1094,7 @@ internal class ChatRoomDialog(
                 val receipt = when (msg.deliveryState) {
                     MessageDeliveryState.SENDING -> "Mengirim..."
                     MessageDeliveryState.FAILED -> "Gagal · Ketuk untuk coba lagi"
-                    MessageDeliveryState.SENT -> if (msg.isRead) "✓✓ Dibaca" else "✓ Terkirim"
+                    MessageDeliveryState.SENT -> if (msg.isRead) "Dibaca" else "Terkirim"
                 }
                 if (msg.timeLabel.isNotBlank()) "${msg.timeLabel} · $receipt" else receipt
             } else {
@@ -1102,7 +1105,17 @@ internal class ChatRoomDialog(
                 text = metaText
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
                 setTextColor(metaTextColor)
-                gravity = Gravity.END
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                if (isMine && msg.deliveryState == MessageDeliveryState.SENT) {
+                    val receiptIcon = AppIcon.drawable(
+                        activity,
+                        if (msg.isRead) "checkDouble" else "check",
+                        12f,
+                        metaTextColor,
+                    )
+                    setCompoundDrawables(null, null, receiptIcon, null)
+                    compoundDrawablePadding = dp(4)
+                }
                 setPadding(0, dp(3), 0, 0)
             }
             bubble.addView(metaTv)

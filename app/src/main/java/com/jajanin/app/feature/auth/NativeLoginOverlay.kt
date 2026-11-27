@@ -23,11 +23,13 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import com.jajanin.app.MainActivity
+import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.data.repository.PhoneRepository
 import com.jajanin.app.data.repository.SupabaseRepository
 import kotlinx.coroutines.Job
@@ -56,7 +58,7 @@ internal class NativeLoginOverlay(
     private val contentCol: LinearLayout
 
     // Header
-    private val backBtn: TextView
+    private val backBtn: ImageView
     private val brandTv: TextView
     private val headingTv: TextView
     private val subtitleTv: TextView
@@ -67,7 +69,7 @@ internal class NativeLoginOverlay(
     private val nisBox: LinearLayout
     private val nisBadgeIcon: TextView
     private val nisInput: EditText
-    private val nisTrailingBtn: TextView
+    private val nisTrailingBtn: ImageView
 
     // Live Dropdown (Snaps-style prefix suggestions)
     private val dropdownCard: LinearLayout
@@ -184,12 +186,9 @@ internal class NativeLoginOverlay(
                 dp(44),
             )
         }
-        backBtn = TextView(activity).apply {
-            text = "‹"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            includeFontPadding = false
+        backBtn = ImageView(activity).apply {
+            scaleType = ImageView.ScaleType.CENTER
+            contentDescription = AppIcon.contentDescription("chevronLeft")
             layoutParams = FrameLayout.LayoutParams(dp(40), dp(40), Gravity.START or Gravity.CENTER_VERTICAL)
             setOnClickListener {
                 if (!handleBack()) {
@@ -292,11 +291,9 @@ internal class NativeLoginOverlay(
             filters = arrayOf(InputFilter.LengthFilter(20))
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
         }
-        nisTrailingBtn = TextView(activity).apply {
-            text = "⌄"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+        nisTrailingBtn = ImageView(activity).apply {
+            scaleType = ImageView.ScaleType.CENTER
+            contentDescription = AppIcon.contentDescription("chevronDown")
             setPadding(dp(10), dp(6), dp(10), dp(6))
             setOnClickListener {
                 if (nisInput.text.isNotEmpty() && selectedStudent != null && !dropdownExpanded) {
@@ -693,7 +690,7 @@ internal class NativeLoginOverlay(
         darkMode = dark
         rootContainer.setBackgroundColor(bgColor)
         backBtn.background = rounded(surfaceColor, 20f, borderColor)
-        backBtn.setTextColor(inkColor)
+        backBtn.setImageDrawable(AppIcon.drawable(activity, "chevronLeft", 19f, inkColor))
         brandTv.setTextColor(blueColor)
         headingTv.setTextColor(inkColor)
         subtitleTv.setTextColor(mutedColor)
@@ -704,7 +701,6 @@ internal class NativeLoginOverlay(
         nisBadgeIcon.setTextColor(blueColor)
         nisInput.setTextColor(inkColor)
         nisInput.setHintTextColor(mutedColor)
-        nisTrailingBtn.setTextColor(mutedColor)
 
         phoneBox.background = rounded(surfaceColor, 14f, borderColor)
         phoneIcon.background = rounded(greenBg, 7f)
@@ -932,11 +928,13 @@ internal class NativeLoginOverlay(
     }
 
     private fun renderDropdownAndIdentity() {
-        nisTrailingBtn.text = when {
-            dropdownExpanded -> "⌃"
-            selectedStudent != null -> "✕"
-            else -> "⌄"
+        val trailingIconKey = when {
+            dropdownExpanded -> "chevronUp"
+            selectedStudent != null -> "close"
+            else -> "chevronDown"
         }
+        nisTrailingBtn.contentDescription = AppIcon.contentDescription(trailingIconKey)
+        nisTrailingBtn.setImageDrawable(AppIcon.drawable(activity, trailingIconKey, 16f, mutedColor))
         updateNisBoxStroke(nisInput.hasFocus())
 
         if (dropdownExpanded && lastMatches.isNotEmpty()) {

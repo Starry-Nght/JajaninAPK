@@ -61,6 +61,9 @@ import com.jajanin.app.feature.buyer.exp.ExpEntry
 import com.jajanin.app.feature.buyer.exp.ExpRepository
 import com.jajanin.app.feature.buyer.exp.expLevel
 import com.jajanin.app.feature.buyer.exp.expNextAt
+import com.jajanin.app.feature.buyer.store_discovery.SELLER_STORE_CATEGORIES
+import com.jajanin.app.feature.buyer.store_discovery.StoreDiscoveryRepository
+import com.jajanin.app.feature.buyer.store_discovery.StoreSearchViewModel
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -694,6 +697,13 @@ internal fun MainActivity.refreshSellerSettings() {
         ui.myStallName = stall?.name.orEmpty()
         ui.myStallRoom = stall?.location?.takeIf { it != "Kantin" }.orEmpty()
         ui.myStallQris = stall?.qrisImageUrl.orEmpty()
+        ui.myStallIsOpen = stall?.isOpen ?: true
+        ui.myStallLogoUrl = stall?.logoUrl.orEmpty()
+        ui.myStallBannerUrl = stall?.bannerUrl.orEmpty()
+        ui.myStallCategory = stall?.storeCategory?.takeIf { it.isNotBlank() } ?: "Makanan & Minuman"
+        ui.myStallBio = stall?.publicBio.orEmpty()
+        ui.myStallIsVerified = stall?.isVerified ?: false
+        ui.myStallCompletedOrders = stall?.completedOrdersCount ?: 0
         val rawName = runCatching { SupabaseRepository.myRawDisplayName() }.getOrNull().orEmpty()
         val cleanName = SupabaseRepository.extractCleanName(rawName)
         val nis = SupabaseRepository.extractNis(rawName)
@@ -851,6 +861,221 @@ internal fun MainActivity.pickQrisImage() {
         type = "image/*"
     }
     startActivityForResult(intent, REQUEST_QRIS_IMAGE)
+}
+
+internal fun MainActivity.toggleMyStoreOpenStatus() {
+    val self = this
+    val stallId = ui.myStallId
+    if (stallId.isNullOrBlank()) {
+        Toast.makeText(this, "Lengkapi nama warung terlebih dahulu.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val nextOpen = !ui.myStallIsOpen
+    fun applyToggle() {
+        authScope.launch {
+            try {
+                StoreDiscoveryRepository.updateMyStoreProfile(stallId = stallId, isOpen = nextOpen)
+                ui.myStallIsOpen = nextOpen
+                ui.invalidate()
+                StoreSearchViewModel.refreshStoreDirectory(self)
+                Toast.makeText(
+                    self,
+                    if (nextOpen) "Warung dibuka untuk menerima pesanan." else "Warung ditutup sementara.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } catch (error: Throwable) {
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    if (!nextOpen) {
+        showThemedInfo(
+            title = "Tutup warung sementara?",
+            message = "Pembeli tetap dapat melihat profil & katalog warungmu, tetapi tidak bisa membuat pesanan baru sampai warung dibuka kembali.",
+            posLabel = "Tutup Warung",
+            destructivePos = true,
+            onPos = { applyToggle() },
+            negLabel = "Batal",
+        )
+    } else {
+        applyToggle()
+    }
+}
+
+internal fun MainActivity.showSellerStoreCategoryPicker() {
+    val self = this
+    val stallId = ui.myStallId
+    if (stallId.isNullOrBlank()) {
+        Toast.makeText(this, "Lengkapi nama warung terlebih dahulu.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val checked = SELLER_STORE_CATEGORIES.indexOf(ui.myStallCategory).coerceAtLeast(0)
+    showThemedOptions("Kategori Warung", SELLER_STORE_CATEGORIES, checked) { which ->
+        val picked = SELLER_STORE_CATEGORIES[which]
+        authScope.launch {
+            try {
+                StoreDiscoveryRepository.updateMyStoreProfile(stallId = stallId, storeCategory = picked)
+                ui.myStallCategory = picked
+                ui.invalidate()
+                StoreSearchViewModel.refreshStoreDirectory(self)
+                Toast.makeText(self, "Kategori warung disimpan.", Toast.LENGTH_SHORT).show()
+            } catch (error: Throwable) {
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+}
+
+internal fun MainActivity.showSellerStoreBioEdit() {
+    val self = this
+    val stallId = ui.myStallId
+    if (stallId.isNullOrBlank()) {
+        Toast.makeText(this, "Lengkapi nama warung terlebih dahulu.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val input = EditText(this).apply {
+        hint = "Ceritakan menu andalan atau info jam operasional..."
+        minLines = 3
+        gravity = android.view.Gravity.TOP
+        filters = arrayOf(android.text.InputFilter.LengthFilter(300))
+        setText(ui.myStallBio)
+        setSelection(ui.myStallBio.length)
+    }
+    val box = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 20, 48, 8)
+        addView(input)
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Deskripsi Publik Warung")
+        .setView(box)
+        .setPositiveButton("Simpan") { _, _ ->
+            val value = input.text.toString().trim()
+            authScope.launch {
+                try {
+                    StoreDiscoveryRepository.updateMyStoreProfile(stallId = stallId, publicBio = value)
+                    ui.myStallBio = value
+                    ui.invalidate()
+                    StoreSearchViewModel.refreshStoreDirectory(self)
+                    Toast.makeText(self, "Deskripsi warung disimpan.", Toast.LENGTH_SHORT).show()
+                } catch (error: Throwable) {
+                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        .setNegativeButton("Batal", null)
+        .show()
+}
+
+internal fun MainActivity.showSellerStoreImageOptions(isBanner: Boolean) {
+    val self = this
+    val stallId = ui.myStallId
+    if (stallId.isNullOrBlank()) {
+        Toast.makeText(this, "Lengkapi nama warung terlebih dahulu.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val currentUrl = if (isBanner) ui.myStallBannerUrl else ui.myStallLogoUrl
+    val title = if (isBanner) "Sampul / Banner Warung" else "Logo / Foto Profil Warung"
+    val reqCode = if (isBanner) REQUEST_STORE_BANNER else REQUEST_STORE_LOGO
+    val options = if (currentUrl.isBlank()) {
+        arrayOf("Pilih gambar dari galeri")
+    } else {
+        arrayOf("Pilih gambar baru dari galeri", "Lihat gambar saat ini", "Hapus gambar")
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle(title)
+        .setItems(options) { _, which ->
+            val picked = options[which]
+            when {
+                picked.startsWith("Pilih") -> {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "image/*"
+                    }
+                    startActivityForResult(intent, reqCode)
+                }
+                picked.startsWith("Lihat") -> showQrisPreview(currentUrl)
+                picked.startsWith("Hapus") -> {
+                    authScope.launch {
+                        try {
+                            StoreDiscoveryRepository.updateMyStoreProfile(
+                                stallId = stallId,
+                                clearLogo = !isBanner,
+                                clearBanner = isBanner,
+                            )
+                            if (isBanner) ui.myStallBannerUrl = "" else ui.myStallLogoUrl = ""
+                            ui.invalidate()
+                            StoreSearchViewModel.refreshStoreDirectory(self)
+                            Toast.makeText(self, "$title dihapus.", Toast.LENGTH_SHORT).show()
+                        } catch (error: Throwable) {
+                            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        }
+        .show()
+}
+
+internal fun MainActivity.uploadSellerStoreImage(uri: android.net.Uri, isBanner: Boolean) {
+    val self = this
+    val stallId = ui.myStallId
+    if (stallId.isNullOrBlank()) {
+        Toast.makeText(this, "Warung belum siap.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    Toast.makeText(this, "Mengunggah gambar warung...", Toast.LENGTH_SHORT).show()
+    authScope.launch(Dispatchers.IO) {
+        try {
+            val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("Gambar tidak bisa dibaca.")
+            val bytes = compressForUpload(
+                raw,
+                maxEdge = if (isBanner) 1400 else 640,
+                quality = 84,
+            )
+            require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
+            val token = SupabaseRepository.currentAccessToken() ?: error("Sesi habis, masuk ulang.")
+            val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
+            val kind = if (isBanner) "banner" else "logo"
+            val path = "$uid/store_${kind}_${java.util.UUID.randomUUID()}.jpg"
+            val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/product-images/$path")
+            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "PUT"
+                doOutput = true
+                setFixedLengthStreamingMode(bytes.size)
+                setRequestProperty("apikey", SupabaseRepository.publishableKey)
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", "image/jpeg")
+                setRequestProperty("x-upsert", "true")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+            conn.outputStream.use { it.write(bytes) }
+            val code = conn.responseCode
+            if (code !in 200..299) error("Unggah gagal (HTTP $code).")
+            val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/product-images/$path"
+            StoreDiscoveryRepository.updateMyStoreProfile(
+                stallId = stallId,
+                logoUrl = if (!isBanner) publicUrl else null,
+                bannerUrl = if (isBanner) publicUrl else null,
+            )
+            launch(Dispatchers.Main) {
+                if (isBanner) ui.myStallBannerUrl = publicUrl else ui.myStallLogoUrl = publicUrl
+                ui.invalidate()
+                StoreSearchViewModel.refreshStoreDirectory(self)
+                Toast.makeText(
+                    self,
+                    if (isBanner) "Sampul warung disimpan." else "Logo warung disimpan.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        } catch (error: Throwable) {
+            launch(Dispatchers.Main) {
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 }
 
 internal fun MainActivity.startAdminOrders() {

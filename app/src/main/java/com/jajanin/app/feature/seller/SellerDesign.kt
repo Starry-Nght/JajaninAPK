@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
+import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
@@ -39,18 +40,23 @@ internal fun JajaninView.sellerSection(
     baseline: Float,
     trailing: String? = null,
     trailingColor: Int = kit.muted,
+    trailingArrow: Boolean = false,
 ) {
     kit.text(c, title.uppercase(), SellerTokens.PAD, baseline, SellerTokens.T_EYEBROW, kit.muted, true)
     if (!trailing.isNullOrBlank()) {
-        kit.text(
-            c,
-            trailing,
-            SellerTokens.RIGHT - kit.measure(trailing, SellerTokens.T_EYEBROW, true),
-            baseline,
-            SellerTokens.T_EYEBROW,
-            trailingColor,
-            true,
-        )
+        if (trailingArrow) {
+            drawTrailingActionWithArrow(c, trailing, SellerTokens.RIGHT, baseline, SellerTokens.T_EYEBROW, trailingColor)
+        } else {
+            kit.text(
+                c,
+                trailing,
+                SellerTokens.RIGHT - kit.measure(trailing, SellerTokens.T_EYEBROW, true),
+                baseline,
+                SellerTokens.T_EYEBROW,
+                trailingColor,
+                true,
+            )
+        }
     }
 }
 

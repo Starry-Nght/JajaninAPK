@@ -125,7 +125,7 @@ internal fun JajaninView.drawNotif(c: Canvas, w: Float, h: Float) {
             if (!warn.isRead) kit.rounded(c, RectF(20f, y, 370f, y + rowH), kit.tint, 12f)
             else kit.card(c, RectF(20f, y, 370f, y + rowH), 12f)
             val dot = if (warn.isRead) kit.muted else kit.danger
-            kit.text(c, "●", 34f, y + 25f, 10f, dot, true)
+            kit.rounded(c, RectF(34f, y + 18f, 41f, y + 25f), dot, 3.5f)
             kit.text(c, warn.title.take(24), 50f, y + 25f, 13f, kit.ink, true)
             kit.text(c, "${warn.message.take(34)} · ${warn.createdAt.take(10)}", 50f, y + 47f, 11f, kit.muted)
             bounds["notifWarn:${warn.id}"] = RectF(20f, y, 370f, y + rowH)

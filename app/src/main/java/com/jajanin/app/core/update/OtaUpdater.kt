@@ -196,7 +196,7 @@ internal fun MainActivity.showOtaAvailableDialog(release: OtaRelease) {
     val mandatoryTag = if (release.mandatory) "  ·  Wajib" else ""
     root.addView(
         otaSubtle(
-            "Terpasang: v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})  →  Baru: v${release.versionName} (build ${release.versionCode})$dateSuffix$mandatoryTag",
+            "Terpasang: v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})  ke  Baru: v${release.versionName} (build ${release.versionCode})$dateSuffix$mandatoryTag",
         ).apply {
             setPadding(0, (6 * d).toInt(), 0, (10 * d).toInt())
         },

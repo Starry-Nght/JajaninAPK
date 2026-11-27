@@ -5,6 +5,9 @@ import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.navigation.Screen
+import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
+import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawProductImage
@@ -15,6 +18,7 @@ import com.jajanin.app.core.ui.statusLabel
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.model.ProductRow
 import com.jajanin.app.data.repository.SalesStat
+import com.jajanin.app.feature.buyer.store_discovery.drawHomeStoreDiscoverySection
 import com.jajanin.app.feature.developer.inboxUnreadCount
 
 private const val NAV_HEIGHT = 82f
@@ -73,30 +77,42 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
         y += 58f
     }
 
-    // 3. Crisp Search Field (Radius 8f, subtle border, no heavy shadow)
-    val search = RectF(20f, y, 370f, y + 42f)
+    // 3. Crisp Search Field + Store Discovery Button
+    val search = RectF(20f, y, 290f, y + 42f)
+    val storeBtn = RectF(298f, y, 370f, y + 42f)
     if (isVisible(search.top, search.bottom)) {
         kit.rounded(c, search, kit.card, 8f, kit.border)
-        drawIcon(c, "search", 36f, search.centerY(), 15f, kit.muted)
+        AppIcon.draw(c, "search", 35f, search.centerY(), 15f, kit.muted)
         val searchText = if (query.isBlank()) "Cari menu atau minuman..." else query
         kit.textEllipsized(
             c,
             searchText,
-            54f,
+            52f,
             y + 26f,
-            if (query.isBlank()) 300f else 274f,
+            if (query.isBlank()) 228f else 202f,
             13f,
             if (query.isBlank()) kit.muted else kit.ink,
             query.isNotBlank()
         )
         if (query.isNotBlank()) {
-            val clearRect = RectF(336f, y + 7f, 364f, y + 35f)
-            drawIcon(c, "close", clearRect.centerX(), clearRect.centerY(), 12f, kit.muted)
+            val clearRect = RectF(258f, y + 7f, 286f, y + 35f)
+            AppIcon.draw(c, "close", clearRect.centerX(), clearRect.centerY(), 12f, kit.muted)
             bounds.putVisible("clearSearch", clearRect, topLimit = HEADER_H, bottomLimit = bottomClip)
         }
+
+        kit.rounded(c, storeBtn, kit.tint, 8f, kit.blue)
+        AppIcon.draw(c, "store", storeBtn.left + 15f, storeBtn.centerY(), 13.5f, kit.blue)
+        kit.text(c, "Warung", storeBtn.left + 26f, y + 26f, 11f, kit.blue, true)
+        press(c, "openStoreSearch", storeBtn, 8f)
     }
-    bounds.putVisible("search", search, topLimit = HEADER_H, bottomLimit = bottomClip)
-    y += 56f
+    bounds.putVisible("search", RectF(20f, y, if (query.isNotBlank()) 256f else 290f, y + 42f), topLimit = HEADER_H, bottomLimit = bottomClip)
+    bounds.putVisible("openStoreSearch", storeBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+    y += 54f
+
+    // 3b. Store Discovery Showcase ("Jelajahi Warung")
+    if (activeCategory == "All" && query.isBlank()) {
+        y = drawHomeStoreDiscoverySection(c, y, ::isVisible, HEADER_H, bottomClip)
+    }
 
     // 4. "Paling Laris · Penjualan terbanyak" (Hanya menu yang benar-benar sudah pernah terjual)
     val rankedTrending = computeTrendingTop3(products, topSellingStats)
@@ -109,7 +125,7 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
 
         val tileW = (350f - 20f) / 3f // 3 open tiles across 350f
         val imgH = 86f
-        val tileH = imgH + 54f
+        val tileH = imgH + 68f
         if (isVisible(y, y + tileH)) {
             rankedTrending.forEachIndexed { idx, (product, stat) ->
                 val left = 20f + idx * (tileW + 10f)
@@ -136,10 +152,28 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                 bounds.putVisible("fav:${product.id}", favRect, topLimit = HEADER_H, bottomLimit = bottomClip)
 
                 // Open typography below image (no card box!)
-                kit.textEllipsized(c, product.name, left, y + imgH + 17f, tileW, 12.5f, kit.ink, true)
-                kit.textEllipsized(c, formatRupiah(product.priceIdr), left, y + imgH + 34f, tileW, 12f, kit.blue, true)
-                val soldText = "${stat.totalQty}x terjual"
-                kit.textEllipsized(c, soldText, left, y + imgH + 49f, tileW, 10f, kit.muted)
+                kit.textEllipsized(c, product.name, left, y + imgH + 16f, tileW, 12.5f, kit.ink, true)
+                val storeInfo = product.stallId?.let { storeDirectoryById[it] }
+                if (storeInfo != null) {
+                    StoreVerifiedBadge.drawInlineWithStoreName(
+                        view = this,
+                        c = c,
+                        storeName = storeInfo.name,
+                        isVerified = storeInfo.isVerified,
+                        x = left,
+                        baselineY = y + imgH + 31f,
+                        maxTotalWidth = tileW,
+                        textSize = 10f,
+                        textColor = kit.muted,
+                        bold = false,
+                    )
+                } else {
+                    kit.textEllipsized(c, "${stat.totalQty}x terjual", left, y + imgH + 31f, tileW, 10f, kit.muted)
+                }
+                kit.textEllipsized(c, formatRupiah(product.priceIdr), left, y + imgH + 48f, tileW, 12f, kit.blue, true)
+                if (storeInfo != null) {
+                    kit.textEllipsized(c, "${stat.totalQty}x terjual", left, y + imgH + 62f, tileW, 9.5f, kit.muted)
+                }
 
                 val tileHit = RectF(left, y, left + tileW, y + tileH)
                 bounds.putVisible("item:${product.id}", tileHit, topLimit = HEADER_H, bottomLimit = bottomClip)
@@ -218,17 +252,17 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
             y += 88f
         }
         else -> {
-            val rowH = 108f
+            val rowH = 122f
             matches.forEachIndexed { index, product ->
                 val rowTop = y
                 val rowBottom = y + rowH
                 if (isVisible(rowTop, rowBottom)) {
-                    val imgRect = RectF(20f, rowTop + 14f, 96f, rowTop + 90f)
+                    val imgRect = RectF(20f, rowTop + 16f, 98f, rowTop + 94f)
                     drawProductImage(c, product, imgRect, 8f)
 
                     // Dish Name + Heart icon inline on the right
                     val isFav = favoriteIds.contains(product.id)
-                    kit.textEllipsized(c, product.name, 110f, rowTop + 26f, 224f, 14.5f, kit.ink, true)
+                    kit.textEllipsized(c, product.name, 110f, rowTop + 25f, 224f, 14.5f, kit.ink, true)
 
                     val favHit = RectF(342f, rowTop + 8f, 372f, rowTop + 36f)
                     drawIcon(
@@ -241,6 +275,23 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                     )
                     bounds.putVisible("fav:${product.id}", favHit, topLimit = HEADER_H, bottomLimit = bottomClip)
 
+                    // Store Name + Verified Badge (tappable to open Public Store Profile)
+                    val storeSummary = product.stallId?.let { storeDirectoryById[it] }
+                    if (storeSummary != null) {
+                        StoreVerifiedBadge.drawInlineWithStoreName(
+                            view = this,
+                            c = c,
+                            storeName = storeSummary.name,
+                            isVerified = storeSummary.isVerified,
+                            x = 110f,
+                            baselineY = rowTop + 42f,
+                            maxTotalWidth = 226f,
+                            textSize = 11f,
+                            textColor = kit.blue,
+                            bold = true,
+                        )
+                    }
+
                     // Subtle subtitle (description or category + stock)
                     val available = product.available && (product.stock == null || product.stock > 0)
                     val catName = if (normalizeCategory(product.category) == "Food") "Makanan" else "Minuman"
@@ -250,12 +301,14 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                         else -> "Tersedia"
                     }
                     val descLine = product.description.takeIf { it.isNotBlank() } ?: "$catName · $stockInfo"
-                    kit.textEllipsized(c, descLine, 110f, rowTop + 44f, 250f, 11.5f, kit.muted)
+                    val descY = if (storeSummary != null) rowTop + 57f else rowTop + 44f
+                    kit.textEllipsized(c, descLine, 110f, descY, 250f, 11f, kit.muted)
 
                     // Pre-Order / Same-Day schedule pill
                     val schedLabel = product.scheduleBadgeLabel
                     val schedW = (kit.measure(schedLabel, 9.5f, true) + 14f).coerceAtMost(150f)
-                    val schedPill = RectF(110f, rowTop + 50f, 110f + schedW, rowTop + 66f)
+                    val schedTop = if (storeSummary != null) rowTop + 63f else rowTop + 52f
+                    val schedPill = RectF(110f, schedTop, 110f + schedW, schedTop + 16f)
                     val isNextOnly = product.orderSchedule == "next_day"
                     val pillBg = if (isNextOnly) kit.warnBox else kit.tint
                     val pillFg = if (isNextOnly) Color.rgb(183, 116, 0) else kit.blue
@@ -263,28 +316,28 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                     kit.centerText(c, schedLabel, schedPill, 9.5f, pillFg, true)
 
                     // Price on the left, clean 8f radius action on the right
-                    kit.text(c, formatRupiah(product.priceIdr), 110f, rowTop + 89f, 14.5f, kit.ink, true)
+                    kit.text(c, formatRupiah(product.priceIdr), 110f, rowTop + 103f, 14.5f, kit.ink, true)
 
                     val inCartQty = cart[product.id] ?: 0
                     if (available) {
                         if (inCartQty > 0) {
-                            val stepper = RectF(286f, rowTop + 65f, 370f, rowTop + 95f)
+                            val stepper = RectF(286f, rowTop + 79f, 370f, rowTop + 109f)
                             kit.rounded(c, stepper, kit.tint, 7f, kit.blue)
                             val minusHit = RectF(stepper.left, stepper.top, stepper.left + 28f, stepper.bottom)
                             val plusHit = RectF(stepper.right - 28f, stepper.top, stepper.right, stepper.bottom)
-                            kit.centerText(c, "−", minusHit, 15f, kit.blue, true)
+                            AppIcon.draw(c, "minus", minusHit.centerX(), minusHit.centerY(), 12f, kit.blue)
                             kit.centerText(c, "$inCartQty", stepper, 12f, kit.ink, true)
-                            kit.centerText(c, "+", plusHit, 15f, kit.blue, true)
+                            AppIcon.draw(c, "plus", plusHit.centerX(), plusHit.centerY(), 12f, kit.blue)
                             bounds.putVisible("cartMinus:${product.id}", minusHit, topLimit = HEADER_H, bottomLimit = bottomClip)
                             bounds.putVisible("cartPlus:${product.id}", plusHit, topLimit = HEADER_H, bottomLimit = bottomClip)
                         } else {
-                            val addBtn = RectF(296f, rowTop + 65f, 370f, rowTop + 95f)
+                            val addBtn = RectF(296f, rowTop + 79f, 370f, rowTop + 109f)
                             kit.rounded(c, addBtn, kit.blue, 7f)
                             kit.centerText(c, "+ Tambah", addBtn, 11f, Color.WHITE, true)
                             bounds.putVisible("add:${product.id}", addBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
                         }
                     } else {
-                        kit.textRight(c, "Habis", 370f, rowTop + 85f, 64f, 11.5f, kit.danger, true)
+                        kit.textRight(c, "Habis", 370f, rowTop + 99f, 64f, 11.5f, kit.danger, true)
                     }
 
                     // Hairline divider between rows
@@ -298,6 +351,14 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                         topLimit = HEADER_H,
                         bottomLimit = bottomClip
                     )
+                    if (storeSummary != null) {
+                        bounds.putVisible(
+                            "openStore:${storeSummary.id}",
+                            RectF(108f, rowTop + 29f, 282f, rowTop + 47f),
+                            topLimit = HEADER_H,
+                            bottomLimit = bottomClip
+                        )
+                    }
                 }
                 y += rowH
             }
@@ -313,6 +374,7 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
     if (cartCount > 0) {
         val totalCartIdr = cart.entries.sumOf { (id, qty) ->
             val p = products.firstOrNull { it.id == id }
+                ?: storeProfileProducts.firstOrNull { it.id == id }
             (p?.priceIdr ?: 0) * qty
         }
         c.save()
@@ -328,7 +390,7 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
             Color.WHITE,
             true
         )
-        kit.textRight(c, "Checkout →", 356f, floatBar.centerY() + 4.5f, 100f, 13f, Color.WHITE, true)
+        drawTrailingActionWithArrow(c, "Checkout", 356f, floatBar.centerY() + 4.5f, 13f, Color.WHITE)
         press(c, "cartCheckoutBar", floatBar, 10f)
         c.restore()
         bounds["cartCheckoutBar"] = floatBar

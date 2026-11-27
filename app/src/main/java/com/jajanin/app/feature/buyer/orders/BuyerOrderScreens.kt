@@ -14,6 +14,8 @@ import com.jajanin.app.core.constants.STATUS_PREPARING
 import com.jajanin.app.core.constants.STATUS_PROCESSING_LEGACY
 import com.jajanin.app.core.constants.STATUS_READY
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
+import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.isTerminalStatus
@@ -145,7 +147,29 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
         kit.rounded(c, pillRect, if (isPo) kit.warnBox else kit.tint, 5f)
         kit.centerText(c, schedLabel, pillRect, 9.5f, if (isPo) Color.rgb(183, 116, 0) else kit.blue, true)
     }
-    kit.textEllipsized(c, storeName, 34f, y + 41f, 320f, 16f, kit.blue, true)
+    val orderStallId = matchedOrder?.stallId?.takeIf { it.isNotBlank() }
+    val storeVerified = orderStallId?.let { storeDirectoryById[it]?.isVerified } == true
+    StoreVerifiedBadge.drawInlineWithStoreName(
+        view = this,
+        c = c,
+        storeName = storeName,
+        isVerified = storeVerified,
+        x = 34f,
+        baselineY = y + 41f,
+        maxTotalWidth = if (orderStallId != null) 232f else 320f,
+        textSize = 16f,
+        textColor = kit.blue,
+        bold = true,
+    )
+    if (orderStallId != null) {
+        drawTrailingActionWithArrow(c, "Profil Toko", 356f, y + 41f, 10.5f, kit.blue)
+        bounds.putVisible(
+            "openStore:$orderStallId",
+            RectF(28f, y + 24f, 362f, y + 48f),
+            topLimit = HEADER_H,
+            bottomLimit = h - 70f,
+        )
+    }
 
     val sellerIdentity = sellerOwner.ifBlank { "Koordinasi langsung dengan penjual" }
     kit.textEllipsized(c, sellerIdentity, 34f, y + 60f, 320f, 12f, kit.ink, sellerOwner.isNotBlank())
@@ -419,10 +443,29 @@ private fun JajaninView.drawBuyerOrderItem(
         val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.success
         kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 32f, top + 70f, 324f, 10.5f, schedColor, true)
 
-        // Row 4: Warung + Nomor Telepon Penjual
+        // Row 4: Warung (+ Verified Badge) + Nomor Telepon Penjual
         val storeLabel = order.sellerStoreName.takeIf { it.isNotBlank() } ?: "Warung Jajanin"
+        val isStoreVerified = order.stallId.isNotBlank() && storeDirectoryById[order.stallId]?.isVerified == true
         val phoneSuffix = order.sellerPhone.takeIf { it.isNotBlank() }?.let { " · HP ${displayBuyerPhone(it)}" }.orEmpty()
-        kit.textEllipsized(c, "$storeLabel$phoneSuffix", 32f, top + 87f, 324f, 11f, kit.blue, true)
+        if (isStoreVerified) {
+            val endX = StoreVerifiedBadge.drawInlineWithStoreName(
+                view = this,
+                c = c,
+                storeName = storeLabel,
+                isVerified = true,
+                x = 32f,
+                baselineY = top + 87f,
+                maxTotalWidth = if (phoneSuffix.isNotBlank()) 195f else 324f,
+                textSize = 11f,
+                textColor = kit.blue,
+                bold = true,
+            )
+            if (phoneSuffix.isNotBlank() && endX < 340f) {
+                kit.textEllipsized(c, phoneSuffix, endX + 2f, top + 87f, 356f - endX, 10.5f, kit.muted)
+            }
+        } else {
+            kit.textEllipsized(c, "$storeLabel$phoneSuffix", 32f, top + 87f, 324f, 11f, kit.blue, true)
+        }
 
         // Row 5: Payment method & status + Detail chevron
         val (payLabel, payColor) = paymentLabel(order.paymentStatus)
@@ -461,7 +504,7 @@ private fun JajaninView.drawBuyerOrderItem(
         bounds.putVisible("chatOrder:${order.id}", chatPill, topLimit = HEADER_H, bottomLimit = bottomClip)
         press(c, "chatOrder:${order.id}", chatPill, 5f)
 
-        kit.textRight(c, "Detail →", 358f, top + 106f, 52f, 11f, kit.blue, true)
+        drawTrailingActionWithArrow(c, "Detail", 358f, top + 106f, 11f, kit.blue)
 
         if (active) {
             kit.line(c, 32f, top + 116f, 358f, top + 116f, kit.divider)

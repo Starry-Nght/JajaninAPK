@@ -4,6 +4,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
+import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawProductImage
@@ -43,11 +45,17 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
 
     val off = -scroll
 
-    // Cari: baris garis-bawah membuka dialog cari.
-    kit.text(c, "⌕", 22f, 116f + off, 22f, kit.muted)
-    kit.text(c, if (query.isBlank()) "Cari nama menu..." else query, 52f, 114f + off, 14f, if (query.isBlank()) kit.muted else kit.ink)
-    kit.line(c, 20f, 128f + off, w - 20f, 128f + off)
-    bounds["search"] = RectF(20f, 88f + off, w - 20f, 128f + off)
+    // Cari: baris garis-bawah membuka dialog cari + pintasan Cari Warung.
+    AppIcon.draw(c, "search", 30f, 109f + off, 17f, kit.muted)
+    kit.textEllipsized(c, if (query.isBlank()) "Cari nama menu..." else query, 50f, 114f + off, 210f, 14f, if (query.isBlank()) kit.muted else kit.ink)
+    val storePill = RectF(272f, 94f + off, 370f, 124f + off)
+    kit.rounded(c, storePill, kit.tint, 8f, kit.blue)
+    AppIcon.draw(c, "store", storePill.left + 15f, storePill.centerY(), 13f, kit.blue)
+    kit.text(c, "Cari Warung", storePill.left + 26f, storePill.centerY() + 3.8f, 10.5f, kit.blue, true)
+    press(c, "openStoreSearch", storePill, 8f)
+    kit.line(c, 20f, 130f + off, w - 20f, 130f + off)
+    bounds["search"] = RectF(20f, 88f + off, 266f, 128f + off)
+    bounds["openStoreSearch"] = storePill
 
     // Kategori: chip pil ringkas.
     var x = 20f
@@ -73,10 +81,10 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
         matches.isEmpty() -> kit.centerText(c, "Coba kata kunci atau kategori lain.", RectF(20f, 230f + off, 370f, 290f + off), 13f, kit.muted)
     }
 
-    // Grid foto: ubin foto + nama + harga + tombol tambah mungil.
+    // Grid foto: ubin foto + nama + nama warung (verified badge) + harga + tombol tambah.
     val tileW = (w - 20f * 2f - 12f) / 2f
     val photoH = 118f
-    val tileH = photoH + 68f
+    val tileH = photoH + 82f
     val gridTop = 212f
     matches.forEachIndexed { index, product ->
         val col = index % 2
@@ -99,17 +107,37 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
         val schedBg = if (product.orderSchedule == "next_day") Color.argb(225, 183, 116, 0) else Color.argb(215, 0, 99, 214)
         kit.rounded(c, schedRect, schedBg, 5f)
         kit.centerText(c, schedShort, schedRect, 9f, Color.WHITE, true)
-        kit.text(c, product.name.take(21), left + 2f, top + photoH + 22f, 13f, kit.ink, true)
-        kit.text(c, formatRupiah(product.priceIdr), left + 2f, top + photoH + 43f, 13f, kit.ink, true)
+        kit.textEllipsized(c, product.name, left + 2f, top + photoH + 20f, tileW - 4f, 13f, kit.ink, true)
+        val storeInfo = product.stallId?.let { storeDirectoryById[it] }
+        if (storeInfo != null) {
+            StoreVerifiedBadge.drawInlineWithStoreName(
+                view = this,
+                c = c,
+                storeName = storeInfo.name,
+                isVerified = storeInfo.isVerified,
+                x = left + 2f,
+                baselineY = top + photoH + 36f,
+                maxTotalWidth = tileW - 6f,
+                textSize = 10.5f,
+                textColor = kit.blue,
+                bold = true,
+            )
+        }
+        val priceY = if (storeInfo != null) top + photoH + 60f else top + photoH + 45f
+        kit.text(c, formatRupiah(product.priceIdr), left + 2f, priceY, 13f, kit.ink, true)
         if (available) {
             val addLabel = "+ Tambah"
-            val addW = kit.measure(addLabel, 11f, true) + 24f
-            val add = RectF(left + tileW - addW, top + photoH + 24f, left + tileW, top + photoH + 52f)
-            kit.rounded(c, add, kit.tint, 14f)
-            kit.centerText(c, addLabel, add, 11f, kit.blue, true)
+            val addW = kit.measure(addLabel, 10.5f, true) + 18f
+            val addTop = if (storeInfo != null) top + photoH + 44f else top + photoH + 28f
+            val add = RectF(left + tileW - addW, addTop, left + tileW, addTop + 26f)
+            kit.rounded(c, add, kit.tint, 13f)
+            kit.centerText(c, addLabel, add, 10.5f, kit.blue, true)
             bounds["add:${product.id}"] = add
         }
-        bounds["item:${product.id}"] = RectF(left, top.coerceAtLeast(96f), left + tileW, (top + tileH).coerceAtMost(h - 82f))
+        bounds["item:${product.id}"] = RectF(left, top.coerceAtLeast(96f), left + tileW, (top + photoH + 42f).coerceAtMost(h - 82f))
+        if (storeInfo != null && top + photoH + 24f >= 96f && top + photoH + 42f <= h - 82f) {
+            bounds["openStore:${storeInfo.id}"] = RectF(left, top + photoH + 24f, left + tileW, top + photoH + 42f)
+        }
     }
     contentHeight = gridTop + (matches.size + 1) / 2 * (tileH + 14f) + 40f
     drawBottomNav(c, w, h, "Explore")

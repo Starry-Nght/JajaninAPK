@@ -42,6 +42,9 @@ internal data class DevStallRow(
     val description: String = "",
     @SerialName("is_open") val isOpen: Boolean = true,
     @SerialName("owner_id") val ownerId: String? = null,
+    @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("verification_revoked") val verificationRevoked: Boolean = false,
+    @SerialName("completed_orders_count") val completedOrdersCount: Int = 0,
 ) {
     val sellerPhone: String
         get() = Regex("HP:\\s*([+0-9]+)").find(description)?.groupValues?.getOrNull(1)?.trim().orEmpty()
@@ -108,6 +111,9 @@ internal data class DevUser(
     val stallName: String? = null,
     val stallOpen: Boolean? = null,
     val stallId: String? = null,
+    val stallVerified: Boolean = false,
+    val stallVerificationRevoked: Boolean = false,
+    val stallCompletedOrders: Int = 0,
     val phone: String = "",
 )
 
@@ -213,11 +219,31 @@ internal object DeveloperRepository {
             }.decodeList<DevProfileRow>()
         val stalls = runCatching {
             client.postgrest.from("stalls")
-                .select(Columns.list("id", "name", "location", "description", "is_open", "owner_id")) { limit(200) }
+                .select(
+                    Columns.list(
+                        "id",
+                        "name",
+                        "location",
+                        "description",
+                        "is_open",
+                        "owner_id",
+                        "is_verified",
+                        "verification_revoked",
+                        "completed_orders_count",
+                    )
+                ) { limit(200) }
                 .decodeList<DevStallRow>()
                 .filter { it.ownerId != null }
                 .associateBy { it.ownerId!! }
-        }.getOrDefault(emptyMap())
+        }.getOrElse {
+            runCatching {
+                client.postgrest.from("stalls")
+                    .select(Columns.list("id", "name", "location", "description", "is_open", "owner_id")) { limit(200) }
+                    .decodeList<DevStallRow>()
+                    .filter { it.ownerId != null }
+                    .associateBy { it.ownerId!! }
+            }.getOrDefault(emptyMap())
+        }
 
         // Order count per user (best-effort; bila gagal isi 0).
         val orderCounts = runCatching {
@@ -253,6 +279,9 @@ internal object DeveloperRepository {
                 stallName = stall?.name,
                 stallOpen = stall?.isOpen,
                 stallId = stall?.id,
+                stallVerified = stall?.isVerified == true,
+                stallVerificationRevoked = stall?.verificationRevoked == true,
+                stallCompletedOrders = stall?.completedOrdersCount ?: 0,
                 phone = resolvedPhone,
             )
         }

@@ -13,6 +13,8 @@ import com.jajanin.app.core.constants.STATUS_PENDING
 import com.jajanin.app.core.constants.STATUS_PREPARING
 import com.jajanin.app.core.constants.STATUS_PROCESSING_LEGACY
 import com.jajanin.app.core.constants.STATUS_READY
+import com.jajanin.app.core.ui.components.drawCenteredButtonWithArrow
+import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.ui.statusLabel
@@ -260,7 +262,7 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 }
                 kit.textEllipsized(c, "Foto Bukti Transfer QRIS", 92f, y + 61f, 185f, 12f, kit.ink, true)
                 kit.textEllipsized(c, "Ketuk untuk perbesar & cek nominal", 92f, y + 78f, 185f, 10f, kit.muted)
-                kit.textRight(c, "Lihat →", 346f, y + 69f, 56f, 11.5f, kit.blue, true)
+                drawTrailingActionWithArrow(c, "Lihat", 346f, y + 69f, 11.5f, kit.blue)
                 press(c, "viewProof:${order.id}", strip, 7f)
                 bounds.putVisible("viewProof:${order.id}", strip, topLimit = 60f, bottomLimit = h - 68f)
                 innerY = y + 108f
@@ -356,7 +358,7 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             bounds["adminSet:${next.second}"] = RectF(cta)
         } else {
             kit.rounded(c, cta, kit.blue, 8f)
-            kit.centerText(c, "${next.first} →", cta, 14f, Color.WHITE, true)
+            drawCenteredButtonWithArrow(c, next.first, cta, 14f, Color.WHITE)
             press(c, "adminSet:${next.second}", cta, 8f)
             bounds["adminSet:${next.second}"] = RectF(cta)
         }

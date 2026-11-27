@@ -208,6 +208,13 @@ internal data class StallInfo(
     val description: String = "",
     @SerialName("owner_id") val ownerId: String? = null,
     @SerialName("qris_image_url") val qrisImageUrl: String? = null,
+    @SerialName("is_open") val isOpen: Boolean = true,
+    @SerialName("logo_url") val logoUrl: String? = null,
+    @SerialName("banner_url") val bannerUrl: String? = null,
+    @SerialName("store_category") val storeCategory: String = "Makanan & Minuman",
+    @SerialName("public_bio") val publicBio: String = "",
+    @SerialName("is_verified") val isVerified: Boolean = false,
+    @SerialName("completed_orders_count") val completedOrdersCount: Int = 0,
 ) {
     val sellerPhone: String
         get() = Regex("HP:\\s*([+0-9]+)").find(description)?.groupValues?.getOrNull(1)?.trim().orEmpty()
@@ -777,27 +784,55 @@ internal object OrderRepository {
         }
     }
 
-    /** Info publik satu warung (nama, ruangan ambil, kontak penjual, & QRIS) untuk layar pembeli. */
+    /** Info publik satu warung (nama, ruangan ambil, kontak penjual, verifikasi, & QRIS) untuk layar pembeli. */
     suspend fun fetchStall(stallId: String): StallInfo? = runCatching {
         client.postgrest.from("stalls")
-            .select(Columns.raw("id,name,location,description,owner_id,qris_image_url")) {
+            .select(
+                Columns.raw(
+                    "id,name,location,description,owner_id,qris_image_url,is_open," +
+                        "logo_url,banner_url,store_category,public_bio,is_verified,completed_orders_count"
+                )
+            ) {
                 filter { eq("id", stallId) }
                 limit(1)
             }
             .decodeSingleOrNull<StallInfo>()
-    }.getOrNull()
-
-    /** Warung milik penjual ini beserta ruangan ambil, kontak, & QRIS-nya. */
-    suspend fun fetchMyStall(): StallInfo? {
-        val uid = SupabaseRepository.currentUid() ?: return null
-        return runCatching {
+    }.getOrElse {
+        runCatching {
             client.postgrest.from("stalls")
-                .select(Columns.raw("id,name,location,description,owner_id,qris_image_url")) {
-                    filter { eq("owner_id", uid) }
+                .select(Columns.raw("id,name,location,description,owner_id,qris_image_url,is_open")) {
+                    filter { eq("id", stallId) }
                     limit(1)
                 }
                 .decodeSingleOrNull<StallInfo>()
         }.getOrNull()
+    }
+
+    /** Warung milik penjual ini beserta ruangan ambil, profil publik, status verifikasi, kontak, & QRIS-nya. */
+    suspend fun fetchMyStall(): StallInfo? {
+        val uid = SupabaseRepository.currentUid() ?: return null
+        return runCatching {
+            client.postgrest.from("stalls")
+                .select(
+                    Columns.raw(
+                        "id,name,location,description,owner_id,qris_image_url,is_open," +
+                            "logo_url,banner_url,store_category,public_bio,is_verified,completed_orders_count"
+                    )
+                ) {
+                    filter { eq("owner_id", uid) }
+                    limit(1)
+                }
+                .decodeSingleOrNull<StallInfo>()
+        }.getOrElse {
+            runCatching {
+                client.postgrest.from("stalls")
+                    .select(Columns.raw("id,name,location,description,owner_id,qris_image_url,is_open")) {
+                        filter { eq("owner_id", uid) }
+                        limit(1)
+                    }
+                    .decodeSingleOrNull<StallInfo>()
+            }.getOrNull()
+        }
     }
 
     /** Simpan ruangan pengambilan ("Ambil di ruangan") pada warung penjual. */

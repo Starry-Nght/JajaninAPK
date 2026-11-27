@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import com.jajanin.app.core.ui.components.AppIcon
 
 /*
  * Ikon vektor kecil untuk UI penjual — pengganti huruf unicode (▦ ≡ ▤ ◌ ◉ 🔔)
@@ -23,6 +24,9 @@ private val iconFill = Paint(Paint.ANTI_ALIAS_FLAG)
 private val iconPath = Path()
 
 internal fun drawIcon(c: Canvas, name: String, cx: Float, cy: Float, size: Float, color: Int) {
+    // Prefer local VectorDrawable XML assets via AppIcon when available
+    if (AppIcon.draw(c, name, cx, cy, size, color)) return
+
     val u = size / 20f
     fun x(v: Float): Float = cx + (v - 10f) * u
     fun y(v: Float): Float = cy + (v - 10f) * u

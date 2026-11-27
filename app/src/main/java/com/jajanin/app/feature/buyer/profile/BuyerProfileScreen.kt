@@ -5,6 +5,7 @@ import android.graphics.RectF
 import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.press
@@ -87,13 +88,13 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
             kit.textEllipsized(c, "Beralih ke Mode Penjual", 36f, y + 25f, 240f, 13.5f, kit.blue, true)
             val stallSub = myStallName.takeIf { it.isNotBlank() } ?: "Kelola produk, stok & pesanan warungmu"
             kit.textEllipsized(c, stallSub, 36f, y + 44f, 240f, 11f, kit.muted)
-            kit.textRight(c, "Buka →", 356f, y + 34f, 70f, 12f, kit.blue, true)
+            drawTrailingActionWithArrow(c, "Buka", 356f, y + 34f, 12f, kit.blue)
             bounds.putVisible("switchToSeller", sellerCard, topLimit = HEADER_H, bottomLimit = navClear)
             press(c, "switchToSeller", sellerCard, 10f)
         } else {
             kit.textEllipsized(c, "Mulai Berjualan di Jajanin", 36f, y + 25f, 236f, 13.5f, kit.blue, true)
             kit.textEllipsized(c, "Aktifkan Mode Penjual via Email OTP 6 digit", 36f, y + 44f, 242f, 10.5f, kit.muted)
-            kit.textRight(c, "Aktifkan →", 356f, y + 34f, 80f, 11.5f, kit.blue, true)
+            drawTrailingActionWithArrow(c, "Aktifkan", 356f, y + 34f, 11.5f, kit.blue)
             bounds.putVisible("activateSeller", sellerCard, topLimit = HEADER_H, bottomLimit = navClear)
             press(c, "activateSeller", sellerCard, 10f)
         }

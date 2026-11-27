@@ -20,11 +20,18 @@ import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.DrawKit
 import com.jajanin.app.core.ui.HERO_TOP_OFFSET
 import com.jajanin.app.core.ui.NavSpec
+import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.drawAbout
 import com.jajanin.app.core.ui.drawHelp
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawInfoPage
 import com.jajanin.app.core.ui.statusNextAction
+import com.jajanin.app.feature.buyer.store_discovery.PublicStoreDetail
+import com.jajanin.app.feature.buyer.store_discovery.PublicStoreSummary
+import com.jajanin.app.feature.buyer.store_discovery.StoreSearchViewModel
+import com.jajanin.app.feature.buyer.store_discovery.drawStoreSearch
+import com.jajanin.app.feature.buyer.store_profile.StoreProfileViewModel
+import com.jajanin.app.feature.buyer.store_profile.drawStoreProfile
 import com.jajanin.app.core.update.checkForOtaUpdate
 import com.jajanin.app.core.update.showDevOtaPublishForm
 import com.jajanin.app.core.util.formatRupiah
@@ -84,6 +91,10 @@ import kotlin.math.abs
 private const val PAGE_SLIDE_MS = 240L
 
 internal class JajaninView(context: Context) : View(context) {
+
+    init {
+        AppIcon.init(context)
+    }
 
     internal val kit = DrawKit(resources) { width / 390f }
 
@@ -193,7 +204,31 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myStallRoom: String = ""
     internal var recentSellerRooms: List<String> = emptyList()
     internal var myStallQris: String = ""
+    internal var myStallLogoUrl: String = ""
+    internal var myStallBannerUrl: String = ""
+    internal var myStallBio: String = ""
+    internal var myStallCategory: String = "Makanan & Minuman"
+    internal var myStallIsOpen: Boolean = true
+    internal var myStallIsVerified: Boolean = false
+    internal var myStallCompletedOrders: Int = 0
     internal var cart = linkedMapOf<String, Int>()
+    // --- Buyer Store Discovery & Public Store Profile state ---
+    internal var storeDirectoryById: Map<String, PublicStoreSummary> = emptyMap()
+    internal var storeSearchQuery: String = ""
+    internal var storeSearchCategory: String = "All"
+    internal var storeSearchResults: List<PublicStoreSummary> = emptyList()
+    internal var storeSearchTotal: Int = 0
+    internal var storeSearchHasMore: Boolean = false
+    internal var storeSearchOffset: Int = 0
+    internal var storeSearchLoading: Boolean = false
+    internal var storeSearchLoadingMore: Boolean = false
+    internal var storeSearchError: String? = null
+    internal var selectedStoreId: String? = null
+    internal var storeProfileDetail: PublicStoreDetail? = null
+    internal var storeProfileProducts: List<ProductRow> = emptyList()
+    internal var storeProfileCategoryFilter: String = "All"
+    internal var storeProfileLoading: Boolean = false
+    internal var storeProfileError: String? = null
     // --- Developer dashboard state ---
     internal var devTab = "Overview"
     internal var devStats = DevStats()
@@ -663,6 +698,8 @@ internal class JajaninView(context: Context) : View(context) {
             // --- Pembeli (buyer) ---
             Screen.HOME -> drawHome(canvas, 390f, height / s)
             Screen.EXPLORE -> drawExplore(canvas, 390f, height / s)
+            Screen.STORE_SEARCH -> drawStoreSearch(canvas, 390f, height / s)
+            Screen.STORE_PROFILE -> drawStoreProfile(canvas, 390f, height / s)
             Screen.DETAIL -> drawProductDetail(canvas, 390f, height / s)
             Screen.CHECKOUT -> drawCheckout(canvas, 390f, height / s)
             Screen.QRIS -> drawPayment(canvas, 390f, height / s)
@@ -703,7 +740,8 @@ internal class JajaninView(context: Context) : View(context) {
     private fun navScrollPad(): Float = 82f
 
     private fun canPullRefresh(): Boolean =
-        screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
+        screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.STORE_SEARCH ||
+            screen == Screen.STORE_PROFILE || screen == Screen.ORDERS ||
             screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
             screen == Screen.SELLER_MENU || screen == Screen.CHAT_LIST
 
@@ -732,6 +770,14 @@ internal class JajaninView(context: Context) : View(context) {
             Screen.HOME, Screen.EXPLORE -> {
                 act.refreshProducts(manual = true)
                 act.refreshMyOrders()
+            }
+            Screen.STORE_SEARCH -> {
+                StoreSearchViewModel.triggerSearch(act, immediate = true)
+                android.widget.Toast.makeText(context, "Daftar warung diperbarui", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            Screen.STORE_PROFILE -> {
+                StoreProfileViewModel.loadStoreProfile(act)
+                android.widget.Toast.makeText(context, "Profil warung diperbarui", android.widget.Toast.LENGTH_SHORT).show()
             }
             Screen.ORDERS, Screen.READY -> {
                 act.refreshMyOrders()
@@ -816,7 +862,8 @@ internal class JajaninView(context: Context) : View(context) {
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.ORDERS ||
+                val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE ||
+                    screen == Screen.STORE_SEARCH || screen == Screen.STORE_PROFILE || screen == Screen.ORDERS ||
                     screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
                     screen == Screen.PRODUCT_FORM || screen == Screen.SELLER_MENU || screen == Screen.DEV || screen == Screen.CHECKOUT ||
                     screen == Screen.NOTIF || screen == Screen.EXP_HISTORY || screen == Screen.PROFILE ||
@@ -923,9 +970,25 @@ internal class JajaninView(context: Context) : View(context) {
                             invalidate()
                         }
                     }
-                    // --- Pembeli (buyer): pencarian, katalog, keranjang, checkout ---
+                    // --- Pembeli (buyer): pencarian, katalog, toko, keranjang, checkout ---
                     hit == "search" -> activity()?.showSearchForm()
                     hit == "clearSearch" -> applyQuery("")
+                    hit == "openStoreSearch" -> activity()?.let { StoreSearchViewModel.openStoreDiscovery(it) }
+                    hit == "storeSearchInput" -> activity()?.let { StoreSearchViewModel.showStoreSearchInputDialog(it) }
+                    hit == "storeSearchClear" -> activity()?.let { StoreSearchViewModel.onQueryChanged(it, "", immediate = true) }
+                    hit == "storeSearchReset" -> {
+                        storeSearchCategory = "All"
+                        activity()?.let { StoreSearchViewModel.onQueryChanged(it, "", immediate = true) }
+                    }
+                    hit == "storeSearchRetry" -> activity()?.let { StoreSearchViewModel.triggerSearch(it, immediate = true) }
+                    hit == "storeSearchMore" -> activity()?.let { StoreSearchViewModel.loadNextPage(it) }
+                    hit.startsWith("storeSearchCat:") ->
+                        activity()?.let { StoreSearchViewModel.onCategorySelected(it, hit.substringAfter(':')) }
+                    hit.startsWith("openStore:") ->
+                        activity()?.let { StoreProfileViewModel.openStoreProfile(it, hit.substringAfter(':')) }
+                    hit == "storeProfRetry" -> activity()?.let { StoreProfileViewModel.loadStoreProfile(it) }
+                    hit.startsWith("storeProfCat:") ->
+                        activity()?.let { StoreProfileViewModel.selectCategoryFilter(it, hit.substringAfter(':')) }
                     hit == "buyerRefresh" -> activity()?.refreshProducts(manual = true)
                     hit == "homeProfile" -> selectBuyerTab("Profile")
                     hit.startsWith("fav:") -> activity()?.toggleFavorite(hit.substringAfter(':'))
@@ -945,6 +1008,8 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("item") -> {
                         val id = hit.removePrefix("item:")
                         selectedProduct = products.firstOrNull { it.id == id }
+                            ?: storeProfileProducts.firstOrNull { it.id == id }
+                            ?: sellerProducts.firstOrNull { it.id == id }
                         quantity = 1
                         if (selectedProduct != null) go(Screen.DETAIL)
                     }
@@ -1077,6 +1142,19 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "expRetry" -> activity()?.loadExpPage()
                     hit == "profileQris" -> activity()?.showQrisSettings()
                     hit == "profileStallName" -> activity()?.showStallNameEdit()
+                    hit == "profileStorePublic" -> {
+                        val sid = myStallId?.takeIf { it.isNotBlank() }
+                        if (sid != null) {
+                            activity()?.let { StoreProfileViewModel.openStoreProfile(it, sid) }
+                        } else {
+                            android.widget.Toast.makeText(context, "Lengkapi nama warung terlebih dahulu.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    hit == "profileStoreOpenToggle" -> activity()?.toggleMyStoreOpenStatus()
+                    hit == "profileStoreBio" -> activity()?.showSellerStoreBioEdit()
+                    hit == "profileStoreCategory" -> activity()?.showSellerStoreCategoryPicker()
+                    hit == "profileStoreLogo" -> activity()?.showSellerStoreImageOptions(isBanner = false)
+                    hit == "profileStoreBanner" -> activity()?.showSellerStoreImageOptions(isBanner = true)
                     hit == "qrisPick" -> activity()?.pickQrisImage()
                     hit == "qrisUrl" -> activity()?.showQrisUrlForm()
                     hit.startsWith("tab:") -> selectBuyerTab(hit.removePrefix("tab:"))
@@ -1229,6 +1307,10 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("devStall:") -> {
                         val parts = hit.substringAfter(':').split(':')
                         if (parts.size == 2) activity()?.toggleDevStall(parts[0], parts[1].toBoolean())
+                    }
+                    hit.startsWith("devVerifyStall:") -> {
+                        val parts = hit.substringAfter(':').split(':')
+                        if (parts.size == 2) activity()?.showDevStallVerificationDialog(parts[0], parts[1].toBoolean())
                     }
                     hit.startsWith("devOrder:") -> {
                         val id = hit.substringAfter(':')

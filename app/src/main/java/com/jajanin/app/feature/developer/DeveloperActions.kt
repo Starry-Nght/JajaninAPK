@@ -59,6 +59,8 @@ import com.jajanin.app.feature.buyer.exp.ExpEntry
 import com.jajanin.app.feature.buyer.exp.ExpRepository
 import com.jajanin.app.feature.buyer.exp.expLevel
 import com.jajanin.app.feature.buyer.exp.expNextAt
+import com.jajanin.app.feature.buyer.store_discovery.StoreDiscoveryRepository
+import com.jajanin.app.feature.buyer.store_discovery.StoreSearchViewModel
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -295,11 +297,66 @@ internal fun MainActivity.toggleDevStall(stallId: String, open: Boolean) {
         try {
             DeveloperRepository.toggleStall(stallId, open)
             refreshDeveloper()
+            StoreSearchViewModel.refreshStoreDirectory(self)
             Toast.makeText(self, if (open) "Warung dibuka." else "Warung ditutup.", Toast.LENGTH_SHORT).show()
         } catch (error: Throwable) {
             Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
         }
     }
+}
+
+/** Audited Developer action to revoke or restore a store's Jajanin Verified badge. */
+internal fun MainActivity.showDevStallVerificationDialog(stallId: String, revoke: Boolean) {
+    val self = this
+    val seller = ui.devUsers.firstOrNull { it.stallId == stallId }
+    val storeTitle = seller?.stallName ?: "Warung ini"
+    val input = EditText(this).apply {
+        hint = "Tulis alasan audit (wajib diisi, min. 3 karakter)"
+        minLines = 2
+        gravity = android.view.Gravity.TOP
+    }
+    val box = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 20, 48, 8)
+        addView(input)
+    }
+    val dialogTitle = if (revoke) "Cabut Verifikasi $storeTitle?" else "Pulihkan Verifikasi $storeTitle?"
+    val dialogMsg = if (revoke) {
+        "Lencana Terverifikasi akan dicabut dari pencarian & profil publik warung. Tindakan ini dicatat di log audit."
+    } else {
+        "Pencabutan manual dibersihkan. Lencana otomatis aktif bila warung memiliki minimal 20 pesanan selesai."
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle(dialogTitle)
+        .setMessage(dialogMsg)
+        .setView(box)
+        .setPositiveButton(if (revoke) "Cabut Verifikasi" else "Pulihkan") { _, _ ->
+            val reason = input.text.toString().trim()
+            if (reason.length < 3) {
+                Toast.makeText(self, "Alasan audit wajib diisi minimal 3 karakter.", Toast.LENGTH_SHORT).show()
+                return@setPositiveButton
+            }
+            authScope.launch {
+                try {
+                    StoreDiscoveryRepository.developerSetStoreVerification(
+                        stallId = stallId,
+                        revoke = revoke,
+                        reason = reason,
+                    )
+                    refreshDeveloper()
+                    StoreSearchViewModel.refreshStoreDirectory(self)
+                    Toast.makeText(
+                        self,
+                        if (revoke) "Verifikasi warung dicabut & tercatat di log audit." else "Status verifikasi warung dipulihkan.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                } catch (error: Throwable) {
+                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        .setNegativeButton("Batal", null)
+        .show()
 }
 
 /**
@@ -312,7 +369,7 @@ internal fun MainActivity.toggleDevStall(stallId: String, open: Boolean) {
 internal fun MainActivity.confirmDailyReset() {
     if (ui.devResetting) return
     android.app.AlertDialog.Builder(this).setTitle("Reset harian monitor?")
-        .setMessage("Order aktif akan diselesaikan, riwayat warn/info dibersihkan, dan hitungan ⚠ dinolkan. Riwayat completed/cancelled tetap tersimpan.")
+        .setMessage("Order aktif akan diselesaikan, riwayat warn/info dibersihkan, dan hitungan peringatan dinolkan. Riwayat completed/cancelled tetap tersimpan.")
         .setPositiveButton("Reset") { _, _ -> doDailyReset() }
         .setNegativeButton("Batal", null)
         .show()

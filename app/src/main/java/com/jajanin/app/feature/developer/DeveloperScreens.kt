@@ -9,6 +9,8 @@ import com.jajanin.app.core.ui.DrawKit
 import com.jajanin.app.core.ui.FloatNavItem
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.NavVariant
+import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.drawFloatingNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.navBadge
@@ -88,7 +90,7 @@ internal fun JajaninView.drawDeveloper(c: Canvas, w: Float, h: Float) {
     press(c, "devRefresh", refresh, 6f)
 
     val themeBtn = RectF(208f, 12f, 242f, 48f)
-    kit.centerText(c, if (darkMode) "☾" else "☀", themeBtn, 14f, kit.muted, true)
+    AppIcon.draw(c, "theme", themeBtn.centerX(), themeBtn.centerY(), 15f, kit.ink)
     press(c, "devTheme", themeBtn, 6f)
 
     // Register header hit boxes AFTER restore() or without slideX truncation, generous Y (2..58)
@@ -386,8 +388,15 @@ private fun JajaninView.drawDevUsers(
             val isExpanded = u.id == devSelectedUserId
             val isOnline = u.id in onlineUserIds
             val hasRow2 = u.stallId != null
+            val hasVerifAction = u.stallId != null && (u.stallVerified || u.stallVerificationRevoked)
             val baseH = 66f
-            val expandH = if (isExpanded) (if (hasRow2) 86f else 50f) else 0f
+            val expandH = if (isExpanded) {
+                when {
+                    hasVerifAction -> 122f
+                    hasRow2 -> 86f
+                    else -> 50f
+                }
+            } else 0f
             val rowH = baseH + expandH
 
             if (visible(y, y + rowH)) {
@@ -425,7 +434,7 @@ private fun JajaninView.drawDevUsers(
                         badgeRightX -= w + 4f
                     }
                     u.warningCount > 0 -> {
-                        val w = drawRightBadge(c, kit, "⚠ ${u.warningCount}", badgeRightX, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
+                        val w = drawRightBadge(c, kit, "Warn ${u.warningCount}", badgeRightX, y + 12f, kit.dangerBorder, kit.danger, 8.5f, radius = 4f)
                         badgeRightX -= w + 4f
                     }
                     sellersOnly && u.stallOpen != null -> {
@@ -454,14 +463,25 @@ private fun JajaninView.drawDevUsers(
                     badgeRightX -= w + 4f
                 }
 
-                // Primary Line: Clean Name (+ Store Name for Sellers)
+                // Primary Line: Clean Name (+ Store Name + Verified Badge for Sellers)
                 val titleText = if (sellersOnly && !u.stallName.isNullOrBlank()) {
                     "$cleanName  ·  ${u.stallName}"
                 } else {
                     cleanName
                 }
                 val titleMaxW = (badgeRightX - 76f).coerceIn(130f, 215f)
-                kit.textEllipsized(c, titleText, 68f, y + 25f, titleMaxW, 13.5f, kit.ink, true)
+                StoreVerifiedBadge.drawInlineWithStoreName(
+                    view = this,
+                    c = c,
+                    storeName = titleText,
+                    isVerified = sellersOnly && u.stallVerified,
+                    x = 68f,
+                    baselineY = y + 25f,
+                    maxTotalWidth = titleMaxW,
+                    textSize = 13.5f,
+                    textColor = kit.ink,
+                    bold = true,
+                )
 
                 // Secondary Line: NIS + Kelas + Phone + Email
                 val subParts = mutableListOf<String>()
@@ -469,9 +489,14 @@ private fun JajaninView.drawDevUsers(
                 if (kelas.isNotBlank()) subParts += kelas
                 if (u.phone.isNotBlank()) subParts += displayLocalPhone(u.phone)
                 subParts += u.email
-                kit.textEllipsized(c, subParts.joinToString("  ·  "), 68f, y + 44f, 220f, 10.5f, kit.muted)
+                kit.textEllipsized(c, subParts.joinToString("  ·  "), 68f, y + 44f, 212f, 10.5f, kit.muted)
 
-                kit.textRight(c, "${u.orderCount} pesanan", 370f, y + 44f, 80f, 10.5f, kit.muted)
+                val rightCountLabel = if (sellersOnly && u.stallId != null) {
+                    "${u.stallCompletedOrders} selesai"
+                } else {
+                    "${u.orderCount} pesanan"
+                }
+                kit.textRight(c, rightCountLabel, 370f, y + 44f, 88f, 10.5f, kit.muted)
 
                 bounds.putVisible("devUser:${u.id}", rowRect, HEADER_H, navClear)
                 press(c, "devUser:${u.id}", rowRect, 6f)
@@ -497,7 +522,7 @@ private fun JajaninView.drawDevUsers(
                     bounds.putVisible(if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, HEADER_H, navClear)
                     press(c, if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, 6f)
 
-                    // Row 2: Stall Toggle (for Seller only; developer tidak dapat mengundang user jadi penjual)
+                    // Row 2: Stall Toggle (for Seller only)
                     if (u.stallId != null) {
                         val b3 = RectF(28f, btnY + 38f, 362f, btnY + 68f)
                         val isOpen = u.stallOpen == true
@@ -505,6 +530,23 @@ private fun JajaninView.drawDevUsers(
                         kit.centerText(c, if (isOpen) "Tutup Warung Sementara" else "Buka Kembali Warung", b3, 10.5f, kit.blue, true)
                         bounds.putVisible("devStall:${u.stallId}:${!isOpen}", b3, HEADER_H, navClear)
                         press(c, "devStall:${u.stallId}:${!isOpen}", b3, 6f)
+
+                        // Row 3: Audited Verification Revoke / Restore
+                        if (hasVerifAction) {
+                            val b4 = RectF(28f, btnY + 74f, 362f, btnY + 104f)
+                            val revoking = u.stallVerified
+                            kit.rounded(c, b4, if (revoking) kit.dangerBorder else kit.successSoft, 6f)
+                            kit.centerText(
+                                c,
+                                if (revoking) "Cabut Verifikasi Warung (Audit)" else "Pulihkan Verifikasi Warung (Audit)",
+                                b4,
+                                10.5f,
+                                if (revoking) kit.danger else kit.success,
+                                true,
+                            )
+                            bounds.putVisible("devVerifyStall:${u.stallId}:$revoking", b4, HEADER_H, navClear)
+                            press(c, "devVerifyStall:${u.stallId}:$revoking", b4, 6f)
+                        }
                     }
                 } else {
                     kit.line(c, 20f, y + rowH, 370f, y + rowH, kit.divider)

@@ -11,6 +11,10 @@ import com.jajanin.app.JajaninView
 import com.jajanin.app.core.constants.SERVICE_FEE
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.StoreAvatar
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
+import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawProductImage
@@ -33,13 +37,14 @@ internal fun JajaninView.drawDetail(c: Canvas, w: Float, h: Float) {
     kit.image(c, selected.image, RectF(0f, 0f, w, y))
     val back = RectF(18f, 18f, 58f, 58f)
     kit.rounded(c, back, kit.card, 20f)
-    kit.centerText(c, "‹", back, 27f, kit.ink, true)
+    AppIcon.draw(c, "chevronLeft", back.centerX(), back.centerY(), 20f, kit.ink)
     bounds["back"] = RectF(back)
 
     kit.rounded(c, RectF(0f, y - 18f, w, h + 20f), kit.card, 22f)
     kit.text(c, selected.name, 24f, y + 25f, 23f, kit.ink, true)
     kit.text(c, selected.stall, 24f, y + 49f, 13f, kit.muted)
-    kit.text(c, "★ ${selected.rating}   ·   120+ terjual", 24f, y + 77f, 13f, kit.star, true)
+    AppIcon.draw(c, "star", 31f, y + 72f, 13f, kit.star)
+    kit.text(c, "${selected.rating}   ·   120+ terjual", 42f, y + 77f, 13f, kit.star, true)
     kit.line(c, 24f, y + 97f, w - 24f, y + 97f)
     kit.text(c, "Tentang menu", 24f, y + 127f, 16f, kit.ink, true)
     kit.text(c, "Disiapkan segar oleh penjual kantin pilihan.", 24f, y + 153f, 13f, kit.muted)
@@ -47,12 +52,14 @@ internal fun JajaninView.drawDetail(c: Canvas, w: Float, h: Float) {
     kit.text(c, "waktu istirahatmu.", 24f, y + 196f, 13f, kit.muted)
 
     kit.text(c, "Jumlah", 24f, h - 104f, 14f, kit.ink, true)
+    val minusBtn = RectF(234f, h - 126f, 279f, h - 76f)
+    val plusBtn = RectF(321f, h - 126f, 366f, h - 76f)
     kit.rounded(c, RectF(234f, h - 126f, 366f, h - 76f), kit.bg, 14f, kit.border)
-    kit.text(c, "−", 249f, h - 94f, 23f, kit.blue, true)
+    AppIcon.draw(c, "minus", minusBtn.centerX(), minusBtn.centerY(), 16f, kit.blue)
     kit.text(c, "$quantity", 296f, h - 94f, 15f, kit.ink, true)
-    kit.text(c, "+", 337f, h - 94f, 23f, kit.blue, true)
-    bounds["minus"] = RectF(234f, h - 126f, 279f, h - 76f)
-    bounds["plus"] = RectF(321f, h - 126f, 366f, h - 76f)
+    AppIcon.draw(c, "plus", plusBtn.centerX(), plusBtn.centerY(), 16f, kit.blue)
+    bounds["minus"] = minusBtn
+    bounds["plus"] = plusBtn
 
     val cta = RectF(20f, h - 65f, w - 20f, h - 12f)
     kit.button(c, "Tambah ke keranjang · ${selected.price}", cta)
@@ -65,7 +72,9 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     val bodyTop = 74f
     val bodyBottom = h - 84f
     val lines = cart.entries.mapNotNull { (id, qty) ->
-        val p = products.firstOrNull { it.id == id } ?: sellerProducts.firstOrNull { it.id == id }
+        val p = products.firstOrNull { it.id == id }
+            ?: storeProfileProducts.firstOrNull { it.id == id }
+            ?: sellerProducts.firstOrNull { it.id == id }
         if (p == null || qty <= 0) null else p to qty
     }
     if (lines.isEmpty()) {
@@ -79,7 +88,19 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     val bodySave = c.save()
     c.clipRect(0f, bodyTop, w, bodyBottom)
 
-    kit.text(c, cartStallName.take(30), 22f, 108f + off, 18f, kit.ink, true)
+    val checkoutStoreVerified = cartStallId?.let { storeDirectoryById[it]?.isVerified } == true
+    StoreVerifiedBadge.drawInlineWithStoreName(
+        view = this,
+        c = c,
+        storeName = cartStallName.take(30),
+        isVerified = checkoutStoreVerified,
+        x = 22f,
+        baselineY = 108f + off,
+        maxTotalWidth = 346f,
+        textSize = 18f,
+        textColor = kit.ink,
+        bold = true,
+    )
     kit.text(c, "${lines.sumOf { it.second }} item (${lines.size} menu) di keranjang", 22f, 130f + off, 12f, kit.muted)
     var y = 146f + off
     lines.forEach { (p, qty) ->
@@ -93,10 +114,10 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
             val plus = RectF(274f, y + 44f, 302f, y + 68f)
             val rm = RectF(308f, y + 44f, 358f, y + 68f)
             kit.rounded(c, minus, kit.bg, 8f, kit.border)
-            kit.centerText(c, "−", minus, 15f, kit.blue, true)
+            AppIcon.draw(c, "minus", minus.centerX(), minus.centerY(), 12f, kit.blue)
             kit.centerText(c, "$qty", RectF(244f, y + 44f, 274f, y + 68f), 12f, kit.ink, true)
             kit.rounded(c, plus, kit.bg, 8f, kit.border)
-            kit.centerText(c, "+", plus, 15f, kit.blue, true)
+            AppIcon.draw(c, "plus", plus.centerX(), plus.centerY(), 12f, kit.blue)
             kit.centerText(c, "Hapus", rm, 10f, kit.danger, true)
             bounds.putVisible("cartMinus:${p.id}", minus, topLimit = bodyTop, bottomLimit = bodyBottom)
             bounds.putVisible("cartPlus:${p.id}", plus, topLimit = bodyTop, bottomLimit = bodyBottom)
@@ -136,7 +157,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         10f,
         kit.muted,
     )
-    if (sameSelected) kit.centerText(c, "●", RectF(158f, y + 52f, 182f, y + 76f), 13f, kit.blue, true)
+    if (sameSelected) AppIcon.draw(c, "radioChecked", 170f, y + 64f, 16f, kit.blue)
     bounds.putVisible("orderMode:same_day", sameBox, topLimit = bodyTop, bottomLimit = bodyBottom)
 
     val poSelected = activeMode == "pre_order"
@@ -156,7 +177,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         10f,
         kit.muted,
     )
-    if (poSelected) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, poAccent, true)
+    if (poSelected) AppIcon.draw(c, "radioChecked", 350f, y + 64f, 16f, poAccent)
     bounds.putVisible("orderMode:pre_order", poBox, topLimit = bodyTop, bottomLimit = bodyBottom)
 
     y += 106f
@@ -309,7 +330,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         else -> "Bayar saat ambil · toko belum pasang QRIS"
     }
     kit.textEllipsized(c, cashSub, 34f, y + 79f, (cashBox.width() - 28f).coerceAtLeast(100f), 9.5f, if (cashLockedByPo) poAccent else kit.muted)
-    if (cashOn) kit.centerText(c, "●", RectF(cashBox.right - 32f, y + 52f, cashBox.right - 8f, y + 76f), 13f, kit.blue, true)
+    if (cashOn) AppIcon.draw(c, "radioChecked", cashBox.right - 20f, y + 64f, 16f, kit.blue)
     bounds.putVisible("payMethod:cash", cashBox, topLimit = bodyTop, bottomLimit = bodyBottom)
     if (qrisOffered) {
         val qrisBox = RectF(198f, y + 34f, 372f, y + 92f)
@@ -317,7 +338,7 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         kit.rounded(c, qrisBox, if (cashLockedByPo) kit.warnBox else kit.card, 13f, if (qrisOn) (if (cashLockedByPo) poAccent else kit.blue) else kit.border)
         kit.text(c, if (cashLockedByPo) "QRIS (Wajib)" else "QRIS", 214f, y + 59f, 13f, kit.ink, true)
         kit.text(c, if (cashLockedByPo) "Bayar di muka" else "Scan lalu konfirmasi", 214f, y + 79f, 10f, if (cashLockedByPo) poAccent else kit.muted)
-        if (qrisOn) kit.centerText(c, "●", RectF(338f, y + 52f, 362f, y + 76f), 13f, if (cashLockedByPo) poAccent else kit.blue, true)
+        if (qrisOn) AppIcon.draw(c, "radioChecked", 350f, y + 64f, 16f, if (cashLockedByPo) poAccent else kit.blue)
         bounds.putVisible("payMethod:qris", qrisBox, topLimit = bodyTop, bottomLimit = bodyBottom)
     }
 
@@ -569,32 +590,71 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
 internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     val product = selectedProduct ?: run { goBack(); return }
     c.drawColor(kit.bg)
-    kit.rect(c, 0f, 0f, w, 70f, kit.card)
-    drawIcon(c, "chevronLeft", 27f, 35f, 24f, kit.blue)
-    kit.text(c, "Detail Produk", 60f, 45f, 19f, kit.ink, true)
-    bounds["headerBack"] = RectF(0f, 0f, 54f, 70f)
-    val imgBottom = minOf(h * .38f, 295f)
-    drawProductImage(c, product, RectF(20f, 86f, 370f, imgBottom), 18f)
-    kit.text(c, normalizeCategory(product.category), 22f, imgBottom + 28f, 12f, kit.blue, true)
+    kit.rect(c, 0f, 0f, w, 64f, kit.card)
+    drawIcon(c, "chevronLeft", 27f, 33f, 22f, kit.blue)
+    kit.text(c, "Detail Produk", 58f, 41f, 18.5f, kit.ink, true)
+    bounds["headerBack"] = RectF(0f, 0f, 56f, 64f)
+
+    val imgBottom = minOf(h * .33f, 255f)
+    drawProductImage(c, product, RectF(20f, 76f, 370f, imgBottom), 16f)
+    kit.text(c, normalizeCategory(product.category), 22f, imgBottom + 24f, 12f, kit.blue, true)
     val schedBadge = product.scheduleBadgeLabel
     val schedW = (kit.measure(schedBadge, 10f, true) + 16f).coerceAtMost(170f)
-    val schedPill = RectF(370f - schedW, imgBottom + 13f, 370f, imgBottom + 33f)
+    val schedPill = RectF(370f - schedW, imgBottom + 9f, 370f, imgBottom + 29f)
     val nextOnly = product.orderSchedule == "next_day"
     kit.rounded(c, schedPill, if (nextOnly) kit.warnBox else kit.tint, 6f)
     kit.centerText(c, schedBadge, schedPill, 10f, if (nextOnly) Color.rgb(183, 116, 0) else kit.blue, true)
 
-    kit.text(c, product.name.take(31), 22f, imgBottom + 58f, 22f, kit.ink, true)
-    kit.text(c, formatRupiah(product.priceIdr), 22f, imgBottom + 86f, 19f, kit.ink, true)
+    kit.textEllipsized(c, product.name, 22f, imgBottom + 50f, 346f, 20.5f, kit.ink, true)
+    kit.text(c, formatRupiah(product.priceIdr), 22f, imgBottom + 76f, 18.5f, kit.blue, true)
+
+    var curY = imgBottom + 88f
+
+    // Store Strip (Avatar + Store Name + Verified Badge + Profil Toko button)
+    val stallId = product.stallId?.takeIf { it.isNotBlank() }
+    if (stallId != null) {
+        val storeSummary = storeDirectoryById[stallId]
+        val storeName = storeSummary?.name
+            ?: storeProfileDetail?.takeIf { it.id == stallId }?.name
+            ?: "Lihat Profil Warung"
+        val storeLogo = storeSummary?.logoUrl
+            ?: storeProfileDetail?.takeIf { it.id == stallId }?.logoUrl
+        val storeVerified = storeSummary?.isVerified
+            ?: (storeProfileDetail?.takeIf { it.id == stallId }?.isVerified == true)
+        val storeCard = RectF(20f, curY, 370f, curY + 44f)
+        kit.rounded(c, storeCard, kit.card, 10f, kit.border)
+        val avRect = RectF(28f, curY + 7f, 58f, curY + 37f)
+        StoreAvatar.draw(this, c, storeName, storeLogo, avRect, cornerRadius = 8f)
+        StoreVerifiedBadge.drawInlineWithStoreName(
+            view = this,
+            c = c,
+            storeName = storeName,
+            isVerified = storeVerified,
+            x = 66f,
+            baselineY = curY + 26f,
+            maxTotalWidth = 196f,
+            textSize = 13f,
+            textColor = kit.ink,
+            bold = true,
+        )
+        drawTrailingActionWithArrow(c, "Profil Toko", 358f, curY + 26f, 11f, kit.blue)
+        press(c, "openStore:$stallId", storeCard, 10f)
+        bounds["openStore:$stallId"] = storeCard
+        curY += 54f
+    }
+
     kit.textEllipsized(
         c,
         "Sesi ambil: ${product.parsedPickupSessions.joinToString(" · ")}",
         22f,
-        imgBottom + 108f,
+        curY + 12f,
         346f,
         11.5f,
         kit.blue,
         true,
     )
+    curY += 20f
+
     val poSummary = product.poDatesDisplaySummary
     val poRuleLine = if (product.allowsNextDay) {
         buildList {
@@ -606,41 +666,46 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     } else {
         ""
     }
-    var detailY = imgBottom + 132f
     if (poRuleLine.isNotBlank()) {
         kit.textEllipsized(
             c,
             poRuleLine,
             22f,
-            imgBottom + 126f,
+            curY + 10f,
             346f,
-            11f,
+            10.5f,
             Color.rgb(183, 116, 0),
             true,
         )
-        detailY = imgBottom + 148f
+        curY += 20f
     }
-    kit.text(c, "Deskripsi", 22f, detailY, 14f, kit.ink, true)
-    val lines = product.description.ifBlank { "Belum ada deskripsi produk." }.chunked(43).take(3)
-    var nextY = detailY + 22f
+
+    val detailY = curY + 14f
+    kit.text(c, "Deskripsi", 22f, detailY, 13.5f, kit.ink, true)
+    val lines = product.description.ifBlank { "Belum ada deskripsi produk." }.chunked(45).take(2)
+    var nextY = detailY + 19f
     lines.forEach { line ->
-        kit.text(c, line, 22f, nextY, 12f, kit.muted)
-        nextY += 19f
+        if (nextY < h - 168f) {
+            kit.text(c, line, 22f, nextY, 11.5f, kit.muted)
+            nextY += 17f
+        }
     }
     val cleanIng = product.cleanIngredients
-    if (cleanIng.isNotBlank()) {
-        kit.textEllipsized(c, "Bahan: $cleanIng", 22f, nextY + 2f, 346f, 12f, kit.muted)
-        nextY += 24f
+    if (cleanIng.isNotBlank() && nextY < h - 168f) {
+        kit.textEllipsized(c, "Bahan: $cleanIng", 22f, nextY + 2f, 346f, 11.5f, kit.muted)
     }
+
     val available = product.available && (product.stock == null || product.stock > 0)
-    kit.text(c, if (available) "Tersedia${product.stock?.let { " · Stok $it" }.orEmpty()}" else "Out of Stock", 22f, h - 158f, 13f, if (available) kit.success else kit.danger, true)
-    kit.text(c, "Jumlah", 22f, h - 119f, 14f, kit.ink, true)
-    kit.rounded(c, RectF(220f, h - 145f, 368f, h - 95f), kit.card, 14f, kit.border)
-    kit.centerText(c, "−", RectF(220f, h - 145f, 269f, h - 95f), 22f, kit.blue, true)
-    kit.centerText(c, quantity.toString(), RectF(269f, h - 145f, 319f, h - 95f), 15f, kit.ink, true)
-    kit.centerText(c, "+", RectF(319f, h - 145f, 368f, h - 95f), 22f, kit.blue, true)
-    bounds["minus"] = RectF(220f, h - 145f, 269f, h - 95f)
-    bounds["plus"] = RectF(319f, h - 145f, 368f, h - 95f)
+    kit.text(c, if (available) "Tersedia${product.stock?.let { " · Stok $it" }.orEmpty()}" else "Out of Stock", 22f, h - 154f, 12.5f, if (available) kit.success else kit.danger, true)
+    kit.text(c, "Jumlah", 22f, h - 117f, 14f, kit.ink, true)
+    val minusBox = RectF(220f, h - 143f, 269f, h - 95f)
+    val plusBox = RectF(319f, h - 143f, 368f, h - 95f)
+    kit.rounded(c, RectF(220f, h - 143f, 368f, h - 95f), kit.card, 14f, kit.border)
+    AppIcon.draw(c, "minus", minusBox.centerX(), minusBox.centerY(), 15f, kit.blue)
+    kit.centerText(c, quantity.toString(), RectF(269f, h - 143f, 319f, h - 95f), 15f, kit.ink, true)
+    AppIcon.draw(c, "plus", plusBox.centerX(), plusBox.centerY(), 15f, kit.blue)
+    bounds["minus"] = minusBox
+    bounds["plus"] = plusBox
     val askBtn = RectF(20f, h - 74f, 148f, h - 18f)
     kit.rounded(c, askBtn, kit.card, 14f, kit.blue)
     drawIcon(c, "chat", 39f, askBtn.centerY(), 14f, kit.blue)
