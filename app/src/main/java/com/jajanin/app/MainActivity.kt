@@ -35,6 +35,7 @@ import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.LiquidGlassNavHost
 import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.isTerminalStatus
 import com.jajanin.app.core.ui.showThemedInfo
 import com.jajanin.app.core.ui.showThemedOptions
@@ -84,6 +85,7 @@ class MainActivity : Activity() {
     /** Akses tema gelap untuk helper dialog bertema. */
     internal fun isDarkMode(): Boolean = ui.darkMode
     internal val authScope = CoroutineScope(Dispatchers.Main)
+    internal lateinit var inlineSearch: InlineSearchOverlay
     internal lateinit var loginOverlay: NativeLoginOverlay
     internal var pendingPasswordRecovery = false
     internal var adminObserver: OrderObserver? = null
@@ -374,8 +376,13 @@ class MainActivity : Activity() {
             ),
         )
         LiquidGlassNavHost(this, root, ui)
+        inlineSearch = InlineSearchOverlay(this, root)
+        ui.inlineSearchBoundsListener = { rect, scale, textSize ->
+            inlineSearch.syncCanvasBounds(rect, scale, textSize)
+        }
         loginOverlay = NativeLoginOverlay(this, root)
         ui.screenChangedListener = { screen ->
+            inlineSearch.dismiss()
             val isLogin = screen == Screen.LOGIN
             if (isLogin) {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
@@ -531,6 +538,7 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        inlineSearch.dismiss()
         autoRefreshJob?.cancel()
         autoRefreshJob = null
         stopOnlinePresence()
@@ -933,46 +941,7 @@ class MainActivity : Activity() {
     internal var searchDialog: Dialog? = null
 
     fun showSearchForm() {
-        val open = searchDialog
-        if (open != null && open.isShowing) {
-            open.findViewById<EditText>(R.id.searchInput)?.requestFocus()
-            return
-        }
-        val dialog = Dialog(this).apply {
-            setContentView(R.layout.dialog_search)
-            window?.setBackgroundDrawableResource(android.R.color.transparent)
-            setOnDismissListener { searchDialog = null }
-        }
-        searchDialog = dialog
-        val input = dialog.findViewById<EditText>(R.id.searchInput)
-        val apply = dialog.findViewById<Button>(R.id.searchApply)
-        val clear = dialog.findViewById<TextView>(R.id.searchClear)
-
-        input.setText(ui.query)
-        input.setSelection(ui.query.length)
-        clear.visibility = if (ui.query.isEmpty()) View.GONE else View.VISIBLE
-
-        input.imeOptions = EditorInfo.IME_ACTION_SEARCH
-        input.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
-                submitSearch(dialog, input)
-                true
-            } else false
-        }
-        apply.setOnClickListener { submitSearch(dialog, input) }
-        clear.setOnClickListener {
-            ui.applyQuery("")
-            dialog.dismiss()
-        }
-
-        dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        input.requestFocus()
-        input.post {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-        }
+        inlineSearch.open(InlineSearchOverlay.TARGET_MENU)
     }
 
     internal fun submitSearch(dialog: Dialog, input: EditText) {
@@ -1182,6 +1151,10 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (inlineSearch.isActive()) {
+            inlineSearch.dismiss()
+            return
+        }
         if (ui.currentScreen == Screen.LOGIN && loginOverlay.handleBack()) return
         if (!ui.goBack()) super.onBackPressed()
     }

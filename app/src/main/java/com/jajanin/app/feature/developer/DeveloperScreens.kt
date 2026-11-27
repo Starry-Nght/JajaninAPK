@@ -10,6 +10,7 @@ import com.jajanin.app.core.ui.FloatNavItem
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.NavVariant
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.drawFloatingNav
 import com.jajanin.app.core.ui.drawIcon
@@ -298,20 +299,35 @@ private fun JajaninView.drawDevUsers(
     var y = HEADER_H + 14f + off
     fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
 
-    // Search Input (Clean subtle bar, Radius 8f)
+    // Search Input (Direct inline typing, Radius 8f, no popup dialog)
     val search = RectF(20f, y, 370f, y + 38f)
+    val devSearchFocused = inlineSearchActiveTarget == InlineSearchOverlay.TARGET_DEV
     if (visible(search.top, search.bottom)) {
-        kit.rounded(c, search, kit.card, 8f, if (devQuery.isNotBlank()) kit.blue else kit.border)
-        drawIcon(c, "search", search.left + 16f, search.centerY(), 14f, kit.muted)
-        val placeholder = if (sellersOnly) "Cari nama penjual, NIS, atau nama toko..." else "Cari nama pembeli, NIS, atau email..."
-        val queryText = if (devQuery.isBlank()) placeholder else devQuery
-        val queryColor = if (devQuery.isBlank()) kit.muted else kit.ink
-        kit.textEllipsized(c, queryText, search.left + 34f, search.centerY() + 4f, 296f, 11.5f, queryColor, devQuery.isNotBlank())
-        if (devQuery.isNotBlank()) {
-            drawIcon(c, "close", search.right - 16f, search.centerY(), 12f, kit.muted)
+        val searchActive = devSearchFocused || devQuery.isNotBlank()
+        kit.rounded(c, search, kit.card, 8f, if (searchActive) kit.blue else kit.border)
+        drawIcon(c, "search", search.left + 16f, search.centerY(), 14f, if (searchActive) kit.blue else kit.muted)
+        if (devSearchFocused) {
+            setInlineSearchFieldBounds(
+                left = search.left + 34f,
+                top = search.top,
+                right = if (devQuery.isNotBlank()) 336f else 360f,
+                bottom = search.bottom,
+                textSize = 11.5f,
+            )
+        } else {
+            val placeholder = if (sellersOnly) "Cari nama penjual, NIS, atau nama toko..." else "Cari nama pembeli, NIS, atau email..."
+            val queryText = if (devQuery.isBlank()) placeholder else devQuery
+            val queryColor = if (devQuery.isBlank()) kit.muted else kit.ink
+            kit.textEllipsized(c, queryText, search.left + 34f, search.centerY() + 4f, 296f, 11.5f, queryColor, devQuery.isNotBlank())
         }
-        bounds.putVisible("devSearch", search, HEADER_H, navClear)
-        press(c, "devSearch", search, 8f)
+        if (devQuery.isNotBlank()) {
+            val clearHit = RectF(338f, y + 4f, 368f, y + 34f)
+            drawIcon(c, "close", clearHit.centerX(), clearHit.centerY(), 12f, kit.muted)
+            bounds.putVisible("devSearchClear", clearHit, HEADER_H, navClear)
+        }
+        val inputHit = RectF(20f, y, if (devQuery.isNotBlank()) 336f else 370f, y + 38f)
+        bounds.putVisible("devSearch", inputHit, HEADER_H, navClear)
+        press(c, "devSearch", inputHit, 8f)
     }
     y += 48f
 

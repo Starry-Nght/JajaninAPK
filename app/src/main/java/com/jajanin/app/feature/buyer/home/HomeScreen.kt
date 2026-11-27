@@ -6,6 +6,7 @@ import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.drawBottomNav
@@ -77,23 +78,35 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
         y += 58f
     }
 
-    // 3. Crisp Search Field + Store Discovery Button
+    // 3. Crisp Inline Search Field + Store Discovery Button (Direct in-box typing, no popup)
     val search = RectF(20f, y, 290f, y + 42f)
     val storeBtn = RectF(298f, y, 370f, y + 42f)
+    val menuSearchFocused = inlineSearchActiveTarget == InlineSearchOverlay.TARGET_MENU
     if (isVisible(search.top, search.bottom)) {
-        kit.rounded(c, search, kit.card, 8f, kit.border)
-        AppIcon.draw(c, "search", 35f, search.centerY(), 15f, kit.muted)
-        val searchText = if (query.isBlank()) "Cari menu atau minuman..." else query
-        kit.textEllipsized(
-            c,
-            searchText,
-            52f,
-            y + 26f,
-            if (query.isBlank()) 228f else 202f,
-            13f,
-            if (query.isBlank()) kit.muted else kit.ink,
-            query.isNotBlank()
-        )
+        val searchActive = menuSearchFocused || query.isNotBlank()
+        kit.rounded(c, search, kit.card, 8f, if (searchActive) kit.blue else kit.border)
+        AppIcon.draw(c, "search", 35f, search.centerY(), 15f, if (searchActive) kit.blue else kit.muted)
+        if (menuSearchFocused) {
+            setInlineSearchFieldBounds(
+                left = 52f,
+                top = search.top,
+                right = if (query.isNotBlank()) 256f else 282f,
+                bottom = search.bottom,
+                textSize = 13f,
+            )
+        } else {
+            val searchText = if (query.isBlank()) "Cari menu atau minuman..." else query
+            kit.textEllipsized(
+                c,
+                searchText,
+                52f,
+                y + 26f,
+                if (query.isBlank()) 228f else 202f,
+                13f,
+                if (query.isBlank()) kit.muted else kit.ink,
+                query.isNotBlank()
+            )
+        }
         if (query.isNotBlank()) {
             val clearRect = RectF(258f, y + 7f, 286f, y + 35f)
             AppIcon.draw(c, "close", clearRect.centerX(), clearRect.centerY(), 12f, kit.muted)

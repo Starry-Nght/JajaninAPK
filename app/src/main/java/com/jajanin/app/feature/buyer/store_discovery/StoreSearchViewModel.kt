@@ -1,10 +1,5 @@
 package com.jajanin.app.feature.buyer.store_discovery
 
-import android.content.Context
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
-import android.widget.LinearLayout
 import com.jajanin.app.MainActivity
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.data.repository.SupabaseRepository
@@ -156,56 +151,6 @@ internal object StoreSearchViewModel {
                 activity.ui.storeDirectoryById = map
                 activity.ui.invalidate()
             }
-        }
-    }
-
-    /** Opens a live debounced search dialog for store names & categories. */
-    fun showStoreSearchInputDialog(activity: MainActivity) {
-        val input = EditText(activity).apply {
-            hint = "Ketik nama warung atau kategori..."
-            setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
-            setText(activity.ui.storeSearchQuery)
-            setSelection(activity.ui.storeSearchQuery.length)
-        }
-        input.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: android.text.Editable?) {
-                onQueryChanged(activity, s?.toString().orEmpty(), immediate = false)
-            }
-        })
-        val container = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 8)
-            addView(input)
-        }
-        val dialog = android.app.AlertDialog.Builder(activity)
-            .setTitle("Cari Warung / Toko")
-            .setView(container)
-            .setPositiveButton("Cari") { _, _ ->
-                onQueryChanged(activity, input.text?.toString().orEmpty(), immediate = true)
-            }
-            .setNeutralButton("Hapus") { _, _ ->
-                onQueryChanged(activity, "", immediate = true)
-            }
-            .setNegativeButton("Tutup", null)
-            .create()
-
-        input.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                onQueryChanged(activity, input.text?.toString().orEmpty(), immediate = true)
-                dialog.dismiss()
-                true
-            } else {
-                false
-            }
-        }
-        dialog.show()
-        input.requestFocus()
-        input.post {
-            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
         }
     }
 }

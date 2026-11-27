@@ -21,6 +21,7 @@ import com.jajanin.app.core.ui.DrawKit
 import com.jajanin.app.core.ui.HERO_TOP_OFFSET
 import com.jajanin.app.core.ui.NavSpec
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.drawAbout
 import com.jajanin.app.core.ui.drawHelp
 import com.jajanin.app.core.ui.drawIcon
@@ -229,6 +230,24 @@ internal class JajaninView(context: Context) : View(context) {
     internal var storeProfileCategoryFilter: String = "All"
     internal var storeProfileLoading: Boolean = false
     internal var storeProfileError: String? = null
+    // --- Inline Direct Search Input state (no popup dialog) ---
+    internal var inlineSearchActiveTarget: String? = null
+    private val inlineSearchRect = RectF()
+    private var inlineSearchHasRect = false
+    private var inlineSearchVirtualTextSize = 13f
+    internal var inlineSearchBoundsListener: ((RectF?, Float, Float) -> Unit)? = null
+
+    internal fun setInlineSearchFieldBounds(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        textSize: Float = 13f,
+    ) {
+        inlineSearchRect.set(left, top, right, bottom)
+        inlineSearchHasRect = true
+        inlineSearchVirtualTextSize = textSize
+    }
     // --- Developer dashboard state ---
     internal var devTab = "Overview"
     internal var devStats = DevStats()
@@ -446,6 +465,7 @@ internal class JajaninView(context: Context) : View(context) {
         invalidate()
         themeChangedListener?.invoke()
         loginThemeListener?.invoke(dark)
+        activity()?.inlineSearch?.applyTheme()
     }
 
     internal fun canGoBack(): Boolean = history.isNotEmpty()
@@ -482,6 +502,7 @@ internal class JajaninView(context: Context) : View(context) {
      * kontrak lama: "tab:" = pembeli, "stab:" = penjual.
      */
     internal fun selectNavTab(prefix: String, label: String) {
+        activity()?.inlineSearch?.dismiss()
         when (prefix) {
             "stab:" -> selectSellerTab(label)
             "dtab:" -> selectDevTab(label)
@@ -680,6 +701,7 @@ internal class JajaninView(context: Context) : View(context) {
             slideX = 0f
         }
         bounds.clear()
+        inlineSearchHasRect = false
         // Layar yang tidak memanggil drawFloatingNav otomatis tidak punya dock.
         navSpec = null
         navBadgeIndex = -1
@@ -726,6 +748,11 @@ internal class JajaninView(context: Context) : View(context) {
         }
         drawPullRefreshBanner(canvas)
         canvas.restore()
+        inlineSearchBoundsListener?.invoke(
+            if (inlineSearchHasRect) inlineSearchRect else null,
+            s,
+            inlineSearchVirtualTextSize,
+        )
         val spec = navSpec?.copy(badgeIndex = navBadgeIndex, badgeCount = navBadgeCount)
         if (spec != lastPresentedNavSpec) {
             lastPresentedNavSpec = spec
@@ -856,6 +883,16 @@ internal class JajaninView(context: Context) : View(context) {
                 // Sama seperti dispatch di ACTION_UP (terbalik) supaya highlight
                 // menunjuk kontrol yang benar saat area tumpang tindih.
                 val hitKey = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key
+                if (inlineSearchActiveTarget != null &&
+                    hitKey != "search" &&
+                    hitKey != "clearSearch" &&
+                    hitKey != "storeSearchInput" &&
+                    hitKey != "storeSearchClear" &&
+                    hitKey != "devSearch" &&
+                    hitKey != "devSearchClear"
+                ) {
+                    activity()?.inlineSearch?.dismiss()
+                }
                 pressedKey = hitKey
                 pressedTab = hitKey?.takeIf { it.startsWith("tab:") }
                 if (pressedKey != null) invalidate()
@@ -879,7 +916,10 @@ internal class JajaninView(context: Context) : View(context) {
                         swipeMode = 1
                         moved = true
                     }
-                    if (swipeMode != 0 && (pressedTab != null || pressedKey != null)) {
+                    if (swipeMode != 0 && (pressedTab != null || pressedKey != null || inlineSearchActiveTarget != null)) {
+                        if (inlineSearchActiveTarget != null) {
+                            activity()?.inlineSearch?.dismiss()
+                        }
                         pressedTab = null
                         pressedKey = null
                         invalidate()
@@ -971,11 +1011,23 @@ internal class JajaninView(context: Context) : View(context) {
                         }
                     }
                     // --- Pembeli (buyer): pencarian, katalog, toko, keranjang, checkout ---
-                    hit == "search" -> activity()?.showSearchForm()
-                    hit == "clearSearch" -> applyQuery("")
+                    hit == "search" -> activity()?.inlineSearch?.open(InlineSearchOverlay.TARGET_MENU)
+                    hit == "clearSearch" -> {
+                        if (inlineSearchActiveTarget == InlineSearchOverlay.TARGET_MENU) {
+                            activity()?.inlineSearch?.clearText()
+                        } else {
+                            applyQuery("")
+                        }
+                    }
                     hit == "openStoreSearch" -> activity()?.let { StoreSearchViewModel.openStoreDiscovery(it) }
-                    hit == "storeSearchInput" -> activity()?.let { StoreSearchViewModel.showStoreSearchInputDialog(it) }
-                    hit == "storeSearchClear" -> activity()?.let { StoreSearchViewModel.onQueryChanged(it, "", immediate = true) }
+                    hit == "storeSearchInput" -> activity()?.inlineSearch?.open(InlineSearchOverlay.TARGET_STORE)
+                    hit == "storeSearchClear" -> {
+                        if (inlineSearchActiveTarget == InlineSearchOverlay.TARGET_STORE) {
+                            activity()?.inlineSearch?.clearText()
+                        } else {
+                            activity()?.let { StoreSearchViewModel.onQueryChanged(it, "", immediate = true) }
+                        }
+                    }
                     hit == "storeSearchReset" -> {
                         storeSearchCategory = "All"
                         activity()?.let { StoreSearchViewModel.onQueryChanged(it, "", immediate = true) }
@@ -1278,7 +1330,16 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "theme" -> activity()?.showThemePicker()
 
                     // --- Developer / super admin ---
-                    hit == "devSearch" -> activity()?.showDevSearch()
+                    hit == "devSearch" -> activity()?.inlineSearch?.open(InlineSearchOverlay.TARGET_DEV)
+                    hit == "devSearchClear" -> {
+                        if (inlineSearchActiveTarget == InlineSearchOverlay.TARGET_DEV) {
+                            activity()?.inlineSearch?.clearText()
+                        } else {
+                            devQuery = ""
+                            scroll = 0f
+                            invalidate()
+                        }
+                    }
                     hit == "devReset" -> activity()?.confirmDailyReset()
                     hit == "devResetQuotas" -> activity()?.confirmResetAllQuotas()
                     hit.startsWith("devResetUserQuota:") -> activity()?.confirmResetUserQuota(hit.substringAfter(':'))

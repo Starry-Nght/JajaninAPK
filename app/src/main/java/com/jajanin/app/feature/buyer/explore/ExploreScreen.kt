@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
@@ -45,16 +46,43 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
 
     val off = -scroll
 
-    // Cari: baris garis-bawah membuka dialog cari + pintasan Cari Warung.
-    AppIcon.draw(c, "search", 30f, 109f + off, 17f, kit.muted)
-    kit.textEllipsized(c, if (query.isBlank()) "Cari nama menu..." else query, 50f, 114f + off, 210f, 14f, if (query.isBlank()) kit.muted else kit.ink)
-    val storePill = RectF(272f, 94f + off, 370f, 124f + off)
+    // Cari langsung di dalam kotak input + pintasan Cari Warung (tanpa popup dialog).
+    val searchBox = RectF(20f, 88f + off, 264f, 128f + off)
+    val exploreSearchFocused = inlineSearchActiveTarget == InlineSearchOverlay.TARGET_MENU
+    val searchActive = exploreSearchFocused || query.isNotBlank()
+    kit.rounded(c, searchBox, kit.card, 8f, if (searchActive) kit.blue else kit.border)
+    AppIcon.draw(c, "search", 35f, searchBox.centerY(), 15f, if (searchActive) kit.blue else kit.muted)
+    if (exploreSearchFocused) {
+        setInlineSearchFieldBounds(
+            left = 50f,
+            top = searchBox.top,
+            right = if (query.isNotBlank()) 232f else 256f,
+            bottom = searchBox.bottom,
+            textSize = 13f,
+        )
+    } else {
+        kit.textEllipsized(
+            c,
+            if (query.isBlank()) "Cari nama menu..." else query,
+            50f,
+            searchBox.top + 25f,
+            if (query.isBlank()) 206f else 180f,
+            13f,
+            if (query.isBlank()) kit.muted else kit.ink,
+            query.isNotBlank(),
+        )
+    }
+    if (query.isNotBlank()) {
+        val clearHit = RectF(234f, searchBox.top + 6f, 262f, searchBox.bottom - 6f)
+        AppIcon.draw(c, "close", clearHit.centerX(), clearHit.centerY(), 12f, kit.muted)
+        bounds["clearSearch"] = clearHit
+    }
+    val storePill = RectF(272f, 88f + off, 370f, 128f + off)
     kit.rounded(c, storePill, kit.tint, 8f, kit.blue)
     AppIcon.draw(c, "store", storePill.left + 15f, storePill.centerY(), 13f, kit.blue)
     kit.text(c, "Cari Warung", storePill.left + 26f, storePill.centerY() + 3.8f, 10.5f, kit.blue, true)
     press(c, "openStoreSearch", storePill, 8f)
-    kit.line(c, 20f, 130f + off, w - 20f, 130f + off)
-    bounds["search"] = RectF(20f, 88f + off, 266f, 128f + off)
+    bounds["search"] = RectF(20f, searchBox.top, if (query.isNotBlank()) 232f else 264f, searchBox.bottom)
     bounds["openStoreSearch"] = storePill
 
     // Kategori: chip pil ringkas.

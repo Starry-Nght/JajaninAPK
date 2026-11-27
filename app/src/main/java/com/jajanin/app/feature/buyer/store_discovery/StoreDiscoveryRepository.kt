@@ -12,7 +12,7 @@ import kotlinx.serialization.json.put
 
 internal val STORE_DISCOVERY_CATEGORIES = listOf(
     "All" to "Semua",
-    "Open" to "Sedang Buka",
+    "Open" to "Buka",
     "Verified" to "Terverifikasi",
     "Food" to "Makanan",
     "Drinks" to "Minuman",

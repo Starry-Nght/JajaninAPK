@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 
@@ -26,23 +27,35 @@ internal fun JajaninView.drawStoreSearch(c: Canvas, w: Float, h: Float) {
 
     var y = 88f + off
 
-    // 1. Search Input Bar (Debounced live search dialog + clear button)
+    // 1. Inline Search Input Bar (Direct in-box debounced live typing, no popup dialog)
     val searchBar = RectF(20f, y, 370f, y + 44f)
+    val storeSearchFocused = inlineSearchActiveTarget == InlineSearchOverlay.TARGET_STORE
     if (searchBar.bottom >= HEADER_TOP_LIMIT && searchBar.top <= bottomLimit) {
-        kit.rounded(c, searchBar, kit.card, 10f, if (storeSearchQuery.isNotBlank()) kit.blue else kit.border)
-        AppIcon.draw(c, "search", 38f, searchBar.centerY(), 16f, if (storeSearchQuery.isNotBlank()) kit.blue else kit.muted)
-        val placeholder = "Cari nama warung, kategori, atau menu..."
-        val textToDraw = storeSearchQuery.ifBlank { placeholder }
-        kit.textEllipsized(
-            c,
-            textToDraw,
-            56f,
-            y + 27f,
-            if (storeSearchQuery.isBlank()) 298f else 272f,
-            13f,
-            if (storeSearchQuery.isBlank()) kit.muted else kit.ink,
-            storeSearchQuery.isNotBlank(),
-        )
+        val barActive = storeSearchFocused || storeSearchQuery.isNotBlank()
+        kit.rounded(c, searchBar, kit.card, 10f, if (barActive) kit.blue else kit.border)
+        AppIcon.draw(c, "search", 38f, searchBar.centerY(), 16f, if (barActive) kit.blue else kit.muted)
+        if (storeSearchFocused) {
+            setInlineSearchFieldBounds(
+                left = 56f,
+                top = searchBar.top,
+                right = if (storeSearchQuery.isNotBlank()) 332f else 360f,
+                bottom = searchBar.bottom,
+                textSize = 13f,
+            )
+        } else {
+            val placeholder = "Cari nama warung, kategori, atau menu..."
+            val textToDraw = storeSearchQuery.ifBlank { placeholder }
+            kit.textEllipsized(
+                c,
+                textToDraw,
+                56f,
+                y + 27f,
+                if (storeSearchQuery.isBlank()) 298f else 272f,
+                13f,
+                if (storeSearchQuery.isBlank()) kit.muted else kit.ink,
+                storeSearchQuery.isNotBlank(),
+            )
+        }
         if (storeSearchQuery.isNotBlank()) {
             val clearHit = RectF(334f, y + 6f, 366f, y + 38f)
             AppIcon.draw(c, "close", clearHit.centerX(), clearHit.centerY(), 13f, kit.muted)
@@ -63,7 +76,7 @@ internal fun JajaninView.drawStoreSearch(c: Canvas, w: Float, h: Float) {
         STORE_DISCOVERY_CATEGORIES.forEach { (catKey, label) ->
             val active = storeSearchCategory == catKey
             val extraIcon = if (catKey == "Verified") 14f else 0f
-            val chipW = kit.measure(label, 11f, true) + 20f + extraIcon
+            val chipW = kit.measure(label, 10.5f, true) + 16f + extraIcon
             if (cx + chipW <= 374f) {
                 val chip = RectF(cx, y, cx + chipW, y + 30f)
                 kit.rounded(
@@ -77,26 +90,26 @@ internal fun JajaninView.drawStoreSearch(c: Canvas, w: Float, h: Float) {
                     AppIcon.draw(
                         c,
                         "verified",
-                        cx + 13f,
+                        cx + 12f,
                         chip.centerY(),
-                        12f,
+                        11.5f,
                         if (active) Color.WHITE else kit.blue,
                     )
                     kit.text(
                         c,
                         label,
-                        cx + 22f,
+                        cx + 20f,
                         chip.centerY() + 3.8f,
-                        11f,
+                        10.5f,
                         if (active) Color.WHITE else kit.ink,
                         true,
                     )
                 } else {
-                    kit.centerText(c, label, chip, 11f, if (active) Color.WHITE else kit.ink, true)
+                    kit.centerText(c, label, chip, 10.5f, if (active) Color.WHITE else kit.ink, true)
                 }
                 press(c, "storeSearchCat:$catKey", chip, 15f)
                 bounds.putVisible("storeSearchCat:$catKey", chip, topLimit = HEADER_TOP_LIMIT, bottomLimit = bottomLimit)
-                cx += chipW + 6f
+                cx += chipW + 5f
             }
         }
     }
