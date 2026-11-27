@@ -46,6 +46,7 @@ internal object AppIcon {
         "search" -> R.drawable.ic_app_search
         "store" -> R.drawable.ic_app_store
         "verified" -> R.drawable.ic_store_verified
+        "devBadge", "dev" -> R.drawable.ic_dev_badge
         "chevronLeft" -> R.drawable.ic_app_chevron_left
         "chevronRight" -> R.drawable.ic_app_chevron_right
         "chevronDown" -> R.drawable.ic_app_chevron_down
@@ -77,6 +78,7 @@ internal object AppIcon {
         "search" -> "Cari"
         "store" -> "Toko"
         "verified" -> "Toko Terverifikasi Jajanin"
+        "devBadge", "dev" -> "Developer Resmi Jajanin"
         "chevronLeft", "arrowLeft" -> "Kembali"
         "chevronRight", "arrowRight" -> "Lanjut"
         "chevronDown" -> "Buka daftar"

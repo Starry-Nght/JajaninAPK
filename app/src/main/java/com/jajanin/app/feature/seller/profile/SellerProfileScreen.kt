@@ -67,18 +67,27 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
             height = 20f,
             size = 9.5f,
         )
+        val isDevSeller = StoreVerifiedBadge.isDevIdentity(
+            view = this,
+            name = stall,
+            nis = myNis,
+            stallId = myStallId.orEmpty(),
+        )
         val nameWidth = (statusRect.left - 84f - 10f).coerceAtLeast(90f)
         StoreVerifiedBadge.drawInlineWithStoreName(
             view = this,
             c = c,
             storeName = stall,
-            isVerified = myStallIsVerified,
+            isVerified = myStallIsVerified || isDevSeller,
             x = 84f,
             baselineY = y + 19f,
             maxTotalWidth = nameWidth,
             textSize = 16.5f,
             textColor = kit.ink,
             bold = true,
+            isDev = isDevSeller,
+            nis = myNis,
+            stallId = myStallId.orEmpty(),
         )
         val ownerWithNis = buildString {
             append("Pemilik: $ownerName")
@@ -143,11 +152,17 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
     }
     y += 62f
 
-    // 2a. Automatic Store Verification Progress Card (Server-managed 20+ completed orders)
+    // 2a. Automatic Store Verification Progress Card (Server-managed 20+ completed orders or Official Dev)
+    val isDevSellerBadge = StoreVerifiedBadge.isDevIdentity(
+        view = this,
+        name = myStallName,
+        nis = myNis,
+        stallId = myStallId.orEmpty(),
+    )
     val verifCard = RectF(20f, y, 370f, y + 56f)
     if (visible(verifCard.top, verifCard.bottom)) {
         sellerSurface(c, verifCard)
-        if (myStallIsVerified) {
+        if (myStallIsVerified || isDevSellerBadge) {
             StoreVerifiedBadge.drawPill(
                 view = this,
                 c = c,
@@ -156,6 +171,7 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
                 label = "Terverifikasi Jajanin",
                 height = 20f,
                 textSize = 9.5f,
+                isDev = isDevSellerBadge,
             )
             kit.textEllipsized(
                 c,

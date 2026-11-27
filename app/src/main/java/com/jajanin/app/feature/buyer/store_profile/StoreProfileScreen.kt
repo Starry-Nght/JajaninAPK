@@ -148,6 +148,8 @@ internal fun JajaninView.drawStoreProfile(c: Canvas, w: Float, h: Float) {
             textSize = 16.5f,
             textColor = kit.ink,
             bold = true,
+            ownerId = collapsedStore.ownerId.orEmpty(),
+            stallId = collapsedStore.id,
         )
         if (!isOwnCollapsed) {
             val topChatBtn = RectF(294f, 16f, 370f, 44f)

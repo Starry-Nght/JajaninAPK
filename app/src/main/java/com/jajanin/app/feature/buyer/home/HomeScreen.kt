@@ -453,18 +453,38 @@ private fun JajaninView.drawCleanTopHeader(c: Canvas, cartCount: Int) {
         kit.rounded(c, dot, kit.danger, 4f)
     }
 
-    // Right 3: Profile Avatar + Short Name
+    // Right 3: Profile Avatar + Short Name (+ Verified & Dev emblem for NIS 11855)
     val rawName = myDisplayName.trim().ifBlank { "Profil" }
     val shortName = rawName.substringBefore(' ').take(8)
     val initial = (rawName.firstOrNull() ?: 'P').uppercaseChar().toString()
     val profText = shortName
-    val profTextW = kit.measure(profText, 11.5f, true).coerceAtMost(84f)
-    val profW = 24f + 6f + profTextW
+    val isDevHeader = StoreVerifiedBadge.isDevIdentity(
+        view = this,
+        name = rawName,
+        nis = myNis,
+        stallId = myStallId.orEmpty(),
+    )
+    val badgeExtraW = if (isDevHeader) 30f else 0f
+    val profTextW = kit.measure(profText, 11.5f, true).coerceAtMost(72f)
+    val profW = 24f + 6f + profTextW + badgeExtraW
     val profBtn = RectF(inboxBtn.left - 10f - profW, 16f, inboxBtn.left - 10f, 44f)
     val avatar = RectF(profBtn.left, 18f, profBtn.left + 24f, 42f)
     kit.rounded(c, avatar, kit.tint, 12f)
     kit.centerText(c, initial, avatar, 11f, kit.blue, true)
-    kit.textEllipsized(c, profText, avatar.right + 6f, 34.5f, 84f, 11.5f, kit.ink, true)
+    StoreVerifiedBadge.drawInlineWithStoreName(
+        view = this,
+        c = c,
+        storeName = profText,
+        isVerified = isDevHeader,
+        x = avatar.right + 6f,
+        baselineY = 34.5f,
+        maxTotalWidth = 72f + badgeExtraW,
+        textSize = 11.5f,
+        textColor = kit.ink,
+        bold = true,
+        isDev = isDevHeader,
+        nis = myNis,
+    )
     bounds["homeProfile"] = profBtn
 
     c.restore()

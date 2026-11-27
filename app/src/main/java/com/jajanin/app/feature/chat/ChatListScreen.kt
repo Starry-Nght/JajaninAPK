@@ -6,6 +6,7 @@ import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.press
@@ -207,11 +208,32 @@ private fun JajaninView.drawConversationItem(
             )
         }
 
-        // Row 1: Counterparty Title + Time Label
+        // Row 1: Counterparty Title (+ Verified / Dev badge) + Time Label
         val timeText = convo.timeLabel
         val timeW = kit.measure(timeText, 10f, hasUnread)
         val titleMaxW = (356f - 86f - timeW - 10f).coerceAtLeast(110f)
-        kit.textEllipsized(c, title, 86f, top + 27f, titleMaxW, 13.5f, kit.ink, true)
+        val peerStoreVerified = !convo.stallId.isNullOrBlank() && storeDirectoryById[convo.stallId]?.isVerified == true
+        val peerIsDev = StoreVerifiedBadge.isDevIdentity(
+            view = this,
+            name = title,
+            ownerId = convo.counterpartyId,
+            stallId = convo.stallId.orEmpty(),
+        )
+        StoreVerifiedBadge.drawInlineWithStoreName(
+            view = this,
+            c = c,
+            storeName = title,
+            isVerified = peerStoreVerified || peerIsDev,
+            x = 86f,
+            baselineY = top + 27f,
+            maxTotalWidth = titleMaxW,
+            textSize = 13.5f,
+            textColor = kit.ink,
+            bold = true,
+            isDev = peerIsDev,
+            ownerId = convo.counterpartyId,
+            stallId = convo.stallId.orEmpty(),
+        )
         kit.textRight(
             c,
             timeText,

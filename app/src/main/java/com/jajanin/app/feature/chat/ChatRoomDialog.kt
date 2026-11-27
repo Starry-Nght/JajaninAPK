@@ -31,6 +31,7 @@ import com.jajanin.app.MainActivity
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.components.AppIcon
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
 import com.jajanin.app.data.model.ChatMessage
@@ -260,6 +261,14 @@ internal class ChatRoomDialog(
                 }
             }
         }
+        val nameRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+        }
         val nameView = TextView(activity).apply {
             text = title
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -267,14 +276,48 @@ internal class ChatRoomDialog(
             typeface = Typeface.DEFAULT_BOLD
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            )
         }
+        nameRow.addView(nameView)
+
+        val peerIsDev = StoreVerifiedBadge.isDevIdentity(
+            view = activity.ui,
+            name = title,
+            ownerId = summary.counterpartyId,
+            stallId = summary.stallId.orEmpty(),
+        )
+        val peerVerified = peerIsDev ||
+            (!summary.stallId.isNullOrBlank() && activity.ui.storeDirectoryById[summary.stallId]?.isVerified == true)
+        if (peerVerified) {
+            val verifiedIcon = ImageView(activity).apply {
+                setImageDrawable(AppIcon.drawable(activity, "verified", 16f, kit.blue))
+                layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+                    marginStart = dp(5)
+                }
+            }
+            nameRow.addView(verifiedIcon)
+        }
+        if (peerIsDev) {
+            val devIcon = ImageView(activity).apply {
+                setImageDrawable(AppIcon.drawable(activity, "devBadge", 16f, StoreVerifiedBadge.devBadgeColor))
+                layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+                    marginStart = dp(4)
+                }
+            }
+            nameRow.addView(devIcon)
+        }
+
         subtitleView = TextView(activity).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
             setTextColor(kit.muted)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
-        titleCol.addView(nameView)
+        titleCol.addView(nameRow)
         titleCol.addView(subtitleView)
         header.addView(titleCol)
 

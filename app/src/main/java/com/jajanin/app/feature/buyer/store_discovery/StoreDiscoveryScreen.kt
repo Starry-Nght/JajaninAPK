@@ -89,6 +89,7 @@ internal fun JajaninView.drawHomeStoreDiscoverySection(
                 textSize = 11.5f,
                 textColor = kit.ink,
                 bold = true,
+                stallId = store.id,
             )
 
             kit.textEllipsized(
@@ -162,6 +163,7 @@ internal fun JajaninView.drawStoreSearchCard(
             textSize = 15f,
             textColor = kit.ink,
             bold = true,
+            stallId = store.id,
         )
 
         val catAndSeller = buildList {

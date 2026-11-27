@@ -5,6 +5,7 @@ import android.graphics.RectF
 import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
@@ -48,7 +49,27 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
         kit.rounded(c, statusPill, statusBg, 5f)
         kit.centerText(c, statusText, statusPill, 9.5f, statusColor, true)
 
-        kit.textEllipsized(c, titleText, 84f, y + 19f, statusPill.left - 94f, 16.5f, kit.ink, true)
+        val isDevUser = StoreVerifiedBadge.isDevIdentity(
+            view = this,
+            name = myDisplayName,
+            nis = myNis,
+            stallId = myStallId.orEmpty(),
+        )
+        StoreVerifiedBadge.drawInlineWithStoreName(
+            view = this,
+            c = c,
+            storeName = titleText,
+            isVerified = isDevUser,
+            x = 84f,
+            baselineY = y + 19f,
+            maxTotalWidth = (statusPill.left - 94f).coerceAtLeast(80f),
+            textSize = 16.5f,
+            textColor = kit.ink,
+            bold = true,
+            isDev = isDevUser,
+            nis = myNis,
+            stallId = myStallId.orEmpty(),
+        )
         val nisText = buildString {
             append(if (myNis.isNotBlank()) "NIS: $myNis" else "NIS: Belum diisi")
             append("  ·  ")

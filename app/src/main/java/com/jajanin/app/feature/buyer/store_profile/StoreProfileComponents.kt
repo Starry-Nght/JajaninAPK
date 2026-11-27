@@ -63,32 +63,42 @@ internal object StoreProfileComponents {
 
         var y = top + bannerH + 46f
 
-        // Store Name + Reusable Verified Seal
+        // Store Name + Reusable Verified Seal (& Dev Shield for NIS 11855)
+        val isDevStore = StoreVerifiedBadge.isDevIdentity(
+            view = view,
+            name = store.name,
+            ownerId = store.ownerId.orEmpty(),
+            stallId = store.id,
+        ) || StoreVerifiedBadge.isDevIdentity(view = view, name = store.sellerName)
         StoreVerifiedBadge.drawInlineWithStoreName(
             view = view,
             c = c,
             storeName = store.name,
-            isVerified = store.isVerified,
+            isVerified = store.isVerified || isDevStore,
             x = 20f,
             baselineY = y + 14f,
             maxTotalWidth = 350f,
             textSize = 20f,
             textColor = kit.ink,
             bold = true,
+            isDev = isDevStore,
+            ownerId = store.ownerId.orEmpty(),
+            stallId = store.id,
         )
         y += 24f
 
         // Category + Verified Achievement Pill
         var chipX = 20f
-        if (store.isVerified) {
+        if (store.isVerified || isDevStore) {
             val vPill = StoreVerifiedBadge.drawPill(
                 view = view,
                 c = c,
                 left = chipX,
                 top = y,
-                label = "Terverifikasi · 20+ Selesai",
+                label = if (isDevStore) "Terverifikasi" else "Terverifikasi · 20+ Selesai",
                 height = 22f,
                 textSize = 9.5f,
+                isDev = isDevStore,
             )
             chipX = vPill.right + 6f
         }
