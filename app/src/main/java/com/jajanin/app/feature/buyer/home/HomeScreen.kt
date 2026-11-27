@@ -327,13 +327,35 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                     val pillFg = if (isNextOnly) Color.rgb(183, 116, 0) else kit.blue
                     kit.rounded(c, schedPill, pillBg, 4f)
                     kit.centerText(c, schedLabel, schedPill, 9.5f, pillFg, true)
+                    if (product.hasVariants) {
+                        val firstSec = product.activeVariantSections.first()
+                        val varLabel = if (product.activeVariantSections.size == 1) {
+                            "${firstSec.name}: ${firstSec.options.size} pilihan"
+                        } else {
+                            "${product.activeVariantSections.size} opsi varian"
+                        }
+                        val varLeft = schedPill.right + 6f
+                        val availW = 370f - varLeft
+                        if (availW >= 54f) {
+                            val varW = (kit.measure(varLabel, 9.5f, true) + 12f).coerceAtMost(availW)
+                            val varPill = RectF(varLeft, schedTop, varLeft + varW, schedTop + 16f)
+                            kit.rounded(c, varPill, kit.bg, 4f, kit.border)
+                            kit.textEllipsized(c, varLabel, varPill.left + 6f, varPill.top + 11.2f, varW - 12f, 9.5f, kit.ink, true)
+                        }
+                    }
 
                     // Price on the left, clean 8f radius action on the right
                     kit.text(c, formatRupiah(product.priceIdr), 110f, rowTop + 103f, 14.5f, kit.ink, true)
 
-                    val inCartQty = cart[product.id] ?: 0
+                    val inCartQty = com.jajanin.app.data.model.totalQtyForProductInCart(cart, product.id)
                     if (available) {
-                        if (inCartQty > 0) {
+                        if (product.hasVariants) {
+                            val label = if (inCartQty > 0) "${inCartQty}x · Pilih" else "+ Pilih"
+                            val addBtn = RectF(286f, rowTop + 79f, 370f, rowTop + 109f)
+                            kit.rounded(c, addBtn, if (inCartQty > 0) kit.tint else kit.blue, 7f, if (inCartQty > 0) kit.blue else null)
+                            kit.centerText(c, label, addBtn, 10.5f, if (inCartQty > 0) kit.blue else Color.WHITE, true)
+                            bounds.putVisible("add:${product.id}", addBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+                        } else if (inCartQty > 0) {
                             val stepper = RectF(286f, rowTop + 79f, 370f, rowTop + 109f)
                             kit.rounded(c, stepper, kit.tint, 7f, kit.blue)
                             val minusHit = RectF(stepper.left, stepper.top, stepper.left + 28f, stepper.bottom)
@@ -385,9 +407,10 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
     // 7. Crisp Checkout Bar above Navbar when cart has items (Radius 10f)
     val cartCount = cart.values.sum()
     if (cartCount > 0) {
-        val totalCartIdr = cart.entries.sumOf { (id, qty) ->
-            val p = products.firstOrNull { it.id == id }
-                ?: storeProfileProducts.firstOrNull { it.id == id }
+        val totalCartIdr = cart.entries.sumOf { (cartKey, qty) ->
+            val pid = com.jajanin.app.data.model.productIdFromCartKey(cartKey)
+            val p = products.firstOrNull { it.id == pid }
+                ?: storeProfileProducts.firstOrNull { it.id == pid }
             (p?.priceIdr ?: 0) * qty
         }
         c.save()

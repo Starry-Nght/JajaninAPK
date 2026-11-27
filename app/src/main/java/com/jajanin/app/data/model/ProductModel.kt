@@ -7,6 +7,33 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 internal val DEFAULT_PICKUP_SESSIONS = listOf("Istirahat 1", "Istirahat 2", "Pulang")
+internal const val CART_VARIANT_SEP = "||"
+
+internal fun cartKeyOf(productId: String, variantLabel: String = ""): String {
+    val cleanVar = variantLabel.trim()
+    return if (cleanVar.isBlank()) productId else "$productId$CART_VARIANT_SEP$cleanVar"
+}
+
+internal fun productIdFromCartKey(key: String): String = key.substringBefore(CART_VARIANT_SEP)
+
+internal fun variantLabelFromCartKey(key: String): String =
+    if (CART_VARIANT_SEP in key) key.substringAfter(CART_VARIANT_SEP).trim() else ""
+
+internal fun totalQtyForProductInCart(cart: Map<String, Int>, productId: String): Int =
+    cart.entries.sumOf { (k, q) -> if (productIdFromCartKey(k) == productId) q else 0 }
+
+/** Satu bagian pilihan varian pada produk (mis. Section "Rasa" dengan pilihan ["Cokelat", "Stroberi"]). */
+@Serializable
+internal data class ProductVariantSection(
+    val name: String = "Rasa",
+    val options: List<String> = emptyList(),
+) {
+    val cleanName: String
+        get() = name.trim().ifBlank { "Varian" }
+
+    val cleanOptions: List<String>
+        get() = options.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+}
 
 internal data class MenuItem(val name: String, val stall: String, val price: String, val rating: String, val image: Int, val category: String) {
     val priceInRupiah: Int
@@ -32,7 +59,28 @@ internal data class ProductRow(
     @SerialName("po_daily_quota") val poDailyQuota: Int? = null,
     @SerialName("po_require_qris") val poRequireQris: Boolean = false,
     @SerialName("po_allow_weekend") val poAllowWeekend: Boolean = false,
+    @SerialName("variant_sections") val variantSections: List<ProductVariantSection> = emptyList(),
 ) {
+    /** Daftar section varian aktif yang memiliki minimal 1 pilihan. */
+    val activeVariantSections: List<ProductVariantSection>
+        get() = variantSections.mapNotNull { sec ->
+            val opts = sec.cleanOptions
+            if (opts.isEmpty()) null else ProductVariantSection(sec.cleanName, opts)
+        }
+
+    val hasVariants: Boolean
+        get() = activeVariantSections.isNotEmpty()
+
+    /** Ringkasan singkat varian untuk kartu menu, mis. "Rasa: Cokelat, Stroberi (+2)". */
+    val variantsPreviewSummary: String
+        get() {
+            val first = activeVariantSections.firstOrNull() ?: return ""
+            val shown = first.options.take(3).joinToString(", ")
+            val more = if (first.options.size > 3) " +${first.options.size - 3}" else ""
+            val extraSec = if (activeVariantSections.size > 1) " · +${activeVariantSections.size - 1} pilihan" else ""
+            return "${first.name}: $shown$more$extraSec"
+        }
+
     /** Ruangan pengambilan yang disematkan pada produk (jika ada). */
     val pickupRoom: String
         get() = extractRoomTag(ingredients)

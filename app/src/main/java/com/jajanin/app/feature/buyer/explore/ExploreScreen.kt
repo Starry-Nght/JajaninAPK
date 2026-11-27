@@ -154,7 +154,13 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
         val priceY = if (storeInfo != null) top + photoH + 60f else top + photoH + 45f
         kit.text(c, formatRupiah(product.priceIdr), left + 2f, priceY, 13f, kit.ink, true)
         if (available) {
-            val addLabel = "+ Tambah"
+            val inCartQty = com.jajanin.app.data.model.totalQtyForProductInCart(cart, product.id)
+            val addLabel = when {
+                product.hasVariants && inCartQty > 0 -> "${inCartQty}x · Pilih"
+                product.hasVariants -> "+ Pilih"
+                inCartQty > 0 -> "+ Tambah ($inCartQty)"
+                else -> "+ Tambah"
+            }
             val addW = kit.measure(addLabel, 10.5f, true) + 18f
             val addTop = if (storeInfo != null) top + photoH + 44f else top + photoH + 28f
             val add = RectF(left + tileW - addW, addTop, left + tileW, addTop + 26f)

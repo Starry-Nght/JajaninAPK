@@ -41,6 +41,10 @@ internal fun JajaninView.drawProductForm(c: Canvas, w: Float, h: Float) {
     y = descriptionField(c, y)
     y = ingredientsField(c, y)
 
+    // --- 1b. Pilihan Varian / Rasa (Editable Section Name + Tambah Section) ---
+    y += 8f
+    y = variantSectionsEditor(c, y, h - 72f)
+
     // --- 2. Jadwal Pemesanan & Sesi Pengambilan (Pre-Order / Hari Ini) ---
     y += 8f
     sellerSection(c, "Jadwal & Sesi Pengambilan", y + 12f, trailing = "Atur Hari Ini / Pre-Order", trailingColor = kit.blue)
@@ -390,6 +394,126 @@ private fun JajaninView.ingredientsField(c: Canvas, top: Float): Float {
     press(c, "pfIngredients", field, SellerTokens.RADIUS_CONTROL)
     bounds["pfIngredients"] = RectF(field)
     return top + 64f + 12f
+}
+
+private fun JajaninView.variantSectionsEditor(c: Canvas, top: Float, bottomLimit: Float): Float {
+    var y = top
+    kit.text(c, "Pilihan Varian / Rasa", SellerTokens.PAD, y + 12f, 13.5f, kit.ink, true)
+    val topAddBtn = RectF(248f, y - 4f, SellerTokens.RIGHT, y + 22f)
+    kit.rounded(c, topAddBtn, kit.tint, 6f, kit.blue)
+    kit.centerText(c, "+ Tambah Section", topAddBtn, 10f, kit.blue, true)
+    press(c, "pfAddVarSec", topAddBtn, 6f)
+    bounds.putVisible("pfAddVarSec", topAddBtn, topLimit = 60f, bottomLimit = bottomLimit)
+    y += 28f
+
+    kit.textEllipsized(
+        c,
+        "Opsional · Nama section bisa diubah (cth. Rasa, Topping, Level Pedas).",
+        SellerTokens.PAD,
+        y + 8f,
+        SellerTokens.WIDTH,
+        10f,
+        kit.muted,
+    )
+    y += 18f
+
+    productVariantSections.forEachIndexed { secIdx, sec ->
+        val options = sec.options
+        // Pre-calculate chip rows height
+        val chipH = 26f
+        val chipGap = 6f
+        val cardLeft = SellerTokens.PAD
+        val cardRight = SellerTokens.RIGHT
+        val innerLeft = cardLeft + 12f
+        val innerRight = cardRight - 12f
+
+        var chipsHeight = 0f
+        if (options.isEmpty()) {
+            chipsHeight = 20f
+        } else {
+            var cx = innerLeft
+            var rows = 1
+            options.forEach { opt ->
+                val chipTxt = "$opt  ×"
+                val cw = (kit.measure(chipTxt, 10f, true) + 18f).coerceAtMost(innerRight - innerLeft)
+                if (cx > innerLeft && cx + cw > innerRight) {
+                    cx = innerLeft
+                    rows++
+                }
+                cx += cw + chipGap
+            }
+            chipsHeight = rows * chipH + (rows - 1) * chipGap
+        }
+
+        val cardH = 44f + chipsHeight + 48f
+        val cardRect = RectF(cardLeft, y, cardRight, y + cardH)
+        kit.rounded(c, cardRect, kit.card, SellerTokens.RADIUS_SURFACE, kit.border)
+
+        // Header inside card: Section Name + Ubah Nama + Hapus
+        val removeBtn = RectF(innerRight - 46f, y + 10f, innerRight, y + 32f)
+        kit.rounded(c, removeBtn, kit.bg, 6f, kit.dangerBorder)
+        kit.centerText(c, "Hapus", removeBtn, 9.5f, kit.danger, true)
+        press(c, "pfRemoveVarSec:$secIdx", removeBtn, 6f)
+        bounds.putVisible("pfRemoveVarSec:$secIdx", removeBtn, topLimit = 60f, bottomLimit = bottomLimit)
+
+        val renameBtn = RectF(removeBtn.left - 76f, y + 10f, removeBtn.left - 6f, y + 32f)
+        kit.rounded(c, renameBtn, kit.tint, 6f, kit.blue)
+        kit.centerText(c, "Ubah Nama", renameBtn, 9.5f, kit.blue, true)
+        press(c, "pfEditVarSecName:$secIdx", renameBtn, 6f)
+        bounds.putVisible("pfEditVarSecName:$secIdx", renameBtn, topLimit = 60f, bottomLimit = bottomLimit)
+
+        val nameMaxW = (renameBtn.left - innerLeft - 8f).coerceAtLeast(80f)
+        kit.textEllipsized(c, sec.cleanName, innerLeft, y + 25f, nameMaxW, 13.5f, kit.ink, true)
+        kit.line(c, innerLeft, y + 38f, innerRight, y + 38f, kit.divider)
+
+        // Option chips
+        var chipTop = y + 46f
+        if (options.isEmpty()) {
+            kit.textEllipsized(
+                c,
+                "Belum ada pilihan ${sec.cleanName} (cth. Cokelat, Stroberi, Matcha)",
+                innerLeft,
+                chipTop + 13f,
+                innerRight - innerLeft,
+                10.5f,
+                kit.muted,
+            )
+        } else {
+            var cx = innerLeft
+            var cy = chipTop
+            options.forEachIndexed { optIdx, opt ->
+                val chipTxt = "$opt  ×"
+                val cw = (kit.measure(chipTxt, 10f, true) + 18f).coerceAtMost(innerRight - innerLeft)
+                if (cx > innerLeft && cx + cw > innerRight) {
+                    cx = innerLeft
+                    cy += chipH + chipGap
+                }
+                val chipRect = RectF(cx, cy, cx + cw, cy + chipH)
+                kit.rounded(c, chipRect, kit.tint, 6f, kit.blue)
+                kit.centerText(c, chipTxt, chipRect, 10f, kit.blue, true)
+                bounds.putVisible("pfRemoveVarOpt:$secIdx:$optIdx", chipRect, topLimit = 60f, bottomLimit = bottomLimit)
+                cx += cw + chipGap
+            }
+        }
+
+        // Bottom inside card: + Tambah Pilihan
+        val addOptTop = y + 46f + chipsHeight + 10f
+        val addOptBtn = RectF(innerLeft, addOptTop, innerRight, addOptTop + 32f)
+        kit.rounded(c, addOptBtn, kit.bg, 7f, kit.blue)
+        kit.centerText(c, "+ Tambah Pilihan ${sec.cleanName}", addOptBtn, 11f, kit.blue, true)
+        press(c, "pfAddVarOpt:$secIdx", addOptBtn, 7f)
+        bounds.putVisible("pfAddVarOpt:$secIdx", addOptBtn, topLimit = 60f, bottomLimit = bottomLimit)
+
+        y += cardH + 10f
+    }
+
+    // Bottom full-width button: + Tambah Section
+    val addSecBtn = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 38f)
+    kit.rounded(c, addSecBtn, kit.card, SellerTokens.RADIUS_CONTROL, kit.blue)
+    kit.centerText(c, "+ Tambah Section Baru", addSecBtn, 12f, kit.blue, true)
+    press(c, "pfAddVarSecBottom", addSecBtn, SellerTokens.RADIUS_CONTROL)
+    bounds.putVisible("pfAddVarSecBottom", addSecBtn, topLimit = 60f, bottomLimit = bottomLimit)
+    return y + 48f
 }
 
 private fun JajaninView.priceAndStock(c: Canvas, top: Float): Float {

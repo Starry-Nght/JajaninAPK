@@ -111,9 +111,10 @@ internal fun JajaninView.drawStoreProfile(c: Canvas, w: Float, h: Float) {
     // Floating Checkout Bar if buyer added items while browsing the store
     if (hasCartBar) {
         val cartCount = cart.values.sum()
-        val totalCartIdr = cart.entries.sumOf { (id, qty) ->
-            val p = storeProfileProducts.firstOrNull { it.id == id }
-                ?: products.firstOrNull { it.id == id }
+        val totalCartIdr = cart.entries.sumOf { (cartKey, qty) ->
+            val pid = com.jajanin.app.data.model.productIdFromCartKey(cartKey)
+            val p = storeProfileProducts.firstOrNull { it.id == pid }
+                ?: products.firstOrNull { it.id == pid }
             (p?.priceIdr ?: 0) * qty
         }
         c.save()

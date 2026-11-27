@@ -206,9 +206,10 @@ private fun JajaninView.drawSellerMenuItemRow(
         !product.available,
     )
 
-    // Badge jadwal & aturan PO ringkas
+    // Badge jadwal, varian & aturan PO ringkas
     val schedInfo = buildList {
         add(product.scheduleBadgeLabel)
+        if (product.hasVariants) add(product.variantsPreviewSummary)
         if (product.allowsNextDay) {
             product.poDailyQuota?.let { add("Kuota $it/hr") }
             if (product.poRequireQris) add("Wajib QRIS")

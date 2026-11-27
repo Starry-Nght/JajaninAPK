@@ -216,6 +216,10 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productPoCutoffHour = existing.poCutoffHour.coerceIn(12, 23)
         ui.productPoDailyQuota = existing.poDailyQuota?.toString().orEmpty()
         ui.productPoRequireQris = existing.poRequireQris
+        ui.productVariantSections = existing.activeVariantSections
+            .map { com.jajanin.app.data.model.ProductVariantSection(it.name, it.options.toList()) }
+            .toMutableList()
+            .ifEmpty { mutableListOf(com.jajanin.app.data.model.ProductVariantSection("Rasa", emptyList())) }
     } else {
         ui.productEditId = null
         ui.productName = ""
@@ -233,6 +237,9 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productPoCutoffHour = 20
         ui.productPoDailyQuota = ""
         ui.productPoRequireQris = false
+        ui.productVariantSections = mutableListOf(
+            com.jajanin.app.data.model.ProductVariantSection("Rasa", emptyList())
+        )
     }
     ui.productSaving = false
     ui.productError = ""
@@ -303,6 +310,128 @@ internal fun MainActivity.showProductCategoryPicker() {
 /** Saklar tampil di etalase dari halaman form. */
 internal fun MainActivity.toggleProductFormAvailable() {
     ui.productAvailable = !ui.productAvailable
+    ui.invalidate()
+}
+
+/** Tambah section varian baru pada form produk (maks 5 section, mis. Rasa, Topping, Ukuran). */
+internal fun MainActivity.showAddVariantSectionDialog() {
+    if (ui.productVariantSections.size >= 5) {
+        Toast.makeText(this, "Maksimal 5 section varian per produk.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val input = EditText(this).apply {
+        hint = "cth. Rasa, Topping, Level Pedas, Ukuran"
+        setSingleLine(true)
+        filters = arrayOf(android.text.InputFilter.LengthFilter(40))
+    }
+    val box = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 20, 48, 8)
+        addView(input)
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Tambah Section Varian")
+        .setMessage("Beri nama section pilihan untuk pembeli (mis. Rasa atau Topping).")
+        .setView(box)
+        .setPositiveButton("Tambah") { _, _ ->
+            val clean = input.text.toString().trim().replace("||", " ")
+            if (clean.isBlank()) {
+                Toast.makeText(this, "Nama section wajib diisi.", Toast.LENGTH_SHORT).show()
+                return@setPositiveButton
+            }
+            ui.productVariantSections.add(
+                com.jajanin.app.data.model.ProductVariantSection(clean, emptyList())
+            )
+            ui.invalidate()
+        }
+        .setNegativeButton("Batal", null)
+        .show()
+}
+
+/** Ubah nama section varian (mis. "Rasa" -> "Level Pedas" / "Topping"). */
+internal fun MainActivity.showRenameVariantSectionDialog(index: Int) {
+    val cur = ui.productVariantSections.getOrNull(index) ?: return
+    val input = EditText(this).apply {
+        hint = "Nama section (cth. Rasa, Ukuran, Topping)"
+        setSingleLine(true)
+        setText(cur.name)
+        setSelection(cur.name.length)
+        filters = arrayOf(android.text.InputFilter.LengthFilter(40))
+    }
+    val box = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 20, 48, 8)
+        addView(input)
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Ubah Nama Section")
+        .setView(box)
+        .setPositiveButton("Simpan") { _, _ ->
+            val clean = input.text.toString().trim().replace("||", " ")
+            if (clean.isBlank()) {
+                Toast.makeText(this, "Nama section tidak boleh kosong.", Toast.LENGTH_SHORT).show()
+                return@setPositiveButton
+            }
+            ui.productVariantSections[index] = cur.copy(name = clean)
+            ui.invalidate()
+        }
+        .setNegativeButton("Batal", null)
+        .show()
+}
+
+internal fun MainActivity.removeVariantSection(index: Int) {
+    if (index !in ui.productVariantSections.indices) return
+    val removed = ui.productVariantSections.removeAt(index)
+    Toast.makeText(this, "Section ${removed.cleanName} dihapus.", Toast.LENGTH_SHORT).show()
+    ui.invalidate()
+}
+
+/** Tambah satu atau beberapa pilihan sekaligus (pisahkan koma) ke dalam sebuah section varian. */
+internal fun MainActivity.showAddVariantOptionDialog(sectionIndex: Int) {
+    val cur = ui.productVariantSections.getOrNull(sectionIndex) ?: return
+    if (cur.options.size >= 12) {
+        Toast.makeText(this, "Maksimal 12 pilihan per section.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val input = EditText(this).apply {
+        hint = "cth. Cokelat, Stroberi, Matcha"
+        minLines = 1
+        maxLines = 3
+        filters = arrayOf(android.text.InputFilter.LengthFilter(200))
+    }
+    val box = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 20, 48, 8)
+        addView(input)
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Tambah Pilihan ${cur.cleanName}")
+        .setMessage("Tulis satu pilihan, atau pisahkan dengan koma untuk menambah beberapa sekaligus (cth. Cokelat, Stroberi, Vanilla).")
+        .setView(box)
+        .setPositiveButton("Tambah") { _, _ ->
+            val newOpts = input.text.toString()
+                .split(',', '\n')
+                .map { it.trim().replace("||", " ").take(40) }
+                .filter { it.isNotBlank() }
+            if (newOpts.isEmpty()) {
+                Toast.makeText(this, "Isi minimal 1 pilihan.", Toast.LENGTH_SHORT).show()
+                return@setPositiveButton
+            }
+            val merged = (cur.options + newOpts)
+                .distinctBy { it.lowercase() }
+                .take(12)
+            ui.productVariantSections[sectionIndex] = cur.copy(options = merged)
+            ui.invalidate()
+        }
+        .setNegativeButton("Batal", null)
+        .show()
+}
+
+internal fun MainActivity.removeVariantOption(sectionIndex: Int, optionIndex: Int) {
+    val cur = ui.productVariantSections.getOrNull(sectionIndex) ?: return
+    if (optionIndex !in cur.options.indices) return
+    val nextOpts = cur.options.toMutableList().apply { removeAt(optionIndex) }
+    ui.productVariantSections[sectionIndex] = cur.copy(options = nextOpts)
     ui.invalidate()
 }
 
@@ -528,6 +657,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
                 poDailyQuota = if (ui.productOrderSchedule == "same_day") null else poDailyQuota,
                 poRequireQris = if (ui.productOrderSchedule == "same_day") false else ui.productPoRequireQris,
                 poAllowWeekend = false,
+                variantSections = ui.productVariantSections.toList(),
             )
             val editingId = ui.productEditId
             if (editingId == null) {

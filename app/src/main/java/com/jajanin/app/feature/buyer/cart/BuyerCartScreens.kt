@@ -71,13 +71,22 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     val off = -scroll
     val bodyTop = 74f
     val bodyBottom = h - 84f
-    val lines = cart.entries.mapNotNull { (id, qty) ->
-        val p = products.firstOrNull { it.id == id }
-            ?: storeProfileProducts.firstOrNull { it.id == id }
-            ?: sellerProducts.firstOrNull { it.id == id }
-        if (p == null || qty <= 0) null else p to qty
+    data class CheckoutLine(
+        val cartKey: String,
+        val product: com.jajanin.app.data.model.ProductRow,
+        val variantLabel: String,
+        val qty: Int,
+    )
+    val checkoutLines = cart.entries.mapNotNull { (cartKey, qty) ->
+        val pid = com.jajanin.app.data.model.productIdFromCartKey(cartKey)
+        val p = products.firstOrNull { it.id == pid }
+            ?: storeProfileProducts.firstOrNull { it.id == pid }
+            ?: sellerProducts.firstOrNull { it.id == pid }
+        if (p == null || qty <= 0) null
+        else CheckoutLine(cartKey, p, com.jajanin.app.data.model.variantLabelFromCartKey(cartKey), qty)
     }
-    if (lines.isEmpty()) {
+    val lines = checkoutLines.map { it.product to it.qty }
+    if (checkoutLines.isEmpty()) {
         header(c, "Checkout")
         kit.centerText(c, "Keranjang kosong.", RectF(24f, 280f, 366f, 340f), 14f, kit.muted)
         kit.centerText(c, "Kembali dan pilih menu dulu.", RectF(24f, 310f, 366f, 360f), 12f, kit.muted)
@@ -101,29 +110,38 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         textColor = kit.ink,
         bold = true,
     )
-    kit.text(c, "${lines.sumOf { it.second }} item (${lines.size} menu) di keranjang", 22f, 130f + off, 12f, kit.muted)
+    kit.text(c, "${checkoutLines.sumOf { it.qty }} item (${checkoutLines.size} pilihan) di keranjang", 22f, 130f + off, 12f, kit.muted)
     var y = 146f + off
-    lines.forEach { (p, qty) ->
-        if (y + 76f >= bodyTop && y <= bodyBottom) {
-            kit.card(c, RectF(18f, y, 372f, y + 76f), 14f)
-            kit.textEllipsized(c, p.name, 32f, y + 27f, 210f, 13f, kit.ink, true)
-            kit.text(c, "${formatRupiah(p.priceIdr)}  ×  $qty", 32f, y + 51f, 11f, kit.muted)
+    checkoutLines.forEach { line ->
+        val p = line.product
+        val qty = line.qty
+        val hasVar = line.variantLabel.isNotBlank()
+        val cardH = if (hasVar) 90f else 76f
+        if (y + cardH >= bodyTop && y <= bodyBottom) {
+            kit.card(c, RectF(18f, y, 372f, y + cardH), 14f)
+            kit.textEllipsized(c, p.name, 32f, y + 26f, 210f, 13f, kit.ink, true)
             val sub = formatRupiah(p.priceIdr * qty)
-            kit.text(c, sub, 358f - kit.measure(sub, 12f, true), y + 30f, 12f, kit.ink, true)
-            val minus = RectF(216f, y + 44f, 244f, y + 68f)
-            val plus = RectF(274f, y + 44f, 302f, y + 68f)
-            val rm = RectF(308f, y + 44f, 358f, y + 68f)
+            kit.text(c, sub, 358f - kit.measure(sub, 12f, true), y + 26f, 12f, kit.ink, true)
+            if (hasVar) {
+                kit.textEllipsized(c, line.variantLabel, 32f, y + 45f, 236f, 10.5f, kit.blue, true)
+            }
+            val priceY = if (hasVar) y + 66f else y + 51f
+            kit.text(c, "${formatRupiah(p.priceIdr)}  ×  $qty", 32f, priceY, 11f, kit.muted)
+            val ctrlTop = if (hasVar) y + 56f else y + 44f
+            val minus = RectF(216f, ctrlTop, 244f, ctrlTop + 24f)
+            val plus = RectF(274f, ctrlTop, 302f, ctrlTop + 24f)
+            val rm = RectF(308f, ctrlTop, 358f, ctrlTop + 24f)
             kit.rounded(c, minus, kit.bg, 8f, kit.border)
             AppIcon.draw(c, "minus", minus.centerX(), minus.centerY(), 12f, kit.blue)
-            kit.centerText(c, "$qty", RectF(244f, y + 44f, 274f, y + 68f), 12f, kit.ink, true)
+            kit.centerText(c, "$qty", RectF(244f, ctrlTop, 274f, ctrlTop + 24f), 12f, kit.ink, true)
             kit.rounded(c, plus, kit.bg, 8f, kit.border)
             AppIcon.draw(c, "plus", plus.centerX(), plus.centerY(), 12f, kit.blue)
             kit.centerText(c, "Hapus", rm, 10f, kit.danger, true)
-            bounds.putVisible("cartMinus:${p.id}", minus, topLimit = bodyTop, bottomLimit = bodyBottom)
-            bounds.putVisible("cartPlus:${p.id}", plus, topLimit = bodyTop, bottomLimit = bodyBottom)
-            bounds.putVisible("cartRemove:${p.id}", rm, topLimit = bodyTop, bottomLimit = bodyBottom)
+            bounds.putVisible("cartMinus:${line.cartKey}", minus, topLimit = bodyTop, bottomLimit = bodyBottom)
+            bounds.putVisible("cartPlus:${line.cartKey}", plus, topLimit = bodyTop, bottomLimit = bodyBottom)
+            bounds.putVisible("cartRemove:${line.cartKey}", rm, topLimit = bodyTop, bottomLimit = bodyBottom)
         }
-        y += 86f
+        y += cardH + 10f
     }
 
     // 1. Jadwal Pengambilan (Hari Ini vs Pre-Order Kalender)
@@ -536,13 +554,17 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
 internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     val product = selectedProduct ?: run { goBack(); return }
     c.drawColor(kit.bg)
-    kit.rect(c, 0f, 0f, w, 64f, kit.card)
-    drawIcon(c, "chevronLeft", 27f, 33f, 22f, kit.blue)
-    kit.text(c, "Detail Produk", 58f, 41f, 18.5f, kit.ink, true)
-    bounds["headerBack"] = RectF(0f, 0f, 56f, 64f)
+    val off = -scroll
+    val bodyTop = 64f
+    val bodyBottom = h - 168f
 
-    val imgBottom = minOf(h * .33f, 255f)
-    drawProductImage(c, product, RectF(20f, 76f, 370f, imgBottom), 16f)
+    val bodySave = c.save()
+    c.clipRect(0f, bodyTop, w, bodyBottom)
+
+    val imgTop = 76f + off
+    val imgH = minOf(h * .28f, 200f)
+    val imgBottom = imgTop + imgH
+    drawProductImage(c, product, RectF(20f, imgTop, 370f, imgBottom), 16f)
     kit.text(c, normalizeCategory(product.category), 22f, imgBottom + 24f, 12f, kit.blue, true)
     val schedBadge = product.scheduleBadgeLabel
     val schedW = (kit.measure(schedBadge, 10f, true) + 16f).coerceAtMost(170f)
@@ -582,11 +604,41 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
             textSize = 13f,
             textColor = kit.ink,
             bold = true,
+            stallId = stallId,
         )
         drawTrailingActionWithArrow(c, "Profil Toko", 358f, curY + 26f, 11f, kit.blue)
         press(c, "openStore:$stallId", storeCard, 10f)
-        bounds["openStore:$stallId"] = storeCard
+        bounds.putVisible("openStore:$stallId", storeCard, topLimit = bodyTop, bottomLimit = bodyBottom)
         curY += 54f
+    }
+
+    // Customizable Variant Sections (e.g., Pilih Rasa: Cokelat, Stroberi, Matcha)
+    val variantSections = product.activeVariantSections
+    if (variantSections.isNotEmpty()) {
+        variantSections.forEachIndexed { secIdx, sec ->
+            kit.text(c, "Pilih ${sec.name} (Wajib)", 22f, curY + 14f, 13f, kit.ink, true)
+            curY += 22f
+            val chosen = detailSelectedVariants[secIdx] ?: sec.options.firstOrNull().orEmpty()
+            var cx = 22f
+            var cy = curY
+            val chipH = 30f
+            val chipGap = 7f
+            sec.options.forEachIndexed { optIdx, opt ->
+                val cw = (kit.measure(opt, 11.5f, true) + 24f).coerceIn(60f, 346f)
+                if (cx > 22f && cx + cw > 370f) {
+                    cx = 22f
+                    cy += chipH + chipGap
+                }
+                val chipRect = RectF(cx, cy, cx + cw, cy + chipH)
+                val on = opt == chosen
+                kit.rounded(c, chipRect, if (on) kit.tint else kit.card, 8f, if (on) kit.blue else kit.border)
+                kit.centerText(c, opt, chipRect, 11.5f, if (on) kit.blue else kit.ink, on)
+                press(c, "detailVar:$secIdx:$optIdx", chipRect, 8f)
+                bounds.putVisible("detailVar:$secIdx:$optIdx", chipRect, topLimit = bodyTop, bottomLimit = bodyBottom)
+                cx += cw + chipGap
+            }
+            curY = cy + chipH + 14f
+        }
     }
 
     kit.textEllipsized(
@@ -607,7 +659,7 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
             if (poSummary.isNotBlank()) add("PO: $poSummary")
             add("Tutup H-1 ${product.poCutoffHour}:00")
             product.poDailyQuota?.let { add("Kuota $it/hari") }
-            if (product.poRequireQris) add("Wajib QRIS")
+            if (product.poRequireQris) add("Wajib Midtrans")
         }.joinToString(" · ")
     } else {
         ""
@@ -628,27 +680,38 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
 
     val detailY = curY + 14f
     kit.text(c, "Deskripsi", 22f, detailY, 13.5f, kit.ink, true)
-    val lines = product.description.ifBlank { "Belum ada deskripsi produk." }.chunked(45).take(2)
+    val descLines = product.description.ifBlank { "Belum ada deskripsi produk." }.chunked(45).take(4)
     var nextY = detailY + 19f
-    lines.forEach { line ->
-        if (nextY < h - 168f) {
-            kit.text(c, line, 22f, nextY, 11.5f, kit.muted)
-            nextY += 17f
-        }
+    descLines.forEach { line ->
+        kit.text(c, line, 22f, nextY, 11.5f, kit.muted)
+        nextY += 17f
     }
     val cleanIng = product.cleanIngredients
-    if (cleanIng.isNotBlank() && nextY < h - 168f) {
-        kit.textEllipsized(c, "Bahan: $cleanIng", 22f, nextY + 2f, 346f, 11.5f, kit.muted)
+    if (cleanIng.isNotBlank()) {
+        kit.textEllipsized(c, "Bahan: $cleanIng", 22f, nextY + 4f, 346f, 11.5f, kit.muted)
+        nextY += 22f
     }
 
+    c.restoreToCount(bodySave)
+    contentHeight = (nextY - off) + 188f
+
+    // Top Header
+    kit.rect(c, 0f, 0f, w, 64f, kit.card)
+    drawIcon(c, "chevronLeft", 27f, 33f, 22f, kit.blue)
+    kit.text(c, "Detail Produk", 58f, 41f, 18.5f, kit.ink, true)
+    bounds["headerBack"] = RectF(0f, 0f, 56f, 64f)
+
+    // Sticky Bottom Quantity & CTA Bar
+    kit.rect(c, 0f, bodyBottom, w, h, kit.bg)
+    kit.line(c, 20f, bodyBottom, 370f, bodyBottom, kit.divider)
     val available = product.available && (product.stock == null || product.stock > 0)
-    kit.text(c, if (available) "Tersedia${product.stock?.let { " · Stok $it" }.orEmpty()}" else "Out of Stock", 22f, h - 154f, 12.5f, if (available) kit.success else kit.danger, true)
-    kit.text(c, "Jumlah", 22f, h - 117f, 14f, kit.ink, true)
-    val minusBox = RectF(220f, h - 143f, 269f, h - 95f)
-    val plusBox = RectF(319f, h - 143f, 368f, h - 95f)
-    kit.rounded(c, RectF(220f, h - 143f, 368f, h - 95f), kit.card, 14f, kit.border)
+    kit.text(c, if (available) "Tersedia${product.stock?.let { " · Stok $it" }.orEmpty()}" else "Out of Stock", 22f, h - 150f, 12.5f, if (available) kit.success else kit.danger, true)
+    kit.text(c, "Jumlah", 22f, h - 115f, 14f, kit.ink, true)
+    val minusBox = RectF(220f, h - 141f, 269f, h - 93f)
+    val plusBox = RectF(319f, h - 141f, 368f, h - 93f)
+    kit.rounded(c, RectF(220f, h - 141f, 368f, h - 93f), kit.card, 14f, kit.border)
     AppIcon.draw(c, "minus", minusBox.centerX(), minusBox.centerY(), 15f, kit.blue)
-    kit.centerText(c, quantity.toString(), RectF(269f, h - 143f, 319f, h - 95f), 15f, kit.ink, true)
+    kit.centerText(c, quantity.toString(), RectF(269f, h - 141f, 319f, h - 93f), 15f, kit.ink, true)
     AppIcon.draw(c, "plus", plusBox.centerX(), plusBox.centerY(), 15f, kit.blue)
     bounds["minus"] = minusBox
     bounds["plus"] = plusBox

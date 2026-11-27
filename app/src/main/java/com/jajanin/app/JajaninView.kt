@@ -156,6 +156,8 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productPoCutoffHour = 20
     internal var productPoDailyQuota = ""
     internal var productPoRequireQris = false
+    internal var productVariantSections: MutableList<com.jajanin.app.data.model.ProductVariantSection> = mutableListOf()
+    internal var detailSelectedVariants: MutableMap<Int, String> = linkedMapOf()
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
     internal var productSaving = false
@@ -1074,13 +1076,43 @@ internal class JajaninView(context: Context) : View(context) {
                             ?: storeProfileProducts.firstOrNull { it.id == id }
                             ?: sellerProducts.firstOrNull { it.id == id }
                         quantity = 1
+                        detailSelectedVariants.clear()
+                        selectedProduct?.activeVariantSections?.forEachIndexed { idx, sec ->
+                            sec.options.firstOrNull()?.let { firstOpt ->
+                                detailSelectedVariants[idx] = firstOpt
+                            }
+                        }
                         if (selectedProduct != null) go(Screen.DETAIL)
+                    }
+                    hit.startsWith("detailVar:") -> {
+                        val parts = hit.removePrefix("detailVar:").split(":")
+                        val secIdx = parts.getOrNull(0)?.toIntOrNull()
+                        val optIdx = parts.getOrNull(1)?.toIntOrNull()
+                        val prod = selectedProduct
+                        if (secIdx != null && optIdx != null && prod != null) {
+                            val opt = prod.activeVariantSections.getOrNull(secIdx)?.options?.getOrNull(optIdx)
+                            if (opt != null) {
+                                detailSelectedVariants[secIdx] = opt
+                                invalidate()
+                            }
+                        }
                     }
                     hit.startsWith("add:") -> {
                         activity()?.addToCart(hit.substringAfter(':'))
                     }
                     hit == "detailAdd" -> {
-                        selectedProduct?.let { product -> activity()?.addToCart(product.id, quantity) }
+                        selectedProduct?.let { product ->
+                            val sections = product.activeVariantSections
+                            val variantLabel = if (sections.isEmpty()) {
+                                ""
+                            } else {
+                                sections.mapIndexed { idx, sec ->
+                                    val chosen = detailSelectedVariants[idx] ?: sec.options.firstOrNull().orEmpty()
+                                    "${sec.name}: $chosen"
+                                }.joinToString(" · ")
+                            }
+                            activity()?.addToCart(product.id, quantity, variantLabel)
+                        }
                         goBack()
                     }
                     hit.startsWith("askSeller:") -> {
@@ -1307,6 +1339,24 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "pfStock" -> activity()?.showProductTextField("stok")
                     hit == "pfDesc" -> activity()?.showProductTextField("deskripsi")
                     hit == "pfIngredients" -> activity()?.showProductTextField("bahan")
+                    hit == "pfAddVarSec" || hit == "pfAddVarSecBottom" -> activity()?.showAddVariantSectionDialog()
+                    hit.startsWith("pfEditVarSecName:") -> {
+                        hit.substringAfter(':').toIntOrNull()?.let { activity()?.showRenameVariantSectionDialog(it) }
+                    }
+                    hit.startsWith("pfRemoveVarSec:") -> {
+                        hit.substringAfter(':').toIntOrNull()?.let { activity()?.removeVariantSection(it) }
+                    }
+                    hit.startsWith("pfAddVarOpt:") -> {
+                        hit.substringAfter(':').toIntOrNull()?.let { activity()?.showAddVariantOptionDialog(it) }
+                    }
+                    hit.startsWith("pfRemoveVarOpt:") -> {
+                        val parts = hit.substringAfter(':').split(':')
+                        val secIdx = parts.getOrNull(0)?.toIntOrNull()
+                        val optIdx = parts.getOrNull(1)?.toIntOrNull()
+                        if (secIdx != null && optIdx != null) {
+                            activity()?.removeVariantOption(secIdx, optIdx)
+                        }
+                    }
                     hit == "pfCategory" -> activity()?.showProductCategoryPicker()
                     hit.startsWith("pfCat:") -> {
                         productCategory = hit.substringAfter(':')

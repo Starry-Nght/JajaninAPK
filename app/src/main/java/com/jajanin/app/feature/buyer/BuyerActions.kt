@@ -404,7 +404,10 @@ internal fun MainActivity.resolveKnownProduct(productId: String): ProductRow? =
         ?: ui.sellerProducts.firstOrNull { it.id == productId }
 
 internal fun MainActivity.cartProducts(): List<ProductRow> =
-    ui.cart.keys.mapNotNull { pid -> resolveKnownProduct(pid) }
+    ui.cart.keys
+        .map { key -> com.jajanin.app.data.model.productIdFromCartKey(key) }
+        .distinct()
+        .mapNotNull { pid -> resolveKnownProduct(pid) }
 
 internal fun MainActivity.allowedCartOrderModes(): Set<String> {
     val items = cartProducts()
@@ -430,8 +433,7 @@ internal fun MainActivity.allowedCartPickupSessions(): List<String> {
 
 private fun MainActivity.allowedCartPoDates(): List<String> {
     var common: Set<String>? = null
-    ui.cart.keys.forEach { pid ->
-        val prod = resolveKnownProduct(pid) ?: return@forEach
+    cartProducts().forEach { prod ->
         val dates = prod.openParsedPoDates
         if (prod.poDates.isNotBlank() || prod.orderSchedule == "next_day") {
             val s = dates.toSet()
@@ -603,8 +605,8 @@ internal fun MainActivity.showPreOrderDatePicker() {
     picker.show()
 }
 
-/** Tambah ke keranjang; v2.0 mendukung multi-menu & qty > 1 dari 1 warung dengan jadwal kompatibel. */
-internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
+/** Tambah ke keranjang; mendukung multi-varian (mis. Rasa) & qty > 1 dari 1 warung dengan jadwal kompatibel. */
+internal fun MainActivity.addToCart(productId: String, qty: Int = 1, variantLabel: String = "") {
     if (ui.myAccountStatus == "suspended") {
         Toast.makeText(this, "Akun ditangguhkan. Kamu tidak bisa memesan.", Toast.LENGTH_LONG).show()
         return
@@ -625,6 +627,10 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
         return
     }
     val addAmount = qty.coerceAtLeast(1)
+    if (product.hasVariants && variantLabel.isBlank()) {
+        showBuyerVariantPickerDialog(product, addAmount)
+        return
+    }
     if (ui.cart.isNotEmpty() && !ui.cartStallId.isNullOrBlank() && ui.cartStallId != product.stallId) {
         showThemedInfo(
             title = "Ganti warung di keranjang?",
@@ -634,14 +640,13 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
                 ui.cart.clear()
                 ui.cartStallId = null
                 ui.cartStallQris = null
-                addToCart(productId, addAmount)
+                addToCart(productId, addAmount, variantLabel)
             },
             negLabel = "Batal",
             destructivePos = true,
         )
         return
     }
-    // Cek kecocokan jadwal & irisan tanggal PO (jangan campur menu khusus Hari Ini dengan PO atau 2 PO beda tanggal).
     val existing = cartProducts()
     if (existing.isNotEmpty()) {
         val candidateAll = existing + product
@@ -673,22 +678,268 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1) {
             }
         }
     }
-    val currentQty = ui.cart[productId] ?: 0
+    val cartKey = com.jajanin.app.data.model.cartKeyOf(productId, variantLabel)
+    val currentLineQty = ui.cart[cartKey] ?: 0
+    val totalOtherQty = com.jajanin.app.data.model.totalQtyForProductInCart(ui.cart, productId) - currentLineQty
     val maxAllowed = product.stock?.coerceAtMost(99) ?: 99
-    val nextQty = (currentQty + addAmount).coerceAtMost(maxAllowed)
-    if (currentQty + addAmount > maxAllowed) {
+    val availableForLine = (maxAllowed - totalOtherQty).coerceAtLeast(0)
+    if (availableForLine <= 0) {
+        Toast.makeText(this, "Stok maksimal $maxAllowed porsi untuk ${product.name} sudah di keranjang.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val nextQty = (currentLineQty + addAmount).coerceAtMost(availableForLine)
+    if (currentLineQty + addAmount > availableForLine) {
         Toast.makeText(this, "Maksimal $maxAllowed porsi untuk ${product.name}.", Toast.LENGTH_SHORT).show()
     }
     ui.cartStallId = product.stallId
-    ui.cart[productId] = nextQty
+    ui.cart[cartKey] = nextQty
     syncCheckoutScheduleDefaults()
-    Toast.makeText(this, "${product.name} (${nextQty}x) di keranjang", Toast.LENGTH_SHORT).show()
+    val varSuffix = if (variantLabel.isNotBlank()) " ($variantLabel)" else ""
+    Toast.makeText(this, "${product.name}$varSuffix (${nextQty}x) di keranjang", Toast.LENGTH_SHORT).show()
     ui.invalidate()
 }
 
-internal fun MainActivity.setCartQty(productId: String, qty: Int) {
+/** Dialog pemilih varian/rasa untuk pembeli saat ketuk + Tambah pada menu yang punya pilihan varian. */
+internal fun MainActivity.showBuyerVariantPickerDialog(product: ProductRow, initialQty: Int = 1) {
+    val sections = product.activeVariantSections
+    if (sections.isEmpty()) {
+        addToCart(product.id, initialQty)
+        return
+    }
+    val kit = ui.kit
+    val density = resources.displayMetrics.density
+    fun dp(v: Int): Int = (v * density).toInt()
+
+    val selected = linkedMapOf<Int, String>()
+    sections.forEachIndexed { idx, sec ->
+        sec.options.firstOrNull()?.let { selected[idx] = it }
+    }
+    var chosenQty = initialQty.coerceAtLeast(1)
+    val maxStock = product.stock?.coerceAtMost(99) ?: 99
+    val existingQty = com.jajanin.app.data.model.totalQtyForProductInCart(ui.cart, product.id)
+    val maxAddable = (maxStock - existingQty).coerceAtLeast(1)
+    if (chosenQty > maxAddable) chosenQty = maxAddable
+
+    val dlg = Dialog(this)
+    dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+
+    val root = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(16).toFloat()
+            setColor(kit.card)
+            setStroke(dp(1), kit.border)
+        }
+        setPadding(dp(18), dp(18), dp(18), dp(16))
+    }
+
+    val titleTv = TextView(this).apply {
+        text = "Pilih Varian · ${product.name}"
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
+        setTextColor(kit.ink)
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+    }
+    val priceTv = TextView(this).apply {
+        text = "${formatRupiah(product.priceIdr)}${product.stock?.let { " · Stok $it" }.orEmpty()}"
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12.5f)
+        setTextColor(kit.blue)
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        setPadding(0, dp(3), 0, dp(12))
+    }
+    root.addView(titleTv)
+    root.addView(priceTv)
+
+    val scroll = android.widget.ScrollView(this).apply {
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+    }
+    val sectionsBox = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+    }
+
+    val chipViewsBySec = mutableMapOf<Int, List<Pair<String, TextView>>>()
+    fun styleChip(tv: TextView, active: Boolean) {
+        tv.setTextColor(if (active) kit.blue else kit.ink)
+        tv.typeface = if (active) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+        tv.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(8).toFloat()
+            setColor(if (active) kit.tint else kit.bg)
+            setStroke(dp(1), if (active) kit.blue else kit.border)
+        }
+    }
+
+    sections.forEachIndexed { secIdx, sec ->
+        val label = TextView(this).apply {
+            text = "Pilih ${sec.name} (Wajib)"
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTextColor(kit.ink)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(0, if (secIdx == 0) 0 else dp(12), 0, dp(6))
+        }
+        sectionsBox.addView(label)
+
+        val pairs = mutableListOf<Pair<String, TextView>>()
+        var row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        var rowCount = 0
+        sec.options.forEach { opt ->
+            if (rowCount == 3) {
+                sectionsBox.addView(row)
+                row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, 0, 0, dp(6))
+                }
+                rowCount = 0
+            }
+            val chip = TextView(this).apply {
+                text = opt
+                gravity = android.view.Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12f)
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = if (rowCount < 2) dp(6) else 0
+                }
+                setOnClickListener {
+                    selected[secIdx] = opt
+                    chipViewsBySec[secIdx]?.forEach { (o, view) -> styleChip(view, o == opt) }
+                }
+            }
+            styleChip(chip, selected[secIdx] == opt)
+            pairs.add(opt to chip)
+            row.addView(chip)
+            rowCount++
+        }
+        if (rowCount > 0) sectionsBox.addView(row)
+        chipViewsBySec[secIdx] = pairs
+    }
+
+    scroll.addView(sectionsBox)
+    root.addView(scroll)
+
+    // Quantity Row
+    val qtyRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        setPadding(0, dp(12), 0, dp(14))
+    }
+    val qtyLabel = TextView(this).apply {
+        text = "Jumlah"
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f)
+        setTextColor(kit.ink)
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+    }
+    val qtyValTv = TextView(this).apply {
+        text = chosenQty.toString()
+        gravity = android.view.Gravity.CENTER
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+        setTextColor(kit.ink)
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        layoutParams = LinearLayout.LayoutParams(dp(42), dp(34))
+    }
+    val addBtn = TextView(this).apply {
+        gravity = android.view.Gravity.CENTER
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13.5f)
+        setTextColor(Color.WHITE)
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(10).toFloat()
+            setColor(kit.blue)
+        }
+    }
+    fun syncBtnLabel() {
+        qtyValTv.text = chosenQty.toString()
+        addBtn.text = "Tambah ke Keranjang · ${formatRupiah(product.priceIdr * chosenQty)}"
+    }
+    syncBtnLabel()
+
+    val minusBtn = TextView(this).apply {
+        text = "-"
+        gravity = android.view.Gravity.CENTER
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
+        setTextColor(kit.blue)
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(34))
+        background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(8).toFloat()
+            setColor(kit.bg)
+            setStroke(dp(1), kit.border)
+        }
+        setOnClickListener {
+            if (chosenQty > 1) {
+                chosenQty--
+                syncBtnLabel()
+            }
+        }
+    }
+    val plusBtn = TextView(this).apply {
+        text = "+"
+        gravity = android.view.Gravity.CENTER
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
+        setTextColor(kit.blue)
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(34))
+        background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(8).toFloat()
+            setColor(kit.bg)
+            setStroke(dp(1), kit.border)
+        }
+        setOnClickListener {
+            if (chosenQty < maxAddable) {
+                chosenQty++
+                syncBtnLabel()
+            }
+        }
+    }
+    qtyRow.addView(qtyLabel)
+    qtyRow.addView(minusBtn)
+    qtyRow.addView(qtyValTv)
+    qtyRow.addView(plusBtn)
+    root.addView(qtyRow)
+
+    addBtn.setOnClickListener {
+        val label = sections.mapIndexed { idx, sec ->
+            val opt = selected[idx] ?: sec.options.firstOrNull().orEmpty()
+            "${sec.name}: $opt"
+        }.joinToString(" · ")
+        dlg.dismiss()
+        addToCart(product.id, chosenQty, label)
+    }
+    root.addView(addBtn)
+
+    val cancelTv = TextView(this).apply {
+        text = "Batal"
+        gravity = android.view.Gravity.CENTER
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12.5f)
+        setTextColor(kit.muted)
+        setPadding(0, dp(10), 0, dp(2))
+        setOnClickListener { dlg.dismiss() }
+    }
+    root.addView(cancelTv)
+
+    dlg.setContentView(root)
+    dlg.window?.apply {
+        setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        setLayout((resources.displayMetrics.widthPixels * 0.90f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+    dlg.show()
+}
+
+internal fun MainActivity.setCartQty(cartKey: String, qty: Int) {
     if (qty <= 0) {
-        ui.cart.remove(productId)
+        ui.cart.remove(cartKey)
         if (ui.cart.isEmpty()) {
             ui.cartStallId = null
             ui.cartStallQris = null
@@ -696,13 +947,16 @@ internal fun MainActivity.setCartQty(productId: String, qty: Int) {
             syncCheckoutScheduleDefaults()
         }
     } else {
-        val product = resolveKnownProduct(productId)
+        val pid = com.jajanin.app.data.model.productIdFromCartKey(cartKey)
+        val product = resolveKnownProduct(pid)
         val maxAllowed = product?.stock?.takeIf { it > 0 }?.coerceAtMost(99) ?: 99
-        val clamped = qty.coerceAtMost(maxAllowed)
-        if (qty > maxAllowed) {
+        val otherQty = com.jajanin.app.data.model.totalQtyForProductInCart(ui.cart, pid) - (ui.cart[cartKey] ?: 0)
+        val availableForLine = (maxAllowed - otherQty).coerceAtLeast(0)
+        val clamped = qty.coerceAtMost(availableForLine)
+        if (qty > availableForLine) {
             Toast.makeText(this, "Stok maksimal $maxAllowed porsi.", Toast.LENGTH_SHORT).show()
         }
-        ui.cart[productId] = clamped
+        if (clamped <= 0) ui.cart.remove(cartKey) else ui.cart[cartKey] = clamped
     }
     ui.invalidate()
 }
@@ -757,7 +1011,7 @@ internal fun MainActivity.openCheckout() {
     }
     // Pastikan cartStallId selalu terisi dari item keranjang.
     if (ui.cartStallId.isNullOrBlank()) {
-        val firstPid = ui.cart.keys.firstOrNull()
+        val firstPid = ui.cart.keys.firstOrNull()?.let { com.jajanin.app.data.model.productIdFromCartKey(it) }
         ui.cartStallId = firstPid?.let { pid -> resolveKnownProduct(pid)?.stallId }
     }
     // Nomor HP wajib sebelum memesan (akun lama yang belum punya).
@@ -912,7 +1166,13 @@ internal fun MainActivity.placeCartOrder() {
         showPhoneGate { placeCartOrder() }
         return
     }
-    val lines = ui.cart.entries.map { it.key to it.value }
+    val lines = ui.cart.entries.map { (cartKey, qty) ->
+        com.jajanin.app.data.repository.OrderLineDraft(
+            menuItemId = com.jajanin.app.data.model.productIdFromCartKey(cartKey),
+            quantity = qty,
+            variantLabel = com.jajanin.app.data.model.variantLabelFromCartKey(cartKey),
+        )
+    }
     val requestedMethod = ui.checkoutPayment
     ui.placingOrder = true
     ui.invalidate()

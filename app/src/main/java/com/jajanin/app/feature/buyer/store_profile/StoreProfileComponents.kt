@@ -279,9 +279,15 @@ internal object StoreProfileComponents {
             kit.textEllipsized(c, product.name, left + 9f, cardTop + photoH + 20f, tileW - 18f, 12.5f, kit.ink, true)
             kit.textEllipsized(c, formatRupiah(product.priceIdr), left + 9f, cardTop + photoH + 39f, tileW - 18f, 12f, kit.blue, true)
 
-            val inCartQty = view.cart[product.id] ?: 0
+            val inCartQty = com.jajanin.app.data.model.totalQtyForProductInCart(view.cart, product.id)
             if (itemAvail) {
-                if (inCartQty > 0) {
+                if (product.hasVariants) {
+                    val label = if (inCartQty > 0) "${inCartQty}x · Pilih" else "+ Pilih"
+                    val addBtn = RectF(card.right - 78f, cardTop + photoH + 44f, card.right - 8f, cardTop + tileH - 7f)
+                    kit.rounded(c, addBtn, if (inCartQty > 0) kit.tint else kit.blue, 6f, if (inCartQty > 0) kit.blue else null)
+                    kit.centerText(c, label, addBtn, 9.5f, if (inCartQty > 0) kit.blue else Color.WHITE, true)
+                    view.bounds.putVisible("add:${product.id}", addBtn, topLimit = topLimit, bottomLimit = bottomLimit)
+                } else if (inCartQty > 0) {
                     val step = RectF(card.right - 78f, cardTop + photoH + 44f, card.right - 8f, cardTop + tileH - 7f)
                     kit.rounded(c, step, kit.tint, 6f, kit.blue)
                     val minusHit = RectF(step.left, step.top, step.left + 24f, step.bottom)

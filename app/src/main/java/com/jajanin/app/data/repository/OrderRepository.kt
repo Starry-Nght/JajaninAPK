@@ -268,6 +268,13 @@ internal data class ProductDraft(
     val poDailyQuota: Int? = null,
     val poRequireQris: Boolean = false,
     val poAllowWeekend: Boolean = false,
+    val variantSections: List<com.jajanin.app.data.model.ProductVariantSection> = emptyList(),
+)
+
+internal data class OrderLineDraft(
+    val menuItemId: String,
+    val quantity: Int,
+    val variantLabel: String = "",
 )
 
 @Serializable
@@ -351,7 +358,7 @@ internal object OrderRepository {
     )
 
     private val productColumns = Columns.raw(
-        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,po_dates,po_cutoff_hour,po_daily_quota,po_require_qris,po_allow_weekend"
+        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,po_dates,po_cutoff_hour,po_daily_quota,po_require_qris,po_allow_weekend,variant_sections"
     )
 
     private val realtimeJson = Json {
@@ -417,6 +424,24 @@ internal object OrderRepository {
         }.getOrNull()
     }
 
+    private fun encodeVariantSectionsJson(
+        sections: List<com.jajanin.app.data.model.ProductVariantSection>,
+    ): kotlinx.serialization.json.JsonArray {
+        val cleaned = sections.mapNotNull { sec ->
+            val opts = sec.cleanOptions.take(12)
+            if (opts.isEmpty()) null else buildJsonObject {
+                put("name", sec.cleanName.take(40))
+                put(
+                    "options",
+                    kotlinx.serialization.json.JsonArray(
+                        opts.map { opt -> kotlinx.serialization.json.JsonPrimitive(opt.take(40)) }
+                    ),
+                )
+            }
+        }.take(5)
+        return kotlinx.serialization.json.JsonArray(cleaned)
+    }
+
     suspend fun createProduct(draft: ProductDraft): ProductRow {
         val stockVal = draft.stock
         require(stockVal != null && stockVal in 1..100) {
@@ -441,6 +466,7 @@ internal object OrderRepository {
             put("po_require_qris", draft.poRequireQris)
             put("po_allow_weekend", draft.poAllowWeekend)
             put("stock", stockVal)
+            put("variant_sections", encodeVariantSectionsJson(draft.variantSections))
         }
         return client.postgrest.from("menu_items").insert(payload) {
             select(productColumns)
@@ -468,6 +494,7 @@ internal object OrderRepository {
             put("po_require_qris", draft.poRequireQris)
             put("po_allow_weekend", draft.poAllowWeekend)
             put("stock", stockVal)
+            put("variant_sections", encodeVariantSectionsJson(draft.variantSections))
         }
         val result = client.postgrest.from("menu_items").update(patch) {
             select(Columns.raw("id"))
@@ -573,7 +600,7 @@ internal object OrderRepository {
      * kurangi stok, tulis order + items atomis. Total client tidak dipercaya.
      */
     suspend fun placeOrder(
-        lines: List<Pair<String, Int>>,
+        lines: List<OrderLineDraft>,
         paymentMethod: String,
         orderMode: String = "same_day",
         pickupSession: String = "Istirahat 1",
@@ -583,10 +610,13 @@ internal object OrderRepository {
         require(method == "cash" || method == "qris") { "Metode bayar tidak valid." }
         require(lines.isNotEmpty()) { "Keranjang masih kosong." }
         val array = kotlinx.serialization.json.JsonArray(
-            lines.map { (id, qty) ->
+            lines.map { line ->
                 buildJsonObject {
-                    put("menu_item_id", id)
-                    put("quantity", qty)
+                    put("menu_item_id", line.menuItemId)
+                    put("quantity", line.quantity)
+                    if (line.variantLabel.isNotBlank()) {
+                        put("variant_label", line.variantLabel.take(120))
+                    }
                 }
             }
         )
