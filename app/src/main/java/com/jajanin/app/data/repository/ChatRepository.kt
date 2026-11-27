@@ -155,6 +155,21 @@ internal object ChatRepository {
         }
     }
 
+    /** Ambil atau buat percakapan langsung dengan warung/penjual dari halaman Profil Warung, meski menu masih kosong. */
+    suspend fun getOrCreateStoreConversation(stallId: String): ConversationSummary {
+        val cleanId = stallId.trim()
+        require(cleanId.isNotEmpty()) { "ID warung tidak valid." }
+        return try {
+            val dto = client.postgrest.rpc(
+                "get_or_create_stall_conversation",
+                buildJsonObject { put("p_stall_id", cleanId) },
+            ).decodeAs<ConversationSummaryDto>()
+            dto.toDomain()
+        } catch (t: Throwable) {
+            throw IllegalStateException(parseChatError(t), t)
+        }
+    }
+
     /** Ambil detail satu percakapan beserta konteks produk/pesanan terbaru. */
     suspend fun fetchConversation(conversationId: String): ConversationSummary {
         val cleanId = conversationId.trim()

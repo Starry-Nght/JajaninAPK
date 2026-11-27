@@ -381,6 +381,10 @@ internal object OrderRepository {
     }
 
     suspend fun createProduct(draft: ProductDraft): ProductRow {
+        val stockVal = draft.stock
+        require(stockVal != null && stockVal in 1..100) {
+            "Stok wajib diisi antara 1 sampai 100 sebelum menjual produk."
+        }
         val uid = SupabaseRepository.currentUid() ?: error("Silakan masuk untuk menyimpan produk.")
         val stallId = resolveSellerStall(uid)
         val payload = buildJsonObject {
@@ -399,7 +403,7 @@ internal object OrderRepository {
             draft.poDailyQuota?.let { put("po_daily_quota", it) }
             put("po_require_qris", draft.poRequireQris)
             put("po_allow_weekend", draft.poAllowWeekend)
-            draft.stock?.let { put("stock", it) }
+            put("stock", stockVal)
         }
         return client.postgrest.from("menu_items").insert(payload) {
             select(productColumns)
@@ -407,6 +411,10 @@ internal object OrderRepository {
     }
 
     suspend fun updateProduct(productId: String, draft: ProductDraft) {
+        val stockVal = draft.stock
+        require(stockVal != null && stockVal in 1..100) {
+            "Stok wajib diisi antara 1 sampai 100 sebelum menjual produk."
+        }
         val patch = buildJsonObject {
             put("name", draft.name)
             put("description", draft.description)
@@ -422,7 +430,7 @@ internal object OrderRepository {
             put("po_daily_quota", draft.poDailyQuota)
             put("po_require_qris", draft.poRequireQris)
             put("po_allow_weekend", draft.poAllowWeekend)
-            put("stock", draft.stock)
+            put("stock", stockVal)
         }
         val result = client.postgrest.from("menu_items").update(patch) {
             select(Columns.raw("id"))

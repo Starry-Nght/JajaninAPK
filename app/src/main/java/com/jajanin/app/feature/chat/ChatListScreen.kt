@@ -13,6 +13,7 @@ import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
 import com.jajanin.app.data.model.ConversationSummary
+import com.jajanin.app.data.model.formatChatPreviewBody
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.seller.dashboard.drawAdminNav
 
@@ -252,7 +253,7 @@ private fun JajaninView.drawConversationItem(
         kit.textEllipsized(c, ctxLabel, ctxRect.left + 6f, ctxRect.top + 12f, pillW - 12f, 9.5f, ctxFg, true)
 
         // Row 3: Last Message Preview + Read Receipt Vector Icon + Unread Counter Badge
-        val rawPreview = convo.lastMessageBody.trim()
+        val rawPreview = formatChatPreviewBody(convo.lastMessageBody, convo.lastMessageType)
         val sentByMe = rawPreview.isNotEmpty() && convo.lastMessageSenderId == myUid
         var previewStartX = 86f
         if (sentByMe) {

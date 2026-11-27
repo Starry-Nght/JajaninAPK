@@ -132,6 +132,8 @@ internal fun JajaninView.drawStoreProfile(c: Canvas, w: Float, h: Float) {
     c.translate(-slideX, 0f)
     val collapsedStore = if (showCollapsedBar) store else null
     if (collapsedStore != null) {
+        val isOwnCollapsed = (!collapsedStore.ownerId.isNullOrBlank() && collapsedStore.ownerId == com.jajanin.app.data.repository.SupabaseRepository.currentUid()) ||
+            (!myStallId.isNullOrBlank() && myStallId == collapsedStore.id)
         kit.rect(c, -100f, 0f, 490f, PINNED_HEADER_H, kit.bg)
         kit.line(c, 20f, PINNED_HEADER_H, 370f, PINNED_HEADER_H, kit.divider)
         AppIcon.draw(c, "chevronLeft", 28f, 32f, 19f, kit.ink)
@@ -142,11 +144,19 @@ internal fun JajaninView.drawStoreProfile(c: Canvas, w: Float, h: Float) {
             isVerified = collapsedStore.isVerified,
             x = 48f,
             baselineY = 37f,
-            maxTotalWidth = 310f,
+            maxTotalWidth = if (isOwnCollapsed) 310f else 230f,
             textSize = 16.5f,
             textColor = kit.ink,
             bold = true,
         )
+        if (!isOwnCollapsed) {
+            val topChatBtn = RectF(294f, 16f, 370f, 44f)
+            kit.rounded(c, topChatBtn, kit.tint, 7f, kit.blue)
+            AppIcon.draw(c, "chat", topChatBtn.left + 15f, topChatBtn.centerY(), 12.5f, kit.blue)
+            kit.text(c, "Chat", topChatBtn.left + 26f, topChatBtn.centerY() + 4f, 11f, kit.blue, true)
+            press(c, "chatStore:${collapsedStore.id}", topChatBtn, 7f)
+            bounds["chatStore:${collapsedStore.id}"] = RectF(topChatBtn)
+        }
     } else {
         val backCircle = RectF(16f, 14f, 52f, 50f)
         kit.rounded(c, backCircle, kit.glass, 18f, kit.glassBorder)

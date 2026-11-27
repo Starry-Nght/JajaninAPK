@@ -47,6 +47,7 @@ import com.jajanin.app.feature.chat.openChatList
 import com.jajanin.app.feature.chat.openConversationById
 import com.jajanin.app.feature.chat.openOrderChat
 import com.jajanin.app.feature.chat.openProductInquiryChat
+import com.jajanin.app.feature.chat.openStoreChat
 import com.jajanin.app.feature.chat.refreshChatList
 import com.jajanin.app.data.repository.AdminOrder
 import com.jajanin.app.data.repository.DevAnnouncementRow
@@ -1075,6 +1076,9 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("askSeller:") -> {
                         activity()?.openProductInquiryChat(hit.substringAfter(':'))
                     }
+                    hit.startsWith("chatStore:") -> {
+                        activity()?.openStoreChat(hit.substringAfter(':'))
+                    }
                     hit.startsWith("chatOrder:") -> {
                         activity()?.openOrderChat(hit.substringAfter(':'))
                     }
@@ -1402,4 +1406,18 @@ internal class JajaninView(context: Context) : View(context) {
     }
 
     internal fun activity() = context as? MainActivity
+
+    internal fun resolveOrderItemProduct(menuItemId: String?, itemName: String): ProductRow? {
+        if (!menuItemId.isNullOrBlank()) {
+            sellerProducts.firstOrNull { it.id == menuItemId }?.let { return it }
+            products.firstOrNull { it.id == menuItemId }?.let { return it }
+            storeProfileProducts.firstOrNull { it.id == menuItemId }?.let { return it }
+        }
+        val clean = itemName.trim()
+        if (clean.isNotEmpty()) {
+            sellerProducts.firstOrNull { it.name.equals(clean, ignoreCase = true) }?.let { return it }
+            products.firstOrNull { it.name.equals(clean, ignoreCase = true) }?.let { return it }
+        }
+        return null
+    }
 }

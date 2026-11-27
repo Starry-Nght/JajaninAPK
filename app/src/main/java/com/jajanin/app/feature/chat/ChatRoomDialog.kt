@@ -1,7 +1,11 @@
 package com.jajanin.app.feature.chat
 
 import android.app.Dialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -13,6 +17,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.Window
 import android.view.WindowManager
 import android.widget.EditText
@@ -29,16 +34,22 @@ import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
 import com.jajanin.app.data.model.ChatMessage
+import com.jajanin.app.data.model.ChatOrderContext
 import com.jajanin.app.data.model.ConversationSummary
 import com.jajanin.app.data.model.MessageDeliveryState
+import com.jajanin.app.data.model.OrderCardPayload
+import com.jajanin.app.data.model.ProductCardPayload
 import com.jajanin.app.data.model.formatChatBubbleTime
+import com.jajanin.app.data.model.parseOrderCardPayload
+import com.jajanin.app.data.model.parseProductCardPayload
 import com.jajanin.app.data.repository.ChatRepository
 import com.jajanin.app.data.repository.ChatRoomSession
 import com.jajanin.app.data.repository.SupabaseRepository
-import com.jajanin.app.feature.seller.loadProductImage
+import com.jajanin.app.feature.buyer.resolveKnownProduct
 import com.jajanin.app.feature.seller.openOrderDetail
 import com.jajanin.app.notifications.NotificationHelper
 import io.github.jan.supabase.realtime.RealtimeChannel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -47,6 +58,30 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+
+private data class SellerQuickChatTemplate(
+    val title: String,
+    val message: String,
+)
+
+private val SELLER_QUICK_CHATS = listOf(
+    SellerQuickChatTemplate(
+        title = "Pesanan Sedang Disiapkan",
+        message = "Halo kak, pesananmu sudah kami terima dan sekarang sedang kami siapkan ya. Mohon ditunggu sebentar.",
+    ),
+    SellerQuickChatTemplate(
+        title = "Pesanan Siap Diambil",
+        message = "Halo kak, pesananmu sudah matang dan siap diambil sekarang di warung ya. Jangan lupa tunjukkan kode pengambilan saat ambil.",
+    ),
+    SellerQuickChatTemplate(
+        title = "Pembayaran Diverifikasi",
+        message = "Halo kak, pembayaran pesananmu sudah kami terima dan verifikasi lunas. Pesanan langsung kami proses ya, terima kasih.",
+    ),
+    SellerQuickChatTemplate(
+        title = "Info Antrean Sedang Ramai",
+        message = "Halo kak, saat ini antrean pesanan di warung sedang cukup ramai, mohon kesediaannya menunggu sedikit lebih lama ya. Terima kasih.",
+    ),
+)
 
 internal class ChatRoomDialog(
     private val activity: MainActivity,
@@ -59,6 +94,7 @@ internal class ChatRoomDialog(
 
     private val dialog = Dialog(activity, android.R.style.Theme_DeviceDefault_NoActionBar)
     private val messagesById = LinkedHashMap<String, ChatMessage>()
+    private val inFlightImages = HashSet<String>()
     private var roomSession: ChatRoomSession? = null
     private var previousRoomCleanup: Job? = null
     private var loadJob: Job? = null
@@ -70,6 +106,7 @@ internal class ChatRoomDialog(
     private var hasMoreHistory = false
     private var loadError: String? = null
     private var partnerTyping = false
+    private var quickChatExpanded = false
     private var realtimeStatus: RealtimeChannel.Status = RealtimeChannel.Status.SUBSCRIBING
 
     private lateinit var subtitleView: TextView
@@ -83,6 +120,8 @@ internal class ChatRoomDialog(
     private lateinit var inputField: EditText
     private lateinit var sendBtn: TextView
     private lateinit var charCounterView: TextView
+    private var quickChatPanel: LinearLayout? = null
+    private var quickChatToggleBtn: ImageView? = null
 
     private val density = activity.resources.displayMetrics.density
     private fun dp(v: Int): Int = (v * density).toInt()
@@ -213,6 +252,13 @@ internal class ChatRoomDialog(
         val titleCol = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            if (!viewerIsSeller && !summary.stallId.isNullOrBlank()) {
+                setOnClickListener {
+                    val targetStall = summary.stallId ?: return@setOnClickListener
+                    dismiss()
+                    com.jajanin.app.feature.buyer.store_profile.StoreProfileViewModel.openStoreProfile(activity, targetStall)
+                }
+            }
         }
         val nameView = TextView(activity).apply {
             text = title
@@ -252,7 +298,7 @@ internal class ChatRoomDialog(
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
         })
 
-        // 2. Context Card Container (Product Inquiry or Order Context)
+        // 2. Context Card Container (Product Inquiry or Order Context with Product Banner)
         contextBannerContainer = FrameLayout(activity).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -327,11 +373,17 @@ internal class ChatRoomDialog(
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
         })
 
-        // 5. Message Composer Bar
+        // 5. Message Composer Bar (+ Seller-Only Expandable 4 Quick-Chat Panel)
         val composerWrap = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(kit.card)
             setPadding(dp(12), dp(8), dp(12), dp(10))
+        }
+
+        if (viewerIsSeller) {
+            val panel = buildSellerQuickChatPanel()
+            quickChatPanel = panel
+            composerWrap.addView(panel)
         }
 
         charCounterView = TextView(activity).apply {
@@ -346,6 +398,22 @@ internal class ChatRoomDialog(
         val composerRow = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.BOTTOM
+        }
+
+        if (viewerIsSeller) {
+            val upBtn = ImageView(activity).apply {
+                scaleType = ImageView.ScaleType.CENTER
+                contentDescription = "Pesan cepat penjual"
+                layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+                    rightMargin = dp(8)
+                }
+                setOnClickListener {
+                    setQuickChatExpanded(!quickChatExpanded)
+                }
+            }
+            quickChatToggleBtn = upBtn
+            composerRow.addView(upBtn)
+            updateQuickChatToggleAppearance()
         }
 
         inputField = EditText(activity).apply {
@@ -400,6 +468,120 @@ internal class ChatRoomDialog(
         return root
     }
 
+    private fun buildSellerQuickChatPanel(): LinearLayout {
+        val panel = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            background = roundedDrawable(kit.bg, dpF(12f), strokeColor = kit.border, strokeWidthPx = dp(1))
+            setPadding(dp(12), dp(10), dp(12), dp(6))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = dp(8)
+            }
+        }
+
+        val headerRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        val headerTitle = TextView(activity).apply {
+            text = "PESAN CEPAT PENJUAL · KETUK LANGSUNG KIRIM"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+            setTextColor(kit.blue)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val closeLabel = TextView(activity).apply {
+            text = "Tutup"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            setTextColor(kit.muted)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(6), dp(2), dp(2), dp(2))
+            setOnClickListener { setQuickChatExpanded(false) }
+        }
+        headerRow.addView(headerTitle)
+        headerRow.addView(closeLabel)
+        panel.addView(headerRow)
+
+        SELLER_QUICK_CHATS.forEachIndexed { idx, tpl ->
+            if (idx > 0) {
+                panel.addView(View(activity).apply {
+                    setBackgroundColor(kit.divider)
+                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+                })
+            }
+            val itemRow = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), dp(8), dp(4), dp(8))
+                setOnClickListener {
+                    setQuickChatExpanded(false)
+                    sendDirectTextMessage(tpl.message)
+                }
+            }
+            val textCol = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    rightMargin = dp(8)
+                }
+            }
+            val titleTv = TextView(activity).apply {
+                text = tpl.title
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(kit.ink)
+                typeface = Typeface.DEFAULT_BOLD
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            val msgTv = TextView(activity).apply {
+                text = tpl.message
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTextColor(kit.muted)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            textCol.addView(titleTv)
+            textCol.addView(msgTv)
+            itemRow.addView(textCol)
+
+            val sendBadge = TextView(activity).apply {
+                text = "Kirim"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+                setTextColor(kit.blue)
+                typeface = Typeface.DEFAULT_BOLD
+                background = roundedDrawable(kit.tint, dpF(6f), strokeColor = kit.blue, strokeWidthPx = dp(1))
+                setPadding(dp(9), dp(5), dp(9), dp(5))
+            }
+            itemRow.addView(sendBadge)
+            panel.addView(itemRow)
+        }
+
+        return panel
+    }
+
+    private fun setQuickChatExpanded(expanded: Boolean) {
+        if (!viewerIsSeller) return
+        quickChatExpanded = expanded
+        quickChatPanel?.visibility = if (expanded) View.VISIBLE else View.GONE
+        updateQuickChatToggleAppearance()
+        if (expanded && messagesById.isNotEmpty()) {
+            scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+        }
+    }
+
+    private fun updateQuickChatToggleAppearance() {
+        val btn = quickChatToggleBtn ?: return
+        val iconName = if (quickChatExpanded) "chevronDown" else "chevronUp"
+        val iconColor = if (quickChatExpanded) Color.WHITE else kit.blue
+        val bgColor = if (quickChatExpanded) kit.blue else kit.tint
+        val strokeColor = if (quickChatExpanded) null else kit.blue
+        btn.setImageDrawable(AppIcon.drawable(activity, iconName, 18f, iconColor))
+        btn.background = roundedDrawable(bgColor, dpF(20f), strokeColor = strokeColor, strokeWidthPx = dp(1))
+    }
+
     private fun applyWindowInsets(root: View, header: View, composerWrap: View) {
         val fallbackStatusTop = runCatching {
             val resId = activity.resources.getIdentifier("status_bar_height", "dimen", "android")
@@ -449,6 +631,96 @@ internal class ChatRoomDialog(
         root.post { root.requestApplyInsets() }
     }
 
+    private fun resolveOrderBannerImageUrl(orderCtx: ChatOrderContext): String? {
+        orderCtx.imageUrl?.takeIf { it.startsWith("https://") }?.let { return it }
+        val localOrder = activity.ui.adminOrders.firstOrNull { it.id == orderCtx.id }
+            ?: activity.ui.myOrders.firstOrNull { it.id == orderCtx.id }
+        val firstItem = localOrder?.items?.firstOrNull()
+        if (firstItem != null) {
+            activity.ui.resolveOrderItemProduct(firstItem.menuItemId, firstItem.itemName)
+                ?.imageUrl
+                ?.takeIf { it.startsWith("https://") }
+                ?.let { return it }
+        }
+        orderCtx.firstProductId?.let { pid ->
+            activity.resolveKnownProduct(pid)?.imageUrl?.takeIf { it.startsWith("https://") }?.let { return it }
+        }
+        return summary.productContext?.imageUrl?.takeIf { it.startsWith("https://") }
+    }
+
+    private fun ensureChatImageLoaded(url: String?) {
+        val clean = url?.takeIf { it.startsWith("https://") } ?: return
+        if (ProductImageCache.images.containsKey(clean) || !inFlightImages.add(clean)) return
+        activity.authScope.launch(Dispatchers.IO) {
+            val bitmap = runCatching {
+                val conn = java.net.URL(clean).openConnection().apply {
+                    connectTimeout = 6000
+                    readTimeout = 6000
+                }
+                val raw = conn.getInputStream().use { it.readBytes() }
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+                var sample = 1
+                while (bounds.outWidth / sample > 800 || bounds.outHeight / sample > 800) sample *= 2
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+            }.getOrNull()
+            launch(Dispatchers.Main) {
+                inFlightImages.remove(clean)
+                if (bitmap != null) {
+                    ProductImageCache.images[clean] = bitmap
+                    activity.ui.invalidate()
+                    if (dialog.isShowing) {
+                        renderContextBanner()
+                        renderMessageList(scrollToBottom = false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun buildRoundedThumbnailView(
+        imageUrl: String?,
+        fallbackLabel: String,
+        sizeDp: Int,
+        cornerDp: Float,
+        rightMarginDp: Int,
+    ): View {
+        val validUrl = imageUrl?.takeIf { it.startsWith("https://") }
+        val bmp = validUrl?.let { ProductImageCache.images[it] }
+        if (bmp != null) {
+            return ImageView(activity).apply {
+                setImageBitmap(bmp)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                clipToOutline = true
+                outlineProvider = object : ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, dpF(cornerDp))
+                    }
+                }
+                background = roundedDrawable(kit.card, dpF(cornerDp), strokeColor = kit.border, strokeWidthPx = dp(1))
+                layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply {
+                    rightMargin = dp(rightMarginDp)
+                }
+            }
+        }
+        if (validUrl != null) {
+            ensureChatImageLoaded(validUrl)
+        }
+        val ch = (fallbackLabel.trim().firstOrNull { it.isLetterOrDigit() } ?: 'P').uppercaseChar().toString()
+        return TextView(activity).apply {
+            text = ch
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (sizeDp >= 64) 19f else 15f)
+            setTextColor(kit.blue)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedDrawable(kit.card, dpF(cornerDp), strokeColor = kit.border, strokeWidthPx = dp(1))
+            layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)).apply {
+                rightMargin = dp(rightMarginDp)
+            }
+        }
+    }
+
     private fun renderContextBanner() {
         contextBannerContainer.removeAllViews()
         val orderCtx = summary.orderContext
@@ -456,11 +728,20 @@ internal class ChatRoomDialog(
         val preferProduct = summary.conversationType == "product_inquiry" && prodCtx != null
 
         if (orderCtx != null && !preferProduct) {
+            val liveStatus = resolveLiveOrderStatus(orderCtx.id, orderCtx.status)
+            val isConfirmed = liveStatus.equals("confirmed", ignoreCase = true) ||
+                liveStatus.equals("preparing", ignoreCase = true) ||
+                liveStatus.equals("processing", ignoreCase = true)
             val card = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                background = roundedDrawable(kit.tint, dpF(8f), strokeColor = kit.border, strokeWidthPx = dp(1))
-                setPadding(dp(12), dp(9), dp(12), dp(9))
+                background = roundedDrawable(
+                    kit.tint,
+                    dpF(10f),
+                    strokeColor = if (isConfirmed) kit.blue else kit.border,
+                    strokeWidthPx = dp(1),
+                )
+                setPadding(dp(10), dp(9), dp(11), dp(9))
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -469,14 +750,29 @@ internal class ChatRoomDialog(
                 }
             }
 
+            // Product Photo Banner Thumbnail so Seller immediately recognizes the bought/inquired item
+            val bannerImgUrl = resolveOrderBannerImageUrl(orderCtx)
+            val fallbackTitle = orderCtx.firstItemName.ifBlank { orderCtx.itemsSummary.ifBlank { "P" } }
+            card.addView(
+                buildRoundedThumbnailView(
+                    imageUrl = bannerImgUrl,
+                    fallbackLabel = fallbackTitle,
+                    sizeDp = 48,
+                    cornerDp = 8f,
+                    rightMarginDp = 10,
+                )
+            )
+
             val infoCol = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    rightMargin = dp(8)
+                }
             }
             val topLine = TextView(activity).apply {
-                val stLabel = statusLabelShort(orderCtx.status)
+                val stLabel = statusLabelShort(liveStatus)
                 text = "Pesanan #${orderCtx.pickupCode} · $stLabel · ${formatRupiah(orderCtx.totalIdr)}"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
                 setTextColor(kit.blue)
                 typeface = Typeface.DEFAULT_BOLD
                 maxLines = 1
@@ -484,38 +780,51 @@ internal class ChatRoomDialog(
             }
             infoCol.addView(topLine)
 
-            if (orderCtx.itemsSummary.isNotBlank()) {
-                val subLine = TextView(activity).apply {
-                    text = orderCtx.itemsSummary
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                    setTextColor(kit.ink)
+            val itemDisplay = orderCtx.itemsSummary.ifBlank {
+                orderCtx.firstItemName.ifBlank { "Pesanan Warung" }
+            }
+            val subLine = TextView(activity).apply {
+                text = itemDisplay
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                setTextColor(kit.ink)
+                typeface = Typeface.DEFAULT_BOLD
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            infoCol.addView(subLine)
+
+            val askedProdName = prodCtx?.name?.trim().orEmpty()
+            val extraMeta = when {
+                askedProdName.isNotBlank() && !itemDisplay.contains(askedProdName, ignoreCase = true) ->
+                    "Ditanyakan juga: $askedProdName"
+                orderCtx.scheduleLabel.isNotBlank() -> orderCtx.scheduleLabel
+                else -> ""
+            }
+            if (extraMeta.isNotBlank()) {
+                val metaTv = TextView(activity).apply {
+                    text = extraMeta
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+                    setTextColor(kit.muted)
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
                 }
-                infoCol.addView(subLine)
+                infoCol.addView(metaTv)
             }
             card.addView(infoCol)
 
             val actionBtn = TextView(activity).apply {
                 text = "Lihat Pesanan"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
                 setTextColor(Color.WHITE)
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER_VERTICAL
-                val arrowIcon = AppIcon.drawable(activity, "arrowRight", 12.5f, Color.WHITE)
+                val arrowIcon = AppIcon.drawable(activity, "arrowRight", 12f, Color.WHITE)
                 setCompoundDrawables(null, null, arrowIcon, null)
-                compoundDrawablePadding = dp(5)
-                background = roundedDrawable(kit.blue, dpF(6f))
-                setPadding(dp(10), dp(6), dp(10), dp(6))
+                compoundDrawablePadding = dp(4)
+                background = roundedDrawable(kit.blue, dpF(7f))
+                setPadding(dp(9), dp(7), dp(9), dp(7))
                 setOnClickListener {
-                    dismiss()
-                    if (viewerIsSeller) {
-                        activity.openOrderDetail(orderCtx.id)
-                    } else {
-                        activity.ui.selectedBuyerOrderId = orderCtx.id
-                        activity.ui.lastOrderId = orderCtx.id
-                        activity.ui.go(Screen.READY)
-                    }
+                    openOrderScreenFromChat(orderCtx.id)
                 }
             }
             card.addView(actionBtn)
@@ -528,7 +837,7 @@ internal class ChatRoomDialog(
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 val bg = if (prodCtx.deleted || !prodCtx.available) kit.dangerBorder else kit.tint
-                background = roundedDrawable(bg, dpF(8f), strokeColor = kit.border, strokeWidthPx = dp(1))
+                background = roundedDrawable(bg, dpF(10f), strokeColor = kit.border, strokeWidthPx = dp(1))
                 setPadding(dp(10), dp(8), dp(12), dp(8))
                 layoutParams = FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -538,37 +847,21 @@ internal class ChatRoomDialog(
                 }
             }
 
-            // Product Image or Initial Box
-            val imgUrl = prodCtx.imageUrl?.takeIf { it.startsWith("https://") }
-            val cachedBmp = imgUrl?.let { ProductImageCache.images[it] }
-            if (cachedBmp != null) {
-                val iv = ImageView(activity).apply {
-                    setImageBitmap(cachedBmp)
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply {
-                        rightMargin = dp(10)
-                    }
-                }
-                card.addView(iv)
-            } else {
-                if (imgUrl != null) activity.loadProductImage(imgUrl)
-                val placeholder = TextView(activity).apply {
-                    text = (prodCtx.name.trim().firstOrNull() ?: 'P').uppercaseChar().toString()
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                    setTextColor(kit.blue)
-                    typeface = Typeface.DEFAULT_BOLD
-                    gravity = Gravity.CENTER
-                    background = roundedDrawable(kit.card, dpF(8f))
-                    layoutParams = LinearLayout.LayoutParams(dp(42), dp(42)).apply {
-                        rightMargin = dp(10)
-                    }
-                }
-                card.addView(placeholder)
-            }
+            card.addView(
+                buildRoundedThumbnailView(
+                    imageUrl = prodCtx.imageUrl,
+                    fallbackLabel = prodCtx.name,
+                    sizeDp = 44,
+                    cornerDp = 8f,
+                    rightMarginDp = 10,
+                )
+            )
 
             val infoCol = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    rightMargin = dp(8)
+                }
             }
             val nameLine = TextView(activity).apply {
                 text = prodCtx.name
@@ -596,10 +889,7 @@ internal class ChatRoomDialog(
             infoCol.addView(metaLine)
             card.addView(infoCol)
 
-            val matchedProduct = prodCtx.id?.let { pid ->
-                activity.ui.products.firstOrNull { it.id == pid }
-                    ?: activity.ui.sellerProducts.firstOrNull { it.id == pid }
-            }
+            val matchedProduct = prodCtx.id?.let { pid -> activity.resolveKnownProduct(pid) }
             if (matchedProduct != null && !prodCtx.deleted && !viewerIsSeller) {
                 val viewBtn = TextView(activity).apply {
                     text = "Lihat Menu"
@@ -619,6 +909,40 @@ internal class ChatRoomDialog(
             }
 
             contextBannerContainer.addView(card)
+        }
+    }
+
+    private fun openOrderScreenFromChat(orderId: String) {
+        if (orderId.isBlank()) return
+        dismiss()
+        if (viewerIsSeller) {
+            activity.openOrderDetail(orderId)
+        } else {
+            activity.ui.selectedBuyerOrderId = orderId
+            activity.ui.lastOrderId = orderId
+            activity.ui.go(Screen.READY)
+        }
+    }
+
+    private fun resolveLiveOrderStatus(orderId: String, fallbackStatus: String): String {
+        if (orderId.isNotBlank()) {
+            activity.ui.adminOrders.firstOrNull { it.id == orderId }?.status?.let { return it }
+            activity.ui.myOrders.firstOrNull { it.id == orderId }?.status?.let { return it }
+            if (summary.orderContext?.id == orderId) {
+                return summary.orderContext?.status ?: fallbackStatus
+            }
+        }
+        return fallbackStatus
+    }
+
+    private fun formatIndonesianOrderStatus(status: String): Pair<String, Int> {
+        return when (status.lowercase()) {
+            "confirmed" -> "Dikonfirmasi" to kit.blue
+            "preparing", "processing" -> "Sedang Disiapkan" to kit.blue
+            "ready" -> "Siap Diambil" to kit.success
+            "completed" -> "Selesai" to kit.success
+            "cancelled" -> "Dibatalkan" to kit.danger
+            else -> "Menunggu Konfirmasi" to Color.rgb(183, 116, 0)
         }
     }
 
@@ -683,7 +1007,6 @@ internal class ChatRoomDialog(
 
         loadJob = activity.authScope.launch {
             try {
-                // Segarkan metadata percakapan & pesan secara paralel
                 runCatching {
                     summary = ChatRepository.fetchConversation(conversationId)
                     renderContextBanner()
@@ -768,11 +1091,6 @@ internal class ChatRoomDialog(
         )
     }
 
-    /**
-     * Sinkronisasi latar belakang berkecepatan tinggi secara berurutan (non-overlapping)
-     * selama ruang chat terbuka, agar pesan baru dan status dibaca (`✓✓`) selalu
-     * sinkron seketika tanpa kedipan UI maupun antrean request menumpuk.
-     */
     private fun startFastSyncLoop() {
         fastSyncJob?.cancel()
         fastSyncJob = activity.authScope.launch {
@@ -795,7 +1113,6 @@ internal class ChatRoomDialog(
                         }
                         val existing = messagesById[msg.id]
                         if (existing == null) {
-                            // Cek apakah pesan ini adalah hasil konfirmasi pesan optimistik
                             val tempKey = messagesById.entries.firstOrNull { (_, cur) ->
                                 cur.deliveryState == MessageDeliveryState.SENDING &&
                                     cur.senderId == msg.senderId &&
@@ -846,7 +1163,6 @@ internal class ChatRoomDialog(
 
     private fun onRealtimeMessageInserted(incoming: ChatMessage) {
         if (!dialog.isShowing) return
-        // Deduplikasi bila pesan ini adalah echo dari pesan optimistik kita sendiri
         val tempMatchKey = messagesById.entries.firstOrNull { (_, existing) ->
             existing.deliveryState == MessageDeliveryState.SENDING &&
                 existing.senderId == incoming.senderId &&
@@ -915,6 +1231,12 @@ internal class ChatRoomDialog(
         inputField.setText("")
         ChatDraftStore.clearDraft(conversationId)
         roomSession?.notifyTyping(myUid, isTyping = false)
+        sendDirectTextMessage(clean)
+    }
+
+    private fun sendDirectTextMessage(cleanText: String) {
+        val clean = cleanText.trim()
+        if (clean.isEmpty() || clean.length > 500) return
 
         val tempId = "temp_${UUID.randomUUID()}"
         val nowIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
@@ -991,6 +1313,392 @@ internal class ChatRoomDialog(
         }
     }
 
+    /**
+     * Shopee Image 3 Style: Order Receipt Card automatically inserted when Buyer places an order.
+     */
+    private fun buildOrderCardBubble(msg: ChatMessage, card: OrderCardPayload): View {
+        val outerWrap = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = dp(10)
+            }
+        }
+
+        val cardSurface = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedDrawable(kit.card, dpF(12f), strokeColor = kit.border, strokeWidthPx = dp(1))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            if (card.orderId.isNotBlank()) {
+                setOnClickListener { openOrderScreenFromChat(card.orderId) }
+            }
+        }
+
+        // Inner soft product box (Thumbnail + Item Title + Count/Total + Live Status)
+        val innerProductBox = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedDrawable(kit.bg, dpF(8f), strokeColor = kit.divider, strokeWidthPx = dp(1))
+            setPadding(dp(9), dp(9), dp(10), dp(9))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = dp(10)
+            }
+        }
+
+        val resolvedImg = card.imageUrl.takeIf { it.startsWith("https://") }
+            ?: summary.orderContext?.takeIf { it.id == card.orderId }?.let { resolveOrderBannerImageUrl(it) }
+        innerProductBox.addView(
+            buildRoundedThumbnailView(
+                imageUrl = resolvedImg,
+                fallbackLabel = card.title.ifBlank { card.itemsSummary },
+                sizeDp = 56,
+                cornerDp = 8f,
+                rightMarginDp = 10,
+            )
+        )
+
+        val prodTextCol = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val prodTitleTv = TextView(activity).apply {
+            text = card.itemsSummary.ifBlank { card.title.ifBlank { "Pesanan #${card.pickupCode}" } }
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(kit.ink)
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        val prodTotalTv = TextView(activity).apply {
+            text = "${card.itemCount.coerceAtLeast(1)} item, Total: ${formatRupiah(card.totalIdr)}"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setTextColor(kit.muted)
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        val liveSt = resolveLiveOrderStatus(card.orderId, card.status)
+        val (stLabel, stColor) = formatIndonesianOrderStatus(liveSt)
+        val prodStatusTv = TextView(activity).apply {
+            text = stLabel
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setTextColor(stColor)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        prodTextCol.addView(prodTitleTv)
+        prodTextCol.addView(prodTotalTv)
+        prodTextCol.addView(prodStatusTv)
+        innerProductBox.addView(prodTextCol)
+        cardSurface.addView(innerProductBox)
+
+        // Metadata Rows: No. Pesanan + Salin, Waktu Pesan, Jadwal
+        fun addMetaRow(label: String, value: String, copyableCode: String? = null) {
+            val row = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(2), dp(3), dp(2), dp(3))
+            }
+            val lblTv = TextView(activity).apply {
+                text = label
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                setTextColor(kit.muted)
+                layoutParams = LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+            val valTv = TextView(activity).apply {
+                text = value
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(kit.ink)
+                typeface = if (copyableCode != null) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            row.addView(lblTv)
+            row.addView(valTv)
+
+            if (copyableCode != null) {
+                val copyPill = TextView(activity).apply {
+                    text = "Salin"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    setTextColor(kit.blue)
+                    typeface = Typeface.DEFAULT_BOLD
+                    background = roundedDrawable(kit.tint, dpF(5f), strokeColor = kit.blue, strokeWidthPx = dp(1))
+                    setPadding(dp(7), dp(2), dp(7), dp(2))
+                    setOnClickListener {
+                        val cm = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        cm?.setPrimaryClip(ClipData.newPlainText("Nomor Pesanan", "#$copyableCode"))
+                        Toast.makeText(activity, "Nomor pesanan #$copyableCode disalin.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                row.addView(copyPill)
+            }
+            cardSurface.addView(row)
+        }
+
+        if (card.pickupCode.isNotBlank()) {
+            addMetaRow("No. Pesanan", "#${card.pickupCode}", copyableCode = card.pickupCode)
+        }
+        val shownTime = card.orderTime.ifBlank { msg.timeLabel }
+        if (shownTime.isNotBlank()) {
+            addMetaRow("Waktu Pesan", shownTime)
+        }
+        if (card.schedule.isNotBlank()) {
+            addMetaRow("Jadwal Ambil", card.schedule)
+        }
+
+        if (card.orderId.isNotBlank()) {
+            val openBtn = TextView(activity).apply {
+                text = "Lihat Rincian Pesanan"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                setTextColor(kit.blue)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                background = roundedDrawable(kit.tint, dpF(7f), strokeColor = kit.blue, strokeWidthPx = dp(1))
+                setPadding(dp(12), dp(7), dp(12), dp(7))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    topMargin = dp(8)
+                }
+                setOnClickListener { openOrderScreenFromChat(card.orderId) }
+            }
+            cardSurface.addView(openBtn)
+        }
+
+        outerWrap.addView(cardSurface)
+
+        if (msg.timeLabel.isNotBlank()) {
+            val timeFooter = TextView(activity).apply {
+                text = msg.timeLabel
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                setTextColor(kit.muted)
+                gravity = Gravity.END
+                setPadding(0, dp(3), dp(4), 0)
+            }
+            outerWrap.addView(timeFooter)
+        }
+
+        return outerWrap
+    }
+
+    /**
+     * Shopee Image 4 Style: Visual Product/Order Showcase Card sent when Buyer taps
+     * "Chat Penjual" on their Order page or "Tanya Penjual" on a Product page.
+     */
+    private fun buildProductCardBubble(msg: ChatMessage, card: ProductCardPayload, isMine: Boolean): View {
+        val screenW = activity.resources.displayMetrics.widthPixels
+        val cardW = (screenW * 0.80f).toInt().coerceAtLeast(dp(250))
+
+        val rowWrap = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (isMine) Gravity.END else Gravity.START
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = dp(9)
+            }
+        }
+
+        val cardSurface = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedDrawable(kit.card, dpF(12f), strokeColor = kit.border, strokeWidthPx = dp(1))
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            layoutParams = LinearLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+
+        val topRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
+
+        val resolvedImg = card.imageUrl.takeIf { it.startsWith("https://") }
+            ?: card.productId.takeIf { it.isNotBlank() }?.let { pid ->
+                activity.resolveKnownProduct(pid)?.imageUrl?.takeIf { it.startsWith("https://") }
+            }
+            ?: summary.orderContext?.takeIf { it.id == card.orderId }?.let { resolveOrderBannerImageUrl(it) }
+
+        topRow.addView(
+            buildRoundedThumbnailView(
+                imageUrl = resolvedImg,
+                fallbackLabel = card.title,
+                sizeDp = 76,
+                cornerDp = 8f,
+                rightMarginDp = 10,
+            )
+        )
+
+        val infoCol = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val titleTv = TextView(activity).apply {
+            text = card.title.ifBlank { "Produk Warung" }
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+            setTextColor(kit.ink)
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        infoCol.addView(titleTv)
+
+        if (card.subtitle.isNotBlank()) {
+            val subTv = TextView(activity).apply {
+                text = "${card.subtitle} >"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setTextColor(kit.muted)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(0, dp(2), 0, dp(3))
+            }
+            infoCol.addView(subTv)
+        }
+
+        val badgeText = if (card.orderId.isNotBlank()) {
+            val liveSt = resolveLiveOrderStatus(card.orderId, "")
+            if (liveSt.isNotBlank()) formatIndonesianOrderStatus(liveSt).first else card.badge
+        } else {
+            card.badge
+        }
+        if (badgeText.isNotBlank()) {
+            val badgePill = TextView(activity).apply {
+                text = badgeText
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+                setTextColor(kit.blue)
+                typeface = Typeface.DEFAULT_BOLD
+                background = roundedDrawable(kit.tint, dpF(4.5f), strokeColor = kit.blue, strokeWidthPx = dp(1))
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    bottomMargin = dp(3)
+                }
+            }
+            infoCol.addView(badgePill)
+        }
+
+        if (card.schedule.isNotBlank()) {
+            val schedTv = TextView(activity).apply {
+                text = card.schedule
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+                setTextColor(kit.success)
+                typeface = Typeface.DEFAULT_BOLD
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+            infoCol.addView(schedTv)
+        }
+
+        if (card.priceIdr > 0) {
+            val priceTv = TextView(activity).apply {
+                text = formatRupiah(card.priceIdr)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)
+                setTextColor(kit.blue)
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, dp(2), 0, 0)
+            }
+            infoCol.addView(priceTv)
+        }
+
+        topRow.addView(infoCol)
+        cardSurface.addView(topRow)
+
+        // Bottom Split Action Bar (Shopee Image 4 style: Icon Tile + Primary CTA Button)
+        val actionBar = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                topMargin = dp(10)
+            }
+        }
+
+        val onCardClick: (View) -> Unit = {
+            when {
+                card.orderId.isNotBlank() -> openOrderScreenFromChat(card.orderId)
+                card.productId.isNotBlank() -> {
+                    val prod = activity.resolveKnownProduct(card.productId)
+                    if (prod != null && !viewerIsSeller) {
+                        dismiss()
+                        activity.ui.selectedProduct = prod
+                        activity.ui.quantity = 1
+                        activity.ui.go(Screen.DETAIL)
+                    } else {
+                        Toast.makeText(activity, card.title.ifBlank { "Menu warung" }, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        cardSurface.setOnClickListener(onCardClick)
+
+        val iconTile = ImageView(activity).apply {
+            scaleType = ImageView.ScaleType.CENTER
+            val iconKey = if (card.orderId.isNotBlank()) "receipt" else "box"
+            contentDescription = AppIcon.contentDescription(iconKey)
+            setImageDrawable(AppIcon.drawable(activity, iconKey, 16f, kit.blue))
+            background = roundedDrawable(kit.tint, dpF(7f), strokeColor = kit.border, strokeWidthPx = dp(1))
+            layoutParams = LinearLayout.LayoutParams(dp(38), dp(34)).apply {
+                rightMargin = dp(6)
+            }
+            setOnClickListener(onCardClick)
+        }
+        actionBar.addView(iconTile)
+
+        val ctaText = when {
+            card.orderId.isNotBlank() && viewerIsSeller -> "Buka Pesanan #${card.pickupCode}"
+            card.ctaLabel.isNotBlank() -> card.ctaLabel
+            card.orderId.isNotBlank() -> "Lihat Rincian Pesanan"
+            else -> "Lihat Detail Menu"
+        }
+        val primaryCta = TextView(activity).apply {
+            text = ctaText
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedDrawable(kit.blue, dpF(7f))
+            layoutParams = LinearLayout.LayoutParams(0, dp(34), 1f)
+            setOnClickListener(onCardClick)
+        }
+        actionBar.addView(primaryCta)
+        cardSurface.addView(actionBar)
+        rowWrap.addView(cardSurface)
+
+        // Timestamp + Read Receipt below card (matches Image 4 "20:56 ✓✓")
+        val receiptTv = TextView(activity).apply {
+            text = msg.timeLabel
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTextColor(kit.muted)
+            gravity = Gravity.CENTER_VERTICAL
+            if (isMine && msg.deliveryState == MessageDeliveryState.SENT) {
+                val receiptIcon = AppIcon.drawable(
+                    activity,
+                    if (msg.isRead) "checkDouble" else "check",
+                    12f,
+                    if (msg.isRead) kit.blue else kit.muted,
+                )
+                setCompoundDrawables(null, null, receiptIcon, null)
+                compoundDrawablePadding = dp(4)
+            }
+            setPadding(dp(4), dp(3), dp(4), 0)
+        }
+        rowWrap.addView(receiptTv)
+
+        return rowWrap
+    }
+
     private fun renderMessageList(scrollToBottom: Boolean) {
         updateStateBanner()
         loadOlderBtn.visibility = if (hasMoreHistory && messagesById.isNotEmpty()) View.VISIBLE else View.GONE
@@ -1028,6 +1736,23 @@ internal class ChatRoomDialog(
         val sortedMessages = messagesById.values.toList()
         sortedMessages.forEach { msg ->
             val isMine = msg.senderId == myUid
+
+            if (msg.messageType == "order_card") {
+                val parsedOrderCard = parseOrderCardPayload(msg.body)
+                if (parsedOrderCard != null) {
+                    messageListLayout.addView(buildOrderCardBubble(msg, parsedOrderCard))
+                    return@forEach
+                }
+            }
+
+            if (msg.messageType == "product_card") {
+                val parsedProductCard = parseProductCardPayload(msg.body)
+                if (parsedProductCard != null) {
+                    messageListLayout.addView(buildProductCardBubble(msg, parsedProductCard, isMine))
+                    return@forEach
+                }
+            }
+
             val rowWrap = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = if (isMine) Gravity.END else Gravity.START
@@ -1069,7 +1794,6 @@ internal class ChatRoomDialog(
                     strokeWidthPx = dp(1),
                 )
                 setPadding(dp(13), dp(9), dp(13), dp(8))
-                val maxBubbleW = (activity.resources.displayMetrics.widthPixels * 0.76f).toInt()
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -1101,24 +1825,49 @@ internal class ChatRoomDialog(
                 msg.timeLabel
             }
 
-            val metaTv = TextView(activity).apply {
-                text = metaText
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-                setTextColor(metaTextColor)
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
-                if (isMine && msg.deliveryState == MessageDeliveryState.SENT) {
-                    val receiptIcon = AppIcon.drawable(
-                        activity,
-                        if (msg.isRead) "checkDouble" else "check",
-                        12f,
-                        metaTextColor,
-                    )
-                    setCompoundDrawables(null, null, receiptIcon, null)
-                    compoundDrawablePadding = dp(4)
+            if (msg.messageType == "auto_reply") {
+                val footerRow = LinearLayout(activity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(4), 0, 0)
                 }
-                setPadding(0, dp(3), 0, 0)
+                val autoTagTv = TextView(activity).apply {
+                    text = "Auto-Reply"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    setTextColor(metaTextColor)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        rightMargin = dp(12)
+                    }
+                }
+                val timeTv = TextView(activity).apply {
+                    text = metaText
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    setTextColor(metaTextColor)
+                    gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                }
+                footerRow.addView(autoTagTv)
+                footerRow.addView(timeTv)
+                bubble.addView(footerRow)
+            } else {
+                val metaTv = TextView(activity).apply {
+                    text = metaText
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                    setTextColor(metaTextColor)
+                    gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                    if (isMine && msg.deliveryState == MessageDeliveryState.SENT) {
+                        val receiptIcon = AppIcon.drawable(
+                            activity,
+                            if (msg.isRead) "checkDouble" else "check",
+                            12f,
+                            metaTextColor,
+                        )
+                        setCompoundDrawables(null, null, receiptIcon, null)
+                        compoundDrawablePadding = dp(4)
+                    }
+                    setPadding(0, dp(3), 0, 0)
+                }
+                bubble.addView(metaTv)
             }
-            bubble.addView(metaTv)
 
             rowWrap.addView(bubble)
             messageListLayout.addView(rowWrap)

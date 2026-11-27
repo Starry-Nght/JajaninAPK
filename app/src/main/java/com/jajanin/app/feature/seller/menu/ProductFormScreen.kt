@@ -397,7 +397,12 @@ private fun JajaninView.priceAndStock(c: Canvas, top: Float): Float {
     val gap = 8f
     val priceText = productPrice.toIntOrNull()?.let { formatRupiah(it) }
         ?: "cth. 12000"
-    val stockText = productStock.toIntOrNull()?.toString() ?: "Tanpa batas"
+    val parsedStock = productStock.trim().filter(Char::isDigit).toIntOrNull()
+    val stockValid = parsedStock != null && parsedStock in 1..100
+    val stockText = when {
+        parsedStock != null -> "$parsedStock porsi"
+        else -> "Wajib 1–100"
+    }
     val priceField = RectF(20f, top + 16f, 20f + half, top + 62f)
     val stockField = RectF(20f + half + gap, top + 16f, 370f, top + 62f)
 
@@ -414,15 +419,22 @@ private fun JajaninView.priceAndStock(c: Canvas, top: Float): Float {
     press(c, "pfPrice", priceField, SellerTokens.RADIUS_CONTROL)
     bounds["pfPrice"] = RectF(priceField)
 
-    kit.text(c, "Stok", 20f + half + gap, top + 10f, SellerTokens.T_LABEL, kit.muted, true)
-    kit.rounded(
-        c, stockField, kit.card, SellerTokens.RADIUS_CONTROL,
-        if (pressedKey == "pfStock") kit.blue else kit.border,
-    )
+    kit.text(c, "Stok (Wajib 1–100)", 20f + half + gap, top + 10f, SellerTokens.T_LABEL, kit.muted, true)
+    val stockBorder = when {
+        pressedKey == "pfStock" -> kit.blue
+        parsedStock != null && !stockValid -> kit.danger
+        else -> kit.border
+    }
+    kit.rounded(c, stockField, kit.card, SellerTokens.RADIUS_CONTROL, stockBorder)
+    val stockColor = when {
+        parsedStock == null -> kit.muted
+        !stockValid -> kit.danger
+        else -> kit.ink
+    }
     kit.textEllipsized(
         c, stockText, stockField.left + 14f, stockField.centerY() + 4.5f,
-        stockField.width() - 28f, 13.5f, if (productStock.toIntOrNull() != null) kit.ink else kit.muted,
-        productStock.toIntOrNull() != null,
+        stockField.width() - 28f, 13.5f, stockColor,
+        parsedStock != null,
     )
     press(c, "pfStock", stockField, SellerTokens.RADIUS_CONTROL)
     bounds["pfStock"] = RectF(stockField)

@@ -49,15 +49,16 @@ internal object StoreProfileComponents {
         val avatarRect = RectF(20f, top + bannerH - 34f, 84f, top + bannerH + 30f)
         StoreAvatar.draw(view, c, store.name, store.logoUrl, avatarRect, cornerRadius = 14f, withCardRing = true)
 
-        // Chat Store Action Button (right side next to avatar; hidden when viewing own store)
-        val isOwnStore = !store.ownerId.isNullOrBlank() && store.ownerId == SupabaseRepository.currentUid()
-        if (!firstProductId.isNullOrBlank() && !isOwnStore) {
-            val chatBtn = RectF(w - 132f, top + bannerH + 8f, w - 20f, top + bannerH + 38f)
+        // Chat Penjual Action Button (always visible when viewing another seller's warung, even if 0 products)
+        val isOwnStore = (!store.ownerId.isNullOrBlank() && store.ownerId == SupabaseRepository.currentUid()) ||
+            (!view.myStallId.isNullOrBlank() && view.myStallId == store.id)
+        if (!isOwnStore) {
+            val chatBtn = RectF(w - 140f, top + bannerH + 6f, w - 20f, top + bannerH + 38f)
             kit.rounded(c, chatBtn, kit.tint, 8f, kit.blue)
-            AppIcon.draw(c, "chat", chatBtn.left + 18f, chatBtn.centerY(), 13.5f, kit.blue)
-            kit.text(c, "Chat Warung", chatBtn.left + 30f, chatBtn.centerY() + 4f, 11f, kit.blue, true)
-            view.press(c, "askSeller:$firstProductId", chatBtn, 8f)
-            view.bounds.putVisible("askSeller:$firstProductId", chatBtn, topLimit = topLimit, bottomLimit = bottomLimit)
+            AppIcon.draw(c, "chat", chatBtn.left + 17f, chatBtn.centerY(), 13.5f, kit.blue)
+            kit.text(c, "Chat Penjual", chatBtn.left + 29f, chatBtn.centerY() + 4f, 11f, kit.blue, true)
+            view.press(c, "chatStore:${store.id}", chatBtn, 8f)
+            view.bounds.putVisible("chatStore:${store.id}", chatBtn, topLimit = topLimit, bottomLimit = bottomLimit)
         }
 
         var y = top + bannerH + 46f
@@ -222,11 +223,12 @@ internal object StoreProfileComponents {
     ): Float {
         val kit = view.kit
         if (products.isEmpty()) {
-            val emptyBox = RectF(20f, top + 8f, 370f, top + 96f)
+            val emptyBox = RectF(20f, top + 8f, 370f, top + 108f)
             kit.rounded(c, emptyBox, kit.card, 10f, kit.border)
-            AppIcon.draw(c, "box", emptyBox.centerX(), top + 36f, 22f, kit.muted)
-            kit.centerText(c, "Belum ada menu di kategori ini.", RectF(32f, top + 54f, 358f, top + 84f), 12.5f, kit.muted)
-            return top + 108f
+            AppIcon.draw(c, "box", emptyBox.centerX(), top + 34f, 22f, kit.muted)
+            kit.centerText(c, "Belum ada menu di kategori ini.", RectF(32f, top + 50f, 358f, top + 74f), 12.5f, kit.ink, true)
+            kit.centerText(c, "Gunakan tombol Chat Penjual di atas untuk bertanya langsung.", RectF(28f, top + 72f, 362f, top + 98f), 10.5f, kit.muted)
+            return top + 120f
         }
 
         val tileW = (w - 40f - 12f) / 2f

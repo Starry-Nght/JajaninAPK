@@ -3,6 +3,7 @@ package com.jajanin.app.data.model
 import com.jajanin.app.data.repository.SupabaseRepository
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -12,6 +13,83 @@ internal enum class MessageDeliveryState {
     SENDING,
     SENT,
     FAILED,
+}
+
+private val chatCardJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+    coerceInputValues = true
+}
+
+@Serializable
+internal data class OrderCardPayload(
+    @SerialName("order_id") val orderId: String = "",
+    @SerialName("pickup_code") val pickupCode: String = "",
+    val title: String = "",
+    @SerialName("items_summary") val itemsSummary: String = "",
+    @SerialName("item_count") val itemCount: Int = 1,
+    @SerialName("total_idr") val totalIdr: Int = 0,
+    val status: String = "pending",
+    val schedule: String = "",
+    @SerialName("order_time") val orderTime: String = "",
+    @SerialName("image_url") val imageUrl: String = "",
+)
+
+@Serializable
+internal data class ProductCardPayload(
+    @SerialName("order_id") val orderId: String = "",
+    @SerialName("product_id") val productId: String = "",
+    @SerialName("pickup_code") val pickupCode: String = "",
+    val title: String = "",
+    val subtitle: String = "",
+    val badge: String = "",
+    val schedule: String = "",
+    @SerialName("price_idr") val priceIdr: Int = 0,
+    @SerialName("image_url") val imageUrl: String = "",
+    @SerialName("cta_label") val ctaLabel: String = "Lihat Rincian",
+)
+
+internal fun parseOrderCardPayload(rawBody: String): OrderCardPayload? {
+    val clean = rawBody.trim()
+    if (!clean.startsWith("{")) return null
+    return runCatching { chatCardJson.decodeFromString<OrderCardPayload>(clean) }.getOrNull()
+}
+
+internal fun parseProductCardPayload(rawBody: String): ProductCardPayload? {
+    val clean = rawBody.trim()
+    if (!clean.startsWith("{")) return null
+    return runCatching { chatCardJson.decodeFromString<ProductCardPayload>(clean) }.getOrNull()
+}
+
+internal fun formatChatPreviewBody(rawBody: String, messageType: String): String {
+    val clean = rawBody.trim()
+    if (clean.isEmpty()) return ""
+    return when (messageType) {
+        "order_card" -> {
+            val parsed = parseOrderCardPayload(clean)
+            if (parsed != null) {
+                val summary = parsed.itemsSummary.ifBlank { parsed.title.ifBlank { "Rincian Pesanan" } }
+                val codePart = parsed.pickupCode.takeIf { it.isNotBlank() }?.let { "#$it " }.orEmpty()
+                "[Pesanan $codePart] $summary".replace(" ]", "]")
+            } else {
+                clean
+            }
+        }
+        "product_card" -> {
+            val parsed = parseProductCardPayload(clean)
+            if (parsed != null) {
+                val label = parsed.title.ifBlank { "Produk Warung" }
+                if (parsed.pickupCode.isNotBlank()) {
+                    "[Pesanan #${parsed.pickupCode}] $label"
+                } else {
+                    "[Tanya Produk] $label"
+                }
+            } else {
+                clean
+            }
+        }
+        else -> clean
+    }
 }
 
 @Serializable
@@ -45,6 +123,12 @@ internal data class ChatOrderContextDto(
     @SerialName("payment_method") val paymentMethod: String? = null,
     @SerialName("payment_status") val paymentStatus: String = "unpaid",
     @SerialName("items_summary") val itemsSummary: String = "",
+    @SerialName("first_item_name") val firstItemName: String = "",
+    @SerialName("first_product_id") val firstProductId: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("item_count") val itemCount: Int = 0,
+    @SerialName("schedule_label") val scheduleLabel: String = "",
+    @SerialName("created_at") val createdAt: String = "",
 )
 
 @Serializable
@@ -53,6 +137,7 @@ internal data class ConversationSummaryDto(
     @SerialName("conversation_type") val conversationType: String = "order",
     @SerialName("order_id") val orderId: String? = null,
     @SerialName("product_id") val productId: String? = null,
+    @SerialName("stall_id") val stallId: String? = null,
     @SerialName("buyer_id") val buyerId: String = "",
     @SerialName("seller_id") val sellerId: String = "",
     @SerialName("created_at") val createdAt: String = "",
@@ -116,6 +201,12 @@ internal data class ChatOrderContext(
     val paymentMethod: String?,
     val paymentStatus: String,
     val itemsSummary: String,
+    val firstItemName: String = "",
+    val firstProductId: String? = null,
+    val imageUrl: String? = null,
+    val itemCount: Int = 0,
+    val scheduleLabel: String = "",
+    val createdAt: String = "",
 )
 
 internal data class ConversationSummary(
@@ -123,6 +214,7 @@ internal data class ConversationSummary(
     val conversationType: String,
     val orderId: String?,
     val productId: String?,
+    val stallId: String?,
     val buyerId: String,
     val sellerId: String,
     val createdAt: String,
@@ -135,6 +227,7 @@ internal data class ConversationSummary(
     val unreadCount: Int,
     val lastMessageId: String,
     val lastMessageBody: String,
+    val lastMessageType: String,
     val lastMessageSenderId: String,
     val lastMessageIsRead: Boolean,
     val lastMessageCreatedAt: String,
@@ -211,11 +304,14 @@ internal fun ConversationSummaryDto.toDomain(): ConversationSummary {
         ?: lastMessageAt?.takeIf { it.isNotBlank() }
         ?: updatedAt.takeIf { it.isNotBlank() }
         ?: createdAt
+    val rawLastType = lastMessage?.messageType.orEmpty().ifBlank { "text" }
+    val cleanLastBody = formatChatPreviewBody(lastMessage?.body.orEmpty(), rawLastType)
     return ConversationSummary(
         id = id,
         conversationType = conversationType,
         orderId = orderId?.takeIf { it.isNotBlank() },
         productId = productId?.takeIf { it.isNotBlank() },
+        stallId = stallId?.takeIf { it.isNotBlank() },
         buyerId = buyerId,
         sellerId = sellerId,
         createdAt = createdAt,
@@ -227,7 +323,8 @@ internal fun ConversationSummaryDto.toDomain(): ConversationSummary {
         stallName = stallName,
         unreadCount = unreadCount.coerceAtLeast(0),
         lastMessageId = lastMessage?.id.orEmpty(),
-        lastMessageBody = lastMessage?.body.orEmpty(),
+        lastMessageBody = cleanLastBody,
+        lastMessageType = rawLastType,
         lastMessageSenderId = lastMessage?.senderId.orEmpty(),
         lastMessageIsRead = lastMessage?.isRead ?: false,
         lastMessageCreatedAt = lastMessage?.createdAt.orEmpty(),
@@ -252,6 +349,12 @@ internal fun ConversationSummaryDto.toDomain(): ConversationSummary {
                 paymentMethod = it.paymentMethod,
                 paymentStatus = it.paymentStatus,
                 itemsSummary = it.itemsSummary,
+                firstItemName = it.firstItemName,
+                firstProductId = it.firstProductId?.takeIf { s -> s.isNotBlank() },
+                imageUrl = it.imageUrl?.takeIf { s -> s.isNotBlank() },
+                itemCount = it.itemCount,
+                scheduleLabel = it.scheduleLabel,
+                createdAt = it.createdAt,
             )
         },
     )

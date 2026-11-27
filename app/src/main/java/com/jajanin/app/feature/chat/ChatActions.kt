@@ -188,6 +188,27 @@ internal fun MainActivity.openProductInquiryChat(productId: String) {
     }
 }
 
+/** Buka ruang chat langsung ke penjual warung dari halaman Profil Toko publik (`stall_id`). */
+internal fun MainActivity.openStoreChat(stallId: String) {
+    if (!SupabaseRepository.hasSession()) {
+        Toast.makeText(this, "Masuk dulu untuk menghubungi penjual.", Toast.LENGTH_SHORT).show()
+        showAuthForm(false)
+        return
+    }
+    val cleanId = stallId.trim()
+    if (cleanId.isEmpty()) return
+
+    authScope.launch {
+        try {
+            val summary = ChatRepository.getOrCreateStoreConversation(cleanId)
+            upsertLocalConversationSummary(summary)
+            showChatRoomDialog(summary)
+        } catch (t: Throwable) {
+            Toast.makeText(this@openStoreChat, t.message ?: "Gagal membuka chat warung.", Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
 /** Buka ruang chat berdasarkan `conversation_id` (dari daftar chat atau deep-link notifikasi push). */
 internal fun MainActivity.openConversationById(conversationId: String) {
     if (!SupabaseRepository.hasSession()) {

@@ -189,8 +189,12 @@ private fun JajaninView.drawSellerMenuItemRow(
     val maxW = 212f
     kit.textEllipsized(c, product.name, textX, top + 26f, maxW, 14f, kit.ink, true)
 
-    val stockStr = product.stock?.let { "Stok $it" } ?: "Stok bebas"
-    val subColor = if (product.available) kit.muted else kit.danger
+    val stockStr = when {
+        product.stock == null -> "Stok wajib diisi"
+        product.stock <= 0 -> "Stok habis (0)"
+        else -> "Stok ${product.stock}"
+    }
+    val subColor = if (product.available && (product.stock ?: 0) > 0) kit.muted else kit.danger
     kit.textEllipsized(
         c,
         "${formatRupiah(product.priceIdr)} · ${if (product.available) stockStr else "Nonaktif"}",

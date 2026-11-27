@@ -13,8 +13,10 @@ import com.jajanin.app.core.constants.STATUS_PENDING
 import com.jajanin.app.core.constants.STATUS_PREPARING
 import com.jajanin.app.core.constants.STATUS_PROCESSING_LEGACY
 import com.jajanin.app.core.constants.STATUS_READY
+import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.components.drawCenteredButtonWithArrow
 import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
+import com.jajanin.app.core.ui.drawBitmapCenterCrop
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.ui.statusLabel
@@ -168,8 +170,60 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             }
             y += 52f
 
-            // 3. Unified Receipt Surface (Items + Dashed Line + Total in one clean 8f surface)
-            val itemsH = if (order.items.isEmpty()) 36f else order.items.size * 34f
+            // 2b. Highlighted Product Banner (Memudahkan seller melihat produk yang dibeli & ditanyakan)
+            val primaryItem = order.items.firstOrNull()
+            if (primaryItem != null) {
+                val matchedProd = resolveOrderItemProduct(primaryItem.menuItemId, primaryItem.itemName)
+                val isConfirmedHighlight = order.status.equals(STATUS_CONFIRMED, ignoreCase = true) ||
+                    order.status.equals(STATUS_PREPARING, ignoreCase = true) ||
+                    order.status.equals(STATUS_PROCESSING_LEGACY, ignoreCase = true)
+                val prodBannerH = 74f
+                val prodBanner = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + prodBannerH)
+                kit.rounded(
+                    c,
+                    prodBanner,
+                    if (isConfirmedHighlight) kit.tint else kit.card,
+                    8f,
+                    if (isConfirmedHighlight) kit.blue else kit.border,
+                )
+
+                val pThumb = RectF(32f, y + 11f, 84f, y + 63f)
+                val pUrl = matchedProd?.imageUrl?.takeIf { it.startsWith("https://") }
+                val pBmp = pUrl?.let { ProductImageCache.images[it] }
+                if (pBmp != null) {
+                    drawBitmapCenterCrop(c, pBmp, pThumb, 7f)
+                } else {
+                    kit.rounded(c, pThumb, kit.card, 7f, kit.border)
+                    val initChar = primaryItem.itemName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "P"
+                    kit.centerText(c, initChar, pThumb, 17f, kit.blue, true)
+                    if (pUrl != null) activity()?.loadProductImage(pUrl)
+                }
+
+                val bannerTag = if (order.status.equals(STATUS_CONFIRMED, ignoreCase = true)) {
+                    "PRODUK PESANAN · CONFIRMED"
+                } else {
+                    "PRODUK YANG DIBELI"
+                }
+                kit.textEllipsized(c, bannerTag, 96f, y + 23f, 260f, 9.5f, kit.blue, true)
+
+                val extraItems = (order.items.size - 1).coerceAtLeast(0)
+                val mainHeadline = if (extraItems > 0) {
+                    "${primaryItem.quantity}× ${primaryItem.itemName} (+$extraItems menu lain)"
+                } else {
+                    "${primaryItem.quantity}× ${primaryItem.itemName}"
+                }
+                kit.textEllipsized(c, mainHeadline, 96f, y + 43f, 262f, 13.5f, kit.ink, true)
+
+                val stockMeta = matchedProd?.stock?.let { "Sisa stok etalase: $it porsi" }
+                    ?: "Subtotal: ${formatRupiah(primaryItem.unitPriceIdr * primaryItem.quantity)}"
+                kit.textEllipsized(c, stockMeta, 96f, y + 60f, 262f, 10.5f, kit.muted)
+
+                y += prodBannerH + 12f
+            }
+
+            // 3. Unified Receipt Surface (Items with Product Thumbnails + Dashed Line + Total)
+            val itemRowH = 44f
+            val itemsH = if (order.items.isEmpty()) 36f else order.items.size * itemRowH
             val receiptTop = y
             val receiptBottom = receiptTop + 34f + itemsH + 52f
             sellerSurface(c, RectF(SellerTokens.PAD, receiptTop, SellerTokens.RIGHT, receiptBottom))
@@ -181,21 +235,34 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 kit.text(c, "Tidak ada rincian item.", 34f, iy + 20f, 12f, kit.muted)
             } else {
                 order.items.forEachIndexed { index, item ->
+                    val itemProd = resolveOrderItemProduct(item.menuItemId, item.itemName)
+                    val rowThumb = RectF(34f, iy + 5f, 66f, iy + 37f)
+                    val rowUrl = itemProd?.imageUrl?.takeIf { it.startsWith("https://") }
+                    val rowBmp = rowUrl?.let { ProductImageCache.images[it] }
+                    if (rowBmp != null) {
+                        drawBitmapCenterCrop(c, rowBmp, rowThumb, 5f)
+                    } else {
+                        kit.rounded(c, rowThumb, kit.tint, 5f)
+                        val ch = item.itemName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "M"
+                        kit.centerText(c, ch, rowThumb, 12f, kit.blue, true)
+                        if (rowUrl != null) activity()?.loadProductImage(rowUrl)
+                    }
+
                     val subtotal = formatRupiah(item.unitPriceIdr * item.quantity)
                     val subtotalW = kit.measure(subtotal, 12.5f, true)
                     kit.textEllipsized(
-                        c, "${item.quantity}×  ${item.itemName}", 34f, iy + 21f,
-                        180f, 12.5f, kit.ink, true,
+                        c, "${item.quantity}× ${item.itemName}", 76f, iy + 19f,
+                        196f, 12.5f, kit.ink, true,
                     )
                     kit.textEllipsized(
-                        c, "@${formatRupiah(item.unitPriceIdr)}", 216f, iy + 21f,
-                        66f, 10.5f, kit.muted,
+                        c, "@${formatRupiah(item.unitPriceIdr)}", 76f, iy + 34f,
+                        140f, 10f, kit.muted,
                     )
-                    kit.textRight(c, subtotal, 356f, iy + 21f, subtotalW + 16f, 12.5f, kit.ink, true)
+                    kit.textRight(c, subtotal, 356f, iy + 25f, subtotalW + 16f, 12.5f, kit.ink, true)
                     if (index < order.items.size - 1) {
-                        kit.line(c, 34f, iy + 32f, 356f, iy + 32f, kit.divider)
+                        kit.line(c, 76f, iy + itemRowH - 1f, 356f, iy + itemRowH - 1f, kit.divider)
                     }
-                    iy += 34f
+                    iy += itemRowH
                 }
             }
 

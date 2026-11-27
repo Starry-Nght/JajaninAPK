@@ -4,6 +4,8 @@ import com.jajanin.app.MainActivity
 import com.jajanin.app.feature.buyer.*
 import com.jajanin.app.feature.seller.*
 import com.jajanin.app.feature.developer.*
+import com.jajanin.app.feature.chat.refreshChatList
+import com.jajanin.app.feature.chat.refreshUnreadChats
 import com.jajanin.app.feature.inbox.*
 
 import android.app.Activity
@@ -976,6 +978,8 @@ internal fun MainActivity.placeCartOrder() {
             ui.lastOrderTotal = placed.totalIdr
             ui.lastOrderMethod = placed.paymentMethod
             recordBuyerOrderSeed(placed.id, placed.status, placed.paymentStatus)
+            refreshUnreadChats()
+            refreshChatList(silent = true)
             if (method == "qris") {
                 // Ambil QR warung lalu tampilkan layar bayar + timer 10 menit + unggah bukti wajib.
                 ui.lastOrderStatus = placed.status

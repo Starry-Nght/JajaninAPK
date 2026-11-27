@@ -244,7 +244,7 @@ internal fun MainActivity.showProductTextField(field: String) {
     // title, hint, initial, numeric, maxLen, multiline
     val spec = when (field) {
         "harga" -> arrayOf("Harga", "cth. 12000", ui.productPrice, "1", "9", "0")
-        "stok" -> arrayOf("Stok", "Kosongkan = tanpa batas", ui.productStock, "1", "5", "0")
+        "stok" -> arrayOf("Stok Produk (Wajib 1–100)", "Isi stok antara 1 sampai 100", ui.productStock, "1", "3", "0")
         "po_quota" -> arrayOf("Kuota PO per Tanggal", "cth. 15 (kosongkan = tanpa batas)", ui.productPoDailyQuota, "1", "3", "0")
         "deskripsi" -> arrayOf("Deskripsi", "Singkat saja", ui.productDescription, "0", "200", "1")
         "bahan" -> arrayOf("Bahan", "Opsional", ui.productIngredients, "0", "120", "1")
@@ -316,16 +316,20 @@ internal fun MainActivity.saveProductForm() {
     }
     val priceValue = ui.productPrice.filter(Char::isDigit).toIntOrNull()
     val stockText = ui.productStock.trim()
+    val stockValue = stockText.filter(Char::isDigit).toIntOrNull()
     ui.productError = when {
         ui.productName.isBlank() -> "Nama produk wajib diisi."
         priceValue == null || priceValue <= 0 -> "Harga wajib angka lebih dari Rp 0."
         priceValue > 999_999_999 -> "Harga terlalu besar."
-        stockText.isNotBlank() && (stockText.toIntOrNull() == null || stockText.toInt() < 0) ->
-            "Stok harus angka 0 ke atas, atau kosongkan."
+        stockText.isBlank() || stockValue == null ->
+            "Stok wajib diisi antara 1 sampai 100 sebelum menjual produk."
+        stockValue !in 1..100 ->
+            "Stok produk wajib antara 1 sampai 100 porsi."
         else -> ""
     }
     if (ui.productError.isNotBlank()) {
         ui.invalidate()
+        Toast.makeText(this, ui.productError, Toast.LENGTH_SHORT).show()
         return
     }
     ui.productSaving = true
@@ -487,6 +491,13 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
         ui.invalidate()
         return
     }
+    if (stock == null || stock !in 1..100) {
+        ui.productError = "Stok wajib diisi antara 1 sampai 100 sebelum menjual produk."
+        ui.productSaving = false
+        ui.invalidate()
+        Toast.makeText(this, ui.productError, Toast.LENGTH_LONG).show()
+        return
+    }
     val validPoDates = ui.productPoDates.filter {
         OrderRepository.isValidPreOrderDate(it) && !OrderRepository.isWeekendWib(it)
     }.sorted()
@@ -593,8 +604,13 @@ internal fun MainActivity.refreshSellerProducts() {
 internal fun MainActivity.toggleProductAvailability(productId: String) {
     val self = this
     val product = ui.sellerProducts.firstOrNull { it.id == productId } ?: return
-    // Optimis: pill "Aktif/Mati" langsung berpindah; server mengonfirmasi lewat refresh.
     val optimistic = !product.available
+    if (optimistic && (product.stock == null || product.stock !in 1..100)) {
+        Toast.makeText(self, "Isi stok antara 1 sampai 100 terlebih dahulu sebelum menjual produk.", Toast.LENGTH_LONG).show()
+        openProductForm(product.copy(available = true))
+        return
+    }
+    // Optimis: pill "Aktif/Mati" langsung berpindah; server mengonfirmasi lewat refresh.
     ui.sellerProducts = ui.sellerProducts.map { if (it.id == productId) it.copy(available = optimistic) else it }
     ui.invalidate()
     authScope.launch {
@@ -1659,6 +1675,9 @@ internal fun MainActivity.loadAdminOrderDetail(orderId: String) {
     ui.adminDetailLoading = cached == null && ui.adminDetailOrder?.id != orderId
     ui.adminDetailError = null
     ui.invalidate()
+    if (ui.sellerProducts.isEmpty()) {
+        refreshSellerProducts()
+    }
     authScope.launch {
         try {
             val order = OrderRepository.fetchOrderById(orderId)
