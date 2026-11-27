@@ -102,7 +102,11 @@ internal fun JajaninView.drawHomeStoreDiscoverySection(
                 kit.muted,
             )
 
-            val metaLine = "${store.completedOrdersCount} selesai · ${store.activeProductCount} menu"
+            val metaLine = if (store.ratingCount > 0) {
+                "★ ${String.format(java.util.Locale.US, "%.1f", store.avgRating)} · ${store.activeProductCount} menu"
+            } else {
+                "${store.completedOrdersCount} selesai · ${store.activeProductCount} menu"
+            }
             kit.textEllipsized(
                 c,
                 metaLine,
@@ -178,7 +182,10 @@ internal fun JajaninView.drawStoreSearchCard(
 
         kit.line(c, 32f, top + 123f, 358f, top + 123f, kit.divider)
         val statsLine = buildList {
-            add("${store.completedOrdersCount} pesanan selesai")
+            if (store.ratingCount > 0) {
+                add("★ ${String.format(java.util.Locale.US, "%.1f", store.avgRating)} (${store.ratingCount})")
+            }
+            add("${store.completedOrdersCount} selesai")
             add("${store.activeProductCount} menu aktif")
             store.minPriceIdr?.let { add("mulai ${formatRupiah(it)}") }
         }.joinToString(" · ")

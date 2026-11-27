@@ -99,6 +99,10 @@ class MainActivity : Activity() {
     internal val REQUEST_PAYMENT_PROOF = 8304
     internal val REQUEST_STORE_LOGO = 8305
     internal val REQUEST_STORE_BANNER = 8306
+    internal val REQUEST_PROFILE_AVATAR = 8307
+    internal val REQUEST_REPORT_EVIDENCE_1 = 8308
+    internal val REQUEST_REPORT_EVIDENCE_2 = 8309
+    internal var activeSellerReport: com.jajanin.app.feature.buyer.ActiveSellerReportHolder? = null
     internal var pendingOtaRelease: OtaRelease? = null
     internal var pendingOtaPublishDraft: OtaPublishDraft? = null
     internal var otaPromptedVersion: Int = -1
@@ -475,6 +479,8 @@ class MainActivity : Activity() {
         ui.myDisplayName = displayName
         ui.myNis = nis
         ui.myClass = kelas
+        refreshMyAvatarUrl()
+        refreshMyOrderRatings()
         if (role == "developer") {
             if (!developerUnlocked) {
                 ui.myRole = "buyer"
@@ -612,6 +618,33 @@ class MainActivity : Activity() {
                     )
                 }
                 uploadSellerStoreImage(uri, isBanner = true)
+            }
+            REQUEST_PROFILE_AVATAR -> {
+                val uri = data?.data ?: return
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                uploadBuyerAvatar(uri)
+            }
+            REQUEST_REPORT_EVIDENCE_1 -> {
+                val uri = data?.data ?: return
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                onReportEvidencePicked(1, uri)
+            }
+            REQUEST_REPORT_EVIDENCE_2 -> {
+                val uri = data?.data ?: return
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                onReportEvidencePicked(2, uri)
             }
         }
     }

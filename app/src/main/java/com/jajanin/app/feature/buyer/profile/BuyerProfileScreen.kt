@@ -1,18 +1,22 @@
 package com.jajanin.app.feature.buyer.profile
 
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.RectF
 import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
+import com.jajanin.app.core.ui.drawBitmapCenterCrop
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.developer.inboxUnreadCount
+import com.jajanin.app.feature.seller.loadProductImage
 import com.jajanin.app.feature.seller.profile.drawSellerProfile
 
 private const val HEADER_H = 60f
@@ -32,13 +36,26 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
 
     var y = 78f + off
 
-    // 1. Open Editorial Identity Block (No outer card box)
+    // 1. Open Editorial Identity Block (No outer card box; avatar tappable to change photo)
     if (visible(y, y + 72f)) {
         val titleText = myDisplayName.takeIf { it.isNotBlank() }?.take(26) ?: "Pengguna Jajanin"
         val initial = (titleText.firstOrNull() ?: 'A').uppercaseChar().toString()
         val avatar = RectF(20f, y, 72f, y + 52f)
-        kit.rounded(c, avatar, kit.tint, 8f)
-        kit.centerText(c, initial, avatar, 21f, kit.blue, true)
+        val avatarUrl = myAvatarUrl.takeIf { it.startsWith("https://") }
+        val avatarBmp = avatarUrl?.let { ProductImageCache.images[it] }
+        if (avatarBmp != null) {
+            drawBitmapCenterCrop(c, avatarBmp, avatar, 12f)
+            kit.rounded(c, avatar, Color.TRANSPARENT, 12f, kit.border)
+        } else {
+            kit.rounded(c, avatar, kit.tint, 12f)
+            kit.centerText(c, initial, avatar, 21f, kit.blue, true)
+            if (avatarUrl != null) activity()?.loadProductImage(avatarUrl)
+        }
+        val camBadge = RectF(52f, y + 36f, 74f, y + 54f)
+        kit.rounded(c, camBadge, kit.blue, 9f, kit.bg)
+        kit.centerText(c, "Ubah", camBadge, 7.2f, Color.WHITE, true)
+        bounds.putVisible("profileAvatar", avatar, topLimit = HEADER_H, bottomLimit = navClear)
+        press(c, "profileAvatar", avatar, 12f)
 
         val suspended = myAccountStatus == "suspended"
         val statusText = if (suspended) "Ditangguhkan" else "Aktif"
@@ -145,6 +162,15 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
                 )
             )
         }
+        add(
+            ProfileRowSpec(
+                title = "Foto Profil",
+                subtitle = if (myAvatarUrl.startsWith("https://")) "Foto profil terpasang · ketuk untuk ganti" else "Tambahkan foto profil dari galeri",
+                trailing = if (myAvatarUrl.startsWith("https://")) "Ubah" else "Upload",
+                trailingColor = kit.blue,
+                key = "profileAvatar"
+            )
+        )
         add(
             ProfileRowSpec(
                 title = "Nomor HP",

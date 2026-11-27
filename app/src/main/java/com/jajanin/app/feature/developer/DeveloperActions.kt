@@ -115,6 +115,7 @@ internal fun MainActivity.refreshDeveloper() {
     ui.devOrdersLoading = firstLoad
     ui.devWarningsLoading = ui.devWarnings.isEmpty()
     ui.devAnnLoading = ui.devAnnouncements.isEmpty()
+    ui.devReportsLoading = ui.devReports.isEmpty()
     ui.devError = null
     ui.invalidate()
     devRefreshJob = authScope.launch {
@@ -124,6 +125,7 @@ internal fun MainActivity.refreshDeveloper() {
             ui.devOrders = DeveloperRepository.fetchAllOrders()
             ui.devWarnings = DeveloperRepository.fetchWarningHistory()
             ui.devAnnouncements = DeveloperRepository.fetchAnnouncements()
+            ui.devReports = com.jajanin.app.data.repository.FeedbackRepository.fetchAllReportsForDev()
             ui.devInvites = emptyList()
             ui.devError = null
         } catch (ce: kotlinx.coroutines.CancellationException) {
@@ -136,6 +138,7 @@ internal fun MainActivity.refreshDeveloper() {
             ui.devOrdersLoading = false
             ui.devWarningsLoading = false
             ui.devAnnLoading = false
+            ui.devReportsLoading = false
             ui.invalidate()
         }
     }
@@ -433,6 +436,56 @@ internal fun MainActivity.confirmResetUserQuota(userId: String) {
                     DeveloperRepository.resetBuyerQuota(userId)
                     refreshDeveloper()
                     Toast.makeText(self, "Jatah pesanan $name direset ke 0/2.", Toast.LENGTH_SHORT).show()
+                } catch (error: Throwable) {
+                    Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        .setNegativeButton("Batal", null)
+        .show()
+}
+
+/** Developer memperbarui status laporan penjual (reviewing / resolved / dismissed) dengan catatan opsional. */
+internal fun MainActivity.updateDevSellerReportStatus(reportId: String, nextStatus: String) {
+    val self = this
+    val statusTitle = when (nextStatus.lowercase()) {
+        "reviewing" -> "Tandai Ditinjau"
+        "resolved" -> "Tandai Selesai"
+        "dismissed" -> "Tolak Laporan"
+        else -> "Perbarui Status"
+    }
+    if (nextStatus.equals("reviewing", ignoreCase = true)) {
+        authScope.launch {
+            try {
+                com.jajanin.app.data.repository.FeedbackRepository.updateSellerReportForDev(reportId, "reviewing", "")
+                refreshDeveloper()
+                Toast.makeText(self, "Laporan ditandai sedang ditinjau.", Toast.LENGTH_SHORT).show()
+            } catch (error: Throwable) {
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+            }
+        }
+        return
+    }
+    val noteInput = EditText(this).apply {
+        hint = "Catatan tindak lanjut developer (opsional)"
+        minLines = 2
+    }
+    val box = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(48, 20, 48, 8)
+        addView(noteInput)
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle(statusTitle)
+        .setMessage("Tambahkan catatan hasil penanganan laporan jika diperlukan.")
+        .setView(box)
+        .setPositiveButton("Simpan") { _, _ ->
+            val note = noteInput.text.toString().trim()
+            authScope.launch {
+                try {
+                    com.jajanin.app.data.repository.FeedbackRepository.updateSellerReportForDev(reportId, nextStatus, note)
+                    refreshDeveloper()
+                    Toast.makeText(self, "Status laporan diperbarui.", Toast.LENGTH_SHORT).show()
                 } catch (error: Throwable) {
                     Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
                 }

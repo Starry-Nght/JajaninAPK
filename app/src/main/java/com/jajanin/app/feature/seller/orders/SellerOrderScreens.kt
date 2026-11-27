@@ -119,8 +119,10 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = 60f, bottomLimit = h - 68f)
             y = maxOf(y + 102f, metaBottomY + 10f)
 
-            // 1b. Jadwal & Sesi Pengambilan Banner
-            val schedRect = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 36f)
+            // 1b. Jadwal & Lokasi Pengambilan Banner
+            val roomNote = order.pickupRoom.takeIf { it.isNotBlank() }
+            val schedH = if (roomNote != null) 54f else 36f
+            val schedRect = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + schedH)
             val isPo = order.isPreOrder
             kit.rounded(
                 c,
@@ -140,7 +142,11 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 if (isPo) Color.rgb(183, 116, 0) else kit.blue,
                 true,
             )
-            y += 46f
+            if (roomNote != null) {
+                kit.text(c, "KELAS / RUANGAN", 32f, y + 42f, 9.5f, kit.muted, true)
+                kit.textRight(c, roomNote, 358f, y + 42.5f, 200f, 11.5f, kit.ink, true)
+            }
+            y += schedH + 10f
 
             // 2. Horizontal 5-Step Status Track
             val stepLabels = listOf("Baru", "Diterima", "Siapkan", "Siap", "Selesai")

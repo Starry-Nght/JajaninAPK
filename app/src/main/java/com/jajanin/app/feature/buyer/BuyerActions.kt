@@ -1415,10 +1415,23 @@ internal fun MainActivity.onMidtransPaymentCompleted(orderId: String, status: St
     ui.lastOrderStatus = status.ifBlank { STATUS_PENDING }
     ui.selectedBuyerOrderId = orderId
     refreshMyOrders()
+    refreshMyOrderRatings()
     refreshProducts()
     refreshChatList(silent = true)
     ui.go(Screen.READY)
     Toast.makeText(this, "Pembayaran Midtrans lunas otomatis. Pesanan diteruskan ke warung.", Toast.LENGTH_LONG).show()
+    // Prompt rating 1-5 (Toko, Durasi, Rasa) tepat setelah pembayaran selesai!
+    authScope.launch {
+        kotlinx.coroutines.delay(450L)
+        if (ui.myOrderRatings.containsKey(orderId)) return@launch
+        val freshOrder = ui.myOrders.firstOrNull { it.id == orderId }
+            ?: runCatching { OrderRepository.fetchOrderById(orderId) }.getOrNull()
+        if (freshOrder != null && !freshOrder.status.equals(STATUS_CANCELLED, ignoreCase = true)) {
+            showOrderRatingDialog(
+                freshOrder.copy(paymentStatus = "paid")
+            )
+        }
+    }
 }
 
 /** Simpan gambar QRIS dinamis Midtrans ke galeri perangkat. */

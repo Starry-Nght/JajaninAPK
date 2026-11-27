@@ -709,6 +709,18 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
         kit.textEllipsized(c, "Bahan: $cleanIng", 22f, nextY + 4f, 346f, 11.5f, kit.muted)
         nextY += 22f
     }
+    val room = product.pickupRoom.ifBlank {
+        product.stallId?.let { storeDirectoryById[it]?.location?.trim() }.orEmpty()
+    }
+    if (room.isNotBlank()) {
+        val poiTop = nextY + 6f
+        val poiRect = RectF(20f, poiTop, 370f, poiTop + 38f)
+        kit.rounded(c, poiRect, kit.tint, 8f, kit.border)
+        kit.rect(c, 20f, poiTop + 6f, 23.5f, poiTop + 32f, kit.blue)
+        kit.text(c, "AMBIL DI KELAS / RUANGAN", 34f, poiTop + 23f, 9.5f, kit.muted, true)
+        kit.textRight(c, room, 356f, poiTop + 23.5f, 172f, 12f, kit.blue, true)
+        nextY = poiTop + 46f
+    }
 
     c.restoreToCount(bodySave)
     contentHeight = (nextY - off) + 188f

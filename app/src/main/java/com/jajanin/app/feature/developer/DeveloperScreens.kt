@@ -9,18 +9,22 @@ import com.jajanin.app.core.ui.DrawKit
 import com.jajanin.app.core.ui.FloatNavItem
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.NavVariant
+import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
+import com.jajanin.app.core.ui.drawBitmapCenterCrop
 import com.jajanin.app.core.ui.drawFloatingNav
 import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.navBadge
 import com.jajanin.app.core.ui.press
+import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.core.util.statusLabelShort
 import com.jajanin.app.data.repository.SupabaseRepository
+import com.jajanin.app.feature.seller.loadProductImage
 
-internal val DEV_TABS = listOf("Overview", "Users", "Sellers", "Orders", "Warn", "Info")
+internal val DEV_TABS = listOf("Overview", "Users", "Sellers", "Orders", "Laporan", "Warn", "Info")
 
 private const val HEADER_H = 60f
 
@@ -42,6 +46,7 @@ internal fun JajaninView.drawDeveloper(c: Canvas, w: Float, h: Float) {
         "Users" -> drawDevUsers(c, w, h, off, navClear, sellersOnly = false)
         "Sellers" -> drawDevUsers(c, w, h, off, navClear, sellersOnly = true)
         "Orders" -> drawDevOrders(c, w, h, off, navClear)
+        "Laporan" -> drawDevReports(c, w, h, off, navClear)
         "Warn" -> drawDevWarnings(c, w, h, off, navClear)
         "Info" -> drawDevAnnouncements(c, w, h, off, navClear)
         else -> drawDevOverview(c, w, h, off, navClear)
@@ -65,6 +70,7 @@ internal fun JajaninView.drawDeveloper(c: Canvas, w: Float, h: Float) {
         "Users" -> "Pembeli"
         "Sellers" -> "Penjual & Warung"
         "Orders" -> "Pesanan"
+        "Laporan" -> "Laporan Penjual"
         "Warn" -> "Moderasi"
         "Info" -> "Pengumuman"
         else -> "Developer"
@@ -125,11 +131,13 @@ internal fun JajaninView.drawDeveloper(c: Canvas, w: Float, h: Float) {
 }
 
 private fun JajaninView.drawDevBottomNav(c: Canvas, w: Float, h: Float) {
+    val openReports = devReports.count { it.status.equals("open", true) }
     val pendingOrders = devOrders.count { it.status.equals("pending", true) }
     val unreadWarns = devWarnings.count { !it.isRead }
     when {
+        openReports > 0 -> navBadge(4, openReports)
         pendingOrders > 0 -> navBadge(3, pendingOrders)
-        unreadWarns > 0 -> navBadge(4, unreadWarns)
+        unreadWarns > 0 -> navBadge(5, unreadWarns)
     }
     drawFloatingNav(
         c = c,
@@ -140,6 +148,7 @@ private fun JajaninView.drawDevBottomNav(c: Canvas, w: Float, h: Float) {
             FloatNavItem("Users", "profile", true),
             FloatNavItem("Sellers", "store", true),
             FloatNavItem("Orders", "orders", true),
+            FloatNavItem("Laporan", "warning", true),
             FloatNavItem("Warn", "bell", true),
             FloatNavItem("Info", "bell", true),
         ),
@@ -166,6 +175,21 @@ private fun JajaninView.drawDevOverview(c: Canvas, w: Float, h: Float, off: Floa
         kit.rounded(c, errRect, kit.card, 6f, kit.dangerBorder)
         kit.textEllipsized(c, devError ?: "", 32f, errRect.centerY() + 4f, 326f, 10.5f, kit.danger, true)
         y += 46f
+    }
+
+    val openReportCount = devReports.count { it.status.equals("open", true) }
+    if (openReportCount > 0) {
+        val alertCard = RectF(20f, y, 370f, y + 50f)
+        if (visible(alertCard.top, alertCard.bottom)) {
+            kit.rounded(c, alertCard, kit.card, 8f, kit.danger)
+            kit.rect(c, 20f, y + 8f, 24f, y + 42f, kit.danger)
+            kit.text(c, "$openReportCount Laporan Penjual Baru", 34f, y + 22f, 12.5f, kit.danger, true)
+            kit.text(c, "Ketuk untuk meninjau 2 foto bukti & tindak lanjuti", 34f, y + 39f, 10.5f, kit.muted)
+            drawRightBadge(c, kit, "Buka", 358f, y + 16f, kit.danger, Color.WHITE, 9.5f, padX = 10f, padY = 4f, radius = 6f)
+            press(c, "devTab:Laporan", alertCard, 8f)
+            bounds.putVisible("devTab:Laporan", alertCard, topLimit = HEADER_H, bottomLimit = navClear)
+        }
+        y += 60f
     }
 
     val s = devStats
@@ -921,4 +945,218 @@ private fun targetRoleBadgeColors(target: String): Pair<Int, Int> = when (target
     "sellers" -> Pair(Color.argb(35, 139, 92, 246), Color.rgb(139, 92, 246))
     "buyers" -> Pair(Color.argb(35, 16, 185, 129), Color.rgb(16, 185, 129))
     else -> Pair(Color.argb(35, 59, 130, 246), Color.rgb(59, 130, 246))
+}
+
+// ================= TAB: LAPORAN PENJUAL (2 BUKTI FOTO -> LIVE DEVELOPER) =================
+
+private fun reportStatusBadgeColors(status: String): Triple<String, Int, Int> = when (status.lowercase()) {
+    "open" -> Triple("Baru", Color.argb(38, 239, 68, 68), Color.rgb(239, 68, 68))
+    "reviewing" -> Triple("Ditinjau", Color.argb(40, 245, 158, 11), Color.rgb(217, 119, 6))
+    "resolved" -> Triple("Selesai", Color.argb(35, 16, 185, 129), Color.rgb(16, 185, 129))
+    "dismissed" -> Triple("Ditolak", Color.argb(28, 100, 116, 139), Color.rgb(148, 163, 184))
+    else -> Triple(status, Color.argb(25, 100, 116, 139), Color.rgb(148, 163, 184))
+}
+
+private fun JajaninView.drawDevReports(c: Canvas, w: Float, h: Float, off: Float, navClear: Float) {
+    var y = HEADER_H + 14f + off
+    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
+
+    val allReports = devReports
+    val openCount = allReports.count { it.status.equals("open", true) }
+    val reviewingCount = allReports.count { it.status.equals("reviewing", true) }
+    val resolvedCount = allReports.count { it.status.equals("resolved", true) }
+
+    // 1. Summary Strip
+    val statsRect = RectF(20f, y, 370f, y + 52f)
+    if (visible(statsRect.top, statsRect.bottom)) {
+        kit.rounded(c, statsRect, kit.card, 8f, kit.border)
+        val colW = 350f / 4f
+        val cols = listOf(
+            Triple(openCount.toString(), "Baru", kit.danger),
+            Triple(reviewingCount.toString(), "Ditinjau", Color.rgb(217, 119, 6)),
+            Triple(resolvedCount.toString(), "Selesai", kit.success),
+            Triple(allReports.size.toString(), "Total", kit.ink),
+        )
+        cols.forEachIndexed { idx, (v, lbl, col) ->
+            val left = 20f + idx * colW
+            if (idx > 0) kit.line(c, left, y + 10f, left, y + 42f, kit.divider)
+            kit.text(c, v, left + 12f, y + 23f, 15.5f, col, true)
+            kit.text(c, lbl, left + 12f, y + 40f, 9.5f, kit.muted)
+        }
+    }
+    y += 62f
+
+    // 2. Status Filter Pills
+    val filters = listOf(
+        "Semua" to "Semua (${allReports.size})",
+        "open" to "Baru ($openCount)",
+        "reviewing" to "Ditinjau ($reviewingCount)",
+        "resolved" to "Selesai ($resolvedCount)",
+        "dismissed" to "Ditolak",
+    )
+    if (visible(y, y + 32f)) {
+        var fx = 20f
+        filters.forEach { (key, lbl) ->
+            val active = devReportFilter == key
+            val fw = kit.measure(lbl, 10f, true) + 16f
+            if (fx + fw <= 372f) {
+                val pill = RectF(fx, y, fx + fw, y + 26f)
+                kit.rounded(c, pill, if (active) kit.tint else kit.card, 7f, if (active) kit.blue else kit.border)
+                kit.centerText(c, lbl, pill, 10f, if (active) kit.blue else kit.muted, active)
+                press(c, "devReportFilter:$key", pill, 7f)
+                bounds.putVisible("devReportFilter:$key", pill, topLimit = HEADER_H, bottomLimit = navClear)
+                fx += fw + 6f
+            }
+        }
+    }
+    y += 38f
+
+    if (devReportsLoading && allReports.isEmpty()) {
+        kit.text(c, "Memuat laporan penjual...", 20f, y + 24f, 13f, kit.muted)
+        contentHeight = 0f
+        return
+    }
+
+    val filtered = if (devReportFilter == "Semua") {
+        allReports
+    } else {
+        allReports.filter { it.status.equals(devReportFilter, ignoreCase = true) }
+    }
+
+    if (filtered.isEmpty()) {
+        val emptyRect = RectF(20f, y, 370f, y + 86f)
+        if (visible(emptyRect.top, emptyRect.bottom)) {
+            kit.rounded(c, emptyRect, kit.card, 8f, kit.border)
+            kit.text(c, "Belum ada laporan penjual", 34f, y + 34f, 13.5f, kit.ink, true)
+            kit.text(c, "Laporan pembeli (beserta 2 bukti foto) otomatis masuk live di sini.", 34f, y + 56f, 11f, kit.muted)
+        }
+        contentHeight = (y + 100f - off) + GLASS_TOP_OFFSET
+        return
+    }
+
+    filtered.forEach { rep ->
+        val descLines = kit.wrap(rep.description, 324f, 11.5f, maxLines = 5)
+        val noteLines = if (rep.developerNotes.isNotBlank()) {
+            kit.wrap("Catatan Dev: ${rep.developerNotes}", 324f, 10.5f, maxLines = 3, bold = true)
+        } else {
+            emptyList()
+        }
+        val sourceText = when {
+            rep.orderPickupCode.isNotBlank() -> "Riwayat Pesanan #${rep.orderPickupCode}"
+            rep.source == "order_history" -> "Riwayat Pembelian"
+            else -> "Profil Warung"
+        }
+        val reporterLine = buildString {
+            append("Pelapor: ${rep.reporterName}")
+            if (rep.reporterNis.isNotBlank()) append(" (NIS ${rep.reporterNis})")
+        }
+        val descH = descLines.size * 15.5f
+        val noteH = if (noteLines.isNotEmpty()) noteLines.size * 14f + 8f else 0f
+        val actionsH = if (rep.status == "open" || rep.status == "reviewing") 76f else 38f
+        val cardH = 82f + descH + 104f + noteH + actionsH + 14f
+        val card = RectF(20f, y, 370f, y + cardH)
+
+        if (visible(card.top, card.bottom)) {
+            val (stLbl, stBg, stFg) = reportStatusBadgeColors(rep.status)
+            kit.rounded(c, card, kit.card, 10f, if (rep.status == "open") kit.dangerBorder else kit.border)
+            if (rep.status == "open") {
+                kit.rect(c, 20f, y + 10f, 23.5f, y + cardH - 10f, kit.danger)
+            }
+
+            // Header: Stall name + Status badge
+            val badgeW = drawRightBadge(c, kit, stLbl, 358f, y + 12f, stBg, stFg, 9.5f, padX = 8f, padY = 4f, radius = 5f)
+            kit.textEllipsized(c, rep.stallName, 32f, y + 24f, 358f - badgeW - 42f, 14f, kit.ink, true)
+            kit.textEllipsized(
+                c,
+                "${rep.category} · $sourceText · ${rep.timeLabel}",
+                32f,
+                y + 42f,
+                324f,
+                10.5f,
+                kit.danger,
+                true,
+            )
+            kit.textEllipsized(c, "$reporterLine · Penjual: ${rep.sellerName}", 32f, y + 58f, 324f, 10.5f, kit.muted)
+            kit.line(c, 32f, y + 68f, 358f, y + 68f, kit.divider)
+
+            // Wrapped description
+            var cy = y + 84f
+            descLines.forEachIndexed { i, line ->
+                kit.text(c, line, 32f, cy + i * 15.5f, 11.5f, kit.ink)
+            }
+            cy += descH + 6f
+
+            // 2 Evidence Photo Thumbnails side by side (tappable full preview)
+            val evW = (326f - 10f) / 2f
+            val evH = 88f
+            val evUrls = listOf("Bukti 1" to rep.evidenceUrl1, "Bukti 2" to rep.evidenceUrl2)
+            evUrls.forEachIndexed { idx, (label, url) ->
+                val left = 32f + idx * (evW + 10f)
+                val box = RectF(left, cy, left + evW, cy + evH)
+                val bmp = url.takeIf { it.startsWith("https://") }?.let { ProductImageCache.images[it] }
+                if (bmp != null) {
+                    drawBitmapCenterCrop(c, bmp, box, 7f)
+                    kit.rounded(c, box, Color.TRANSPARENT, 7f, kit.border)
+                } else {
+                    kit.rounded(c, box, kit.bg, 7f, kit.border)
+                    kit.centerText(c, "Memuat $label...", box, 10f, kit.muted)
+                    if (url.startsWith("https://")) activity()?.loadProductImage(url)
+                }
+                val tag = RectF(left + 6f, cy + evH - 22f, left + 70f, cy + evH - 6f)
+                kit.rounded(c, tag, Color.argb(190, 15, 23, 42), 4f)
+                kit.centerText(c, "$label · Lihat", tag, 8.5f, Color.WHITE, true)
+                val hitKey = "devReportImg:$label:$url"
+                press(c, hitKey, box, 7f)
+                bounds.putVisible(hitKey, box, topLimit = HEADER_H, bottomLimit = navClear)
+            }
+            cy += evH + 14f
+
+            if (noteLines.isNotEmpty()) {
+                noteLines.forEachIndexed { i, line ->
+                    kit.text(c, line, 32f, cy + i * 14f, 10.5f, kit.blue, true)
+                }
+                cy += noteH
+            }
+
+            // Action row 1: Moderation status transitions
+            if (rep.status == "open" || rep.status == "reviewing") {
+                val btnW = (326f - 12f) / 3f
+                val actions = listOf(
+                    Triple("Tinjau", "reviewing", Color.rgb(217, 119, 6)),
+                    Triple("Selesai", "resolved", kit.success),
+                    Triple("Tolak", "dismissed", kit.muted),
+                )
+                actions.forEachIndexed { idx, (lbl, st, fg) ->
+                    val bx = 32f + idx * (btnW + 6f)
+                    val btn = RectF(bx, cy, bx + btnW, cy + 30f)
+                    kit.rounded(c, btn, kit.bg, 6f, fg)
+                    kit.centerText(c, lbl, btn, 10.5f, fg, true)
+                    val key = "devReportStatus:${rep.id}:$st"
+                    press(c, key, btn, 6f)
+                    bounds.putVisible(key, btn, topLimit = HEADER_H, bottomLimit = navClear)
+                }
+                cy += 38f
+            }
+
+            // Action row 2: Direct action against reported Seller (Warn / Suspend)
+            val sellerUid = rep.sellerId
+            if (!sellerUid.isNullOrBlank()) {
+                val halfW = (326f - 8f) / 2f
+                val warnBtn = RectF(32f, cy, 32f + halfW, cy + 30f)
+                kit.rounded(c, warnBtn, kit.warnBox, 6f, Color.rgb(217, 119, 6))
+                kit.centerText(c, "Beri Peringatan Seller", warnBtn, 10f, Color.rgb(217, 119, 6), true)
+                press(c, "devWarn:$sellerUid", warnBtn, 6f)
+                bounds.putVisible("devWarn:$sellerUid", warnBtn, topLimit = HEADER_H, bottomLimit = navClear)
+
+                val suspBtn = RectF(32f + halfW + 8f, cy, 358f, cy + 30f)
+                kit.rounded(c, suspBtn, kit.card, 6f, kit.danger)
+                kit.centerText(c, "Tangguhkan Seller", suspBtn, 10f, kit.danger, true)
+                press(c, "devSuspend:$sellerUid", suspBtn, 6f)
+                bounds.putVisible("devSuspend:$sellerUid", suspBtn, topLimit = HEADER_H, bottomLimit = navClear)
+            }
+        }
+        y += cardH + 12f
+    }
+
+    contentHeight = (y - off) + GLASS_TOP_OFFSET + 20f
 }

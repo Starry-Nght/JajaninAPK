@@ -179,16 +179,24 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
 
     y = ticketBottom + 12f
 
-    // 2. Section: Warung & Kontak / Chat Penjual
+    // 2. Section: Warung, Lokasi Ambil (Kelas/Ruangan) & Kontak / Chat Penjual
     val targetOrderId = matchedOrder?.id ?: lastOrderId
     val unreadForOrder = targetOrderId?.let { unreadChatByOrder[it] ?: 0 } ?: 0
     val hasSellerPhone = sellerPhone.isNotBlank()
-    val roomCardH = 114f
+    val orderStallId = matchedOrder?.stallId?.takeIf { it.isNotBlank() }
+    val firstMenuId = matchedOrder?.items?.firstNotNullOfOrNull { it.menuItemId }
+    val localProduct = firstMenuId?.let { id -> products.firstOrNull { it.id == id } }
+    val pickupRoom = matchedOrder?.pickupRoom?.takeIf { it.isNotBlank() }
+        ?: localProduct?.pickupRoom?.takeIf { it.isNotBlank() }
+        ?: orderStallId?.let { storeDirectoryById[it]?.location?.trim()?.takeIf { loc -> loc.isNotBlank() } }
+        ?: ""
+    val roomBonus = if (pickupRoom.isNotBlank()) 18f else 0f
+    val roomCardH = 114f + roomBonus
     val roomCard = RectF(20f, y, 370f, y + roomCardH)
     kit.rounded(c, roomCard, kit.card, 8f, kit.border)
     kit.rect(c, 20f, y + 8f, 23.5f, y + roomCardH - 8f, kit.blue)
 
-    kit.text(c, "WARUNG & KONTAK PENJUAL", 34f, y + 20f, 9.5f, kit.muted, true)
+    kit.text(c, "WARUNG & LOKASI AMBIL", 34f, y + 20f, 9.5f, kit.muted, true)
     val schedLabel = matchedOrder?.pickupScheduleLabel?.takeIf { it.isNotBlank() }
     if (schedLabel != null) {
         val isPo = matchedOrder.isPreOrder
@@ -197,7 +205,6 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
         kit.rounded(c, pillRect, if (isPo) kit.warnBox else kit.tint, 5f)
         kit.centerText(c, schedLabel, pillRect, 9.5f, if (isPo) Color.rgb(183, 116, 0) else kit.blue, true)
     }
-    val orderStallId = matchedOrder?.stallId?.takeIf { it.isNotBlank() }
     val storeVerified = orderStallId?.let { storeDirectoryById[it]?.isVerified } == true
     StoreVerifiedBadge.drawInlineWithStoreName(
         view = this,
@@ -221,26 +228,29 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
         )
     }
 
+    if (pickupRoom.isNotBlank()) {
+        kit.textEllipsized(c, "Ambil di: $pickupRoom", 34f, y + 59f, 320f, 12f, kit.ink, true)
+    }
     val sellerIdentity = sellerOwner.ifBlank { "Koordinasi langsung dengan penjual" }
-    kit.textEllipsized(c, sellerIdentity, 34f, y + 60f, 320f, 12f, kit.ink, sellerOwner.isNotBlank())
+    kit.textEllipsized(c, sellerIdentity, 34f, y + 60f + roomBonus, 320f, 11.5f, kit.muted, sellerOwner.isNotBlank() && pickupRoom.isBlank())
 
-    kit.line(c, 34f, y + 70f, 356f, y + 70f, kit.divider)
+    kit.line(c, 34f, y + 70f + roomBonus, 356f, y + 70f + roomBonus, kit.divider)
     if (hasSellerPhone) {
         val localPhone = displayBuyerPhone(sellerPhone)
-        drawIcon(c, "phone", 41f, y + 91f, 13.5f, kit.blue)
-        kit.textEllipsized(c, localPhone, 53f, y + 95f, 128f, 11.5f, kit.ink, true)
+        drawIcon(c, "phone", 41f, y + 91f + roomBonus, 13.5f, kit.blue)
+        kit.textEllipsized(c, localPhone, 53f, y + 95f + roomBonus, 128f, 11.5f, kit.ink, true)
 
-        val callBtn = RectF(184f, y + 78f, 244f, y + 104f)
+        val callBtn = RectF(184f, y + 78f + roomBonus, 244f, y + 104f + roomBonus)
         kit.rounded(c, callBtn, kit.bg, 6f, kit.border)
         kit.centerText(c, "Telepon", callBtn, 10.5f, kit.ink, true)
         bounds.putVisible("dialPhone:$sellerPhone", callBtn, topLimit = HEADER_H, bottomLimit = h - 70f)
     } else {
-        drawIcon(c, "chat", 42f, y + 91f, 14f, kit.blue)
-        kit.textEllipsized(c, "Koordinasi langsung via chat", 55f, y + 95f, 180f, 11f, kit.muted)
+        drawIcon(c, "chat", 42f, y + 91f + roomBonus, 14f, kit.blue)
+        kit.textEllipsized(c, "Koordinasi langsung via chat", 55f, y + 95f + roomBonus, 180f, 11f, kit.muted)
     }
 
     if (!targetOrderId.isNullOrBlank()) {
-        val chatBtn = RectF(250f, y + 78f, 356f, y + 104f)
+        val chatBtn = RectF(250f, y + 78f + roomBonus, 356f, y + 104f + roomBonus)
         kit.rounded(c, chatBtn, kit.blue, 6f)
         val chatLabel = if (unreadForOrder > 0) "Chat ($unreadForOrder)" else "Chat Penjual"
         kit.centerText(c, chatLabel, chatBtn, 10.5f, Color.WHITE, true)
@@ -326,6 +336,64 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
             kit.text(c, line, 32f, lockBox.top + 20f + idx * lockLineH, 10.5f, Color.rgb(183, 116, 0), true)
         }
         endContentY = lockBox.bottom
+    }
+
+    // 4. Rating Card (Toko, Durasi, Rasa 1-5) — tersedia setelah pembayaran lunas / pesanan selesai
+    val canRateOrder = targetOrderId != null &&
+        !status.equals(STATUS_CANCELLED, ignoreCase = true) &&
+        (payStatus.equals("paid", ignoreCase = true) || status.equals(STATUS_COMPLETED, ignoreCase = true))
+    if (canRateOrder && targetOrderId != null) {
+        val existingRating = myOrderRatings[targetOrderId]
+        val rateTop = endContentY + 12f
+        val rateCard = RectF(20f, rateTop, 370f, rateTop + 62f)
+        val goldColor = Color.rgb(217, 119, 6)
+        kit.rounded(
+            c,
+            rateCard,
+            if (existingRating != null) kit.card else kit.warnBox,
+            8f,
+            if (existingRating != null) kit.border else goldColor,
+        )
+        if (existingRating != null) {
+            val avgStr = String.format(java.util.Locale.US, "%.1f", existingRating.ratingOverall)
+            kit.text(c, "Rating Terkirim · ★ $avgStr / 5.0", 34f, rateTop + 25f, 12.5f, goldColor, true)
+            kit.textEllipsized(
+                c,
+                "Toko ${existingRating.ratingStore} · Durasi ${existingRating.ratingDuration} · Rasa ${existingRating.ratingTaste}",
+                34f,
+                rateTop + 45f,
+                238f,
+                11f,
+                kit.muted,
+            )
+            val editPill = RectF(292f, rateTop + 17f, 358f, rateTop + 45f)
+            kit.rounded(c, editPill, kit.tint, 6f, kit.blue)
+            kit.centerText(c, "Ubah", editPill, 11f, kit.blue, true)
+        } else {
+            kit.text(c, "Beri Rating Pesanan (1–5 Bintang)", 34f, rateTop + 25f, 12.5f, goldColor, true)
+            kit.textEllipsized(c, "Nilai Toko, Durasi penyiapan & Rasa", 34f, rateTop + 45f, 232f, 11f, kit.ink)
+            val rateBtn = RectF(280f, rateTop + 17f, 358f, rateTop + 45f)
+            kit.rounded(c, rateBtn, goldColor, 6f)
+            kit.centerText(c, "Beri Nilai", rateBtn, 11f, Color.WHITE, true)
+        }
+        press(c, "rateOrder:$targetOrderId", rateCard, 8f)
+        bounds.putVisible("rateOrder:$targetOrderId", rateCard, topLimit = HEADER_H, bottomLimit = h - 70f)
+        endContentY = rateCard.bottom
+    }
+
+    // 5. Laporkan Penjual (Wajib 2 Bukti Foto -> langsung diteruskan ke Developer)
+    if (targetOrderId != null && matchedOrder != null) {
+        val repTop = endContentY + 10f
+        val repCard = RectF(20f, repTop, 370f, repTop + 48f)
+        kit.rounded(c, repCard, kit.card, 8f, kit.dangerBorder)
+        kit.text(c, "Ada kendala dengan penjual?", 34f, repTop + 21f, 11.5f, kit.ink, true)
+        kit.text(c, "Laporkan dengan 2 foto bukti ke Developer", 34f, repTop + 37f, 10f, kit.muted)
+        val repBtn = RectF(274f, repTop + 10f, 358f, repTop + 38f)
+        kit.rounded(c, repBtn, kit.bg, 6f, kit.danger)
+        kit.centerText(c, "Laporkan", repBtn, 10.5f, kit.danger, true)
+        press(c, "reportOrder:$targetOrderId", repCard, 8f)
+        bounds.putVisible("reportOrder:$targetOrderId", repCard, topLimit = HEADER_H, bottomLimit = h - 70f)
+        endContentY = repCard.bottom
     }
 
     c.restoreToCount(bodySave)
@@ -446,7 +514,11 @@ private fun JajaninView.drawBuyerOrderItem(
     val canCancel = active && com.jajanin.app.data.repository.buyerCanCancelOrder(order)
     val needsProof = order.paymentMethod == "qris" &&
         (order.paymentStatus == "unpaid" || order.paymentStatus == "rejected" || order.paymentStatus == "waiting_verification")
-    val hasActionRow = active && (needsProof || canCancel)
+    val canRate = !order.status.equals(STATUS_CANCELLED, ignoreCase = true) &&
+        (order.paymentStatus.equals("paid", ignoreCase = true) || order.status.equals(STATUS_COMPLETED, ignoreCase = true))
+    val hasActiveActionRow = active && (needsProof || canCancel || canRate)
+    val hasHistoryActionRow = !active
+    val hasActionRow = hasActiveActionRow || hasHistoryActionRow
     val totalStr = formatRupiah(order.totalIdr)
     val totalW = kit.measure(totalStr, 13.5f, true)
     val summaryMaxW = (358f - totalW - 10f - 32f).coerceAtLeast(180f)
@@ -456,9 +528,9 @@ private fun JajaninView.drawBuyerOrderItem(
     val summaryStep = 15.5f
     val extraSummaryH = ((summaryLines.size - 1).coerceAtLeast(0)) * summaryStep
     val baseCardH = when {
-        hasActionRow -> 212f
+        hasActiveActionRow -> 212f
         active -> 176f
-        else -> 130f
+        else -> 162f
     }
     val cardH = baseCardH + extraSummaryH
     val card = RectF(20f, top, 370f, top + cardH)
@@ -498,10 +570,15 @@ private fun JajaninView.drawBuyerOrderItem(
         val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.success
         kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 32f, top + 70f + rowOff, 324f, 10.5f, schedColor, true)
 
-        // Row 4: Warung (+ Verified Badge) + Nomor Telepon Penjual
+        // Row 4: Warung (+ Verified Badge) + Lokasi Ambil / Telepon Penjual
         val storeLabel = order.sellerStoreName.takeIf { it.isNotBlank() } ?: "Warung Jajanin"
         val isStoreVerified = order.stallId.isNotBlank() && storeDirectoryById[order.stallId]?.isVerified == true
-        val phoneSuffix = order.sellerPhone.takeIf { it.isNotBlank() }?.let { " · HP ${displayBuyerPhone(it)}" }.orEmpty()
+        val roomSuffix = order.pickupRoom.takeIf { it.isNotBlank() }?.let { " · Ambil: $it" }.orEmpty()
+        val phoneSuffix = if (roomSuffix.isNotBlank()) {
+            roomSuffix
+        } else {
+            order.sellerPhone.takeIf { it.isNotBlank() }?.let { " · HP ${displayBuyerPhone(it)}" }.orEmpty()
+        }
         if (isStoreVerified) {
             val endX = StoreVerifiedBadge.drawInlineWithStoreName(
                 view = this,
@@ -602,12 +679,65 @@ private fun JajaninView.drawBuyerOrderItem(
                 true
             )
             bounds.putVisible("myOrderPaid:${order.id}", payBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+        } else if (active && canRate) {
+            val existingRate = myOrderRatings[order.id]
+            val goldColor = Color.rgb(217, 119, 6)
+            val rateBtn = RectF(32f, top + 170f + rowOff, 224f, top + 200f + rowOff)
+            kit.rounded(c, rateBtn, if (existingRate != null) kit.card else kit.warnBox, 6f, goldColor)
+            val rateText = if (existingRate != null) {
+                "★ ${String.format(java.util.Locale.US, "%.1f", existingRate.ratingOverall)} · Ubah Rating"
+            } else {
+                "Beri Rating (1–5)"
+            }
+            kit.centerText(c, rateText, rateBtn, 10.5f, goldColor, true)
+            press(c, "rateOrder:${order.id}", rateBtn, 6f)
+            bounds.putVisible("rateOrder:${order.id}", rateBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+
+            val repBtn = RectF(232f, top + 170f + rowOff, 358f, top + 200f + rowOff)
+            kit.rounded(c, repBtn, kit.card, 6f, kit.dangerBorder)
+            kit.centerText(c, "Laporkan Penjual", repBtn, 10.5f, kit.danger, true)
+            press(c, "reportOrder:${order.id}", repBtn, 6f)
+            bounds.putVisible("reportOrder:${order.id}", repBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+        } else if (!active) {
+            kit.line(c, 32f, top + 116f + rowOff, 358f, top + 116f + rowOff, kit.divider)
+            val btnTop = top + 124f + rowOff
+            val btnBottom = btnTop + 28f
+            if (canRate) {
+                val existingRate = myOrderRatings[order.id]
+                val goldColor = Color.rgb(217, 119, 6)
+                val rateBtn = RectF(32f, btnTop, 224f, btnBottom)
+                kit.rounded(c, rateBtn, if (existingRate != null) kit.card else kit.warnBox, 6f, goldColor)
+                val rateText = if (existingRate != null) {
+                    "★ ${String.format(java.util.Locale.US, "%.1f", existingRate.ratingOverall)} · Ubah Rating"
+                } else {
+                    "Beri Rating (1–5)"
+                }
+                kit.centerText(c, rateText, rateBtn, 10.5f, goldColor, true)
+                press(c, "rateOrder:${order.id}", rateBtn, 6f)
+                bounds.putVisible("rateOrder:${order.id}", rateBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+
+                val repBtn = RectF(232f, btnTop, 358f, btnBottom)
+                kit.rounded(c, repBtn, kit.card, 6f, kit.dangerBorder)
+                kit.centerText(c, "Laporkan Penjual", repBtn, 10.5f, kit.danger, true)
+                press(c, "reportOrder:${order.id}", repBtn, 6f)
+                bounds.putVisible("reportOrder:${order.id}", repBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+            } else {
+                val repBtn = RectF(32f, btnTop, 358f, btnBottom)
+                kit.rounded(c, repBtn, kit.card, 6f, kit.dangerBorder)
+                kit.centerText(c, "Laporkan Penjual (2 Foto Bukti)", repBtn, 10.5f, kit.danger, true)
+                press(c, "reportOrder:${order.id}", repBtn, 6f)
+                bounds.putVisible("reportOrder:${order.id}", repBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
+            }
         }
 
         press(c, "buyerOrder:${order.id}", card, 8f)
     }
 
-    val hitBottom = if (hasActionRow) top + 166f + extraSummaryH else top + cardH
+    val hitBottom = when {
+        hasActiveActionRow -> top + 166f + extraSummaryH
+        hasHistoryActionRow -> top + 116f + extraSummaryH
+        else -> top + cardH
+    }
     bounds.putVisible(
         "buyerOrder:${order.id}",
         RectF(card.left, card.top, card.right, hitBottom),

@@ -530,9 +530,13 @@ internal object DeveloperRepository {
 
     fun observePlatform(scope: CoroutineScope, onChange: () -> Unit): OrderObserver {
         val channel = SupabaseRepository.client.realtime.channel("dev-platform")
-        val flow = channel.postgresChangeFlow<PostgresAction>("public") { table = "orders" }
+        val flowOrders = channel.postgresChangeFlow<PostgresAction>("public") { table = "orders" }
+        val flowReports = channel.postgresChangeFlow<PostgresAction>("public") { table = "seller_reports" }
+        val flowRatings = channel.postgresChangeFlow<PostgresAction>("public") { table = "order_ratings" }
         val job = scope.launch {
-            launch { flow.collect { onChange() } }
+            launch { flowOrders.collect { onChange() } }
+            launch { flowReports.collect { onChange() } }
+            launch { flowRatings.collect { onChange() } }
             channel.subscribe()
         }
         return OrderObserver(channel, job, scope)

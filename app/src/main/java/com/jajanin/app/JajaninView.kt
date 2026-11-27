@@ -314,6 +314,13 @@ internal class JajaninView(context: Context) : View(context) {
     internal val onboardCount = 4
     // --- Status akun sendiri (banner penangguhan) ---
     internal var myAccountStatus = "active"
+    internal var myAvatarUrl = ""
+    internal var myOrderRatings: Map<String, com.jajanin.app.data.repository.OrderRatingRow> = emptyMap()
+    internal var storeProfileRatings: List<com.jajanin.app.data.repository.StoreRecentRating> = emptyList()
+    internal var devReports: List<com.jajanin.app.data.repository.DevSellerReport> = emptyList()
+    internal var devReportsLoading = false
+    internal var devReportFilter = "Semua"
+    internal var devSelectedReportId: String? = null
     // --- Ordering restrictions (mirror server rules; enforcement is in place_order) ---
     internal var orderingBlocked = false
     internal var orderingBlockMessage: String? = null
@@ -422,7 +429,7 @@ internal class JajaninView(context: Context) : View(context) {
     private fun swipeableTabSpec(): Pair<String, List<String>>? = when {
         navSpec?.prefix == "tab:" -> "tab:" to listOf("Home", "Explore", "Chat", "Orders", "Profile")
         navSpec?.prefix == "stab:" -> "stab:" to listOf("Dashboard", "Pesanan", "Chat", "Notifikasi", "Profil")
-        navSpec?.prefix == "dtab:" -> "dtab:" to listOf("Overview", "Users", "Sellers", "Orders", "Warn", "Info")
+        navSpec?.prefix == "dtab:" -> "dtab:" to listOf("Overview", "Users", "Sellers", "Orders", "Laporan", "Warn", "Info")
         else -> null
     }
 
@@ -1227,12 +1234,17 @@ internal class JajaninView(context: Context) : View(context) {
                     }
                     hit.startsWith("myOrderPaid:") -> activity()?.openPaymentProofForOrder(hit.substringAfter(':'))
                     hit.startsWith("buyerCancel:") -> activity()?.cancelBuyerOrder(hit.substringAfter(':'))
+                    hit.startsWith("rateOrder:") -> activity()?.showOrderRatingDialogById(hit.substringAfter(':'))
+                    hit.startsWith("reportOrder:") -> activity()?.showReportSellerFromOrder(hit.substringAfter(':'))
+                    hit.startsWith("reportStore:") -> activity()?.showReportSellerFromStore(hit.substringAfter(':'))
                     hit.startsWith("buyerOrder:") -> {
                         selectedBuyerOrderId = hit.substringAfter(':')
                         go(Screen.READY)
                     }
                     // --- Profil, EXP, dan pengaturan warung ---
+                    hit == "profileAvatar" -> activity()?.showBuyerAvatarOptions()
                     hit == "profilePhone" -> activity()?.showPhoneEditor()
+                    hit == "profileStallRoom" -> activity()?.showStallRoomEdit()
                     hit.startsWith("copyPhone:") -> activity()?.copyPhoneToClipboard(hit.substringAfter(':'))
                     hit.startsWith("dialPhone:") -> activity()?.openDialer(hit.substringAfter(':'))
                     hit == "expHistory" -> activity()?.openExpHistory()
@@ -1358,6 +1370,12 @@ internal class JajaninView(context: Context) : View(context) {
                         }
                     }
                     hit == "pfCategory" -> activity()?.showProductCategoryPicker()
+                    hit == "pfRoom" -> activity()?.showProductTextField("ruangan")
+                    hit.startsWith("pfRoomChip:") -> {
+                        productRoom = hit.substringAfter(':')
+                        productError = ""
+                        invalidate()
+                    }
                     hit.startsWith("pfCat:") -> {
                         productCategory = hit.substringAfter(':')
                         invalidate()
@@ -1441,6 +1459,33 @@ internal class JajaninView(context: Context) : View(context) {
                         devExpandedOrderId = if (opening) id else null
                         devOrderExpandAt = if (opening && motionEnabled()) android.os.SystemClock.uptimeMillis() else 0L
                         invalidate()
+                    }
+                    hit.startsWith("devReportFilter:") -> {
+                        devReportFilter = hit.substringAfter(':')
+                        devSelectedReportId = null
+                        scroll = 0f
+                        invalidate()
+                    }
+                    hit.startsWith("devReportRow:") -> {
+                        val id = hit.substringAfter(':')
+                        devSelectedReportId = if (devSelectedReportId == id) null else id
+                        invalidate()
+                    }
+                    hit.startsWith("devReportImg:") -> {
+                        val parts = hit.removePrefix("devReportImg:").split(":", limit = 2)
+                        val title = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: "Bukti Laporan"
+                        val url = parts.getOrNull(1).orEmpty()
+                        if (url.startsWith("https://")) {
+                            activity()?.showPaymentProofPreview(url, title)
+                        }
+                    }
+                    hit.startsWith("devReportStatus:") -> {
+                        val parts = hit.removePrefix("devReportStatus:").split(":")
+                        val reportId = parts.getOrNull(0).orEmpty()
+                        val nextStatus = parts.getOrNull(1).orEmpty()
+                        if (reportId.isNotBlank() && nextStatus.isNotBlank()) {
+                            activity()?.updateDevSellerReportStatus(reportId, nextStatus)
+                        }
                     }
                     hit == "plus" -> {
                         val maxQty = selectedProduct?.stock?.takeIf { it > 0 }?.coerceAtMost(99) ?: 99

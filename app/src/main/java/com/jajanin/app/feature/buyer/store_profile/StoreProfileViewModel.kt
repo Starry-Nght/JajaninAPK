@@ -30,6 +30,7 @@ internal object StoreProfileViewModel {
         if (switchingStore) {
             ui.storeProfileDetail = null
             ui.storeProfileProducts = emptyList()
+            ui.storeProfileRatings = emptyList()
             ui.storeProfileCategoryFilter = "All"
             ui.scroll = 0f
         }
@@ -54,6 +55,7 @@ internal object StoreProfileViewModel {
                 val payload = StoreDiscoveryRepository.fetchPublicStoreProfile(cleanId)
                 ui.storeProfileDetail = payload.stall
                 ui.storeProfileProducts = payload.products
+                ui.storeProfileRatings = payload.recentRatings
                 ui.storeProfileError = null
 
                 // Keep directory cache synchronized with fresh store metadata & verified status
@@ -72,6 +74,8 @@ internal object StoreProfileViewModel {
                     sellerName = payload.stall.sellerName,
                     activeProductCount = payload.products.size,
                     minPriceIdr = payload.products.minOfOrNull { it.priceIdr },
+                    avgRating = payload.stall.avgRating,
+                    ratingCount = payload.stall.ratingCount,
                 )
                 val updatedMap = HashMap(ui.storeDirectoryById)
                 updatedMap[summary.id] = summary

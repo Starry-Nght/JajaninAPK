@@ -42,6 +42,8 @@ internal data class PublicStoreSummary(
     @SerialName("seller_name") val sellerName: String = "",
     @SerialName("active_product_count") val activeProductCount: Int = 0,
     @SerialName("min_price_idr") val minPriceIdr: Int? = null,
+    @SerialName("avg_rating") val avgRating: Double = 0.0,
+    @SerialName("rating_count") val ratingCount: Int = 0,
 )
 
 @Serializable
@@ -68,12 +70,18 @@ internal data class PublicStoreDetail(
     @SerialName("owner_id") val ownerId: String? = null,
     @SerialName("seller_name") val sellerName: String = "",
     @SerialName("created_at") val createdAt: String = "",
+    @SerialName("avg_rating") val avgRating: Double = 0.0,
+    @SerialName("avg_rating_store") val avgRatingStore: Double = 0.0,
+    @SerialName("avg_rating_duration") val avgRatingDuration: Double = 0.0,
+    @SerialName("avg_rating_taste") val avgRatingTaste: Double = 0.0,
+    @SerialName("rating_count") val ratingCount: Int = 0,
 )
 
 @Serializable
 internal data class PublicStoreProfilePayload(
     val stall: PublicStoreDetail,
     val products: List<ProductRow> = emptyList(),
+    @SerialName("recent_ratings") val recentRatings: List<com.jajanin.app.data.repository.StoreRecentRating> = emptyList(),
 )
 
 @Serializable

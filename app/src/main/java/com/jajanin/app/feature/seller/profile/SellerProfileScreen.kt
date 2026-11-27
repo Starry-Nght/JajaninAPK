@@ -262,6 +262,14 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
                 chevron = true,
             ),
             SellerSettingRow(
+                title = "Ambil di Kelas / Ruangan (Default)",
+                key = "profileStallRoom",
+                subtitle = myStallRoom.takeIf { it.isNotBlank() } ?: "Atur kelas / ruangan tempat pembeli ambil pesanan",
+                value = if (myStallRoom.isBlank()) "Atur" else "Ubah",
+                valueColor = kit.blue,
+                chevron = false,
+            ),
+            SellerSettingRow(
                 title = "Deskripsi Publik Warung",
                 key = "profileStoreBio",
                 subtitle = myStallBio.takeIf { it.isNotBlank() } ?: "Tambahkan deskripsi singkat tentang warungmu",

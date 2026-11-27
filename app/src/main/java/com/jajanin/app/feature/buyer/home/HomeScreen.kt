@@ -21,6 +21,7 @@ import com.jajanin.app.data.model.ProductRow
 import com.jajanin.app.data.repository.SalesStat
 import com.jajanin.app.feature.buyer.store_discovery.drawHomeStoreDiscoverySection
 import com.jajanin.app.feature.developer.inboxUnreadCount
+import com.jajanin.app.feature.seller.loadProductImage
 
 private const val NAV_HEIGHT = 82f
 private const val HEADER_H = 60f
@@ -492,8 +493,16 @@ private fun JajaninView.drawCleanTopHeader(c: Canvas, cartCount: Int) {
     val profW = 24f + 6f + profTextW + badgeExtraW
     val profBtn = RectF(inboxBtn.left - 10f - profW, 16f, inboxBtn.left - 10f, 44f)
     val avatar = RectF(profBtn.left, 18f, profBtn.left + 24f, 42f)
-    kit.rounded(c, avatar, kit.tint, 12f)
-    kit.centerText(c, initial, avatar, 11f, kit.blue, true)
+    val avatarUrl = myAvatarUrl.takeIf { it.startsWith("https://") }
+    val avatarBmp = avatarUrl?.let { com.jajanin.app.core.ui.ProductImageCache.images[it] }
+    if (avatarBmp != null) {
+        com.jajanin.app.core.ui.drawBitmapCenterCrop(c, avatarBmp, avatar, 12f)
+        kit.rounded(c, avatar, Color.TRANSPARENT, 12f, kit.border)
+    } else {
+        kit.rounded(c, avatar, kit.tint, 12f)
+        kit.centerText(c, initial, avatar, 11f, kit.blue, true)
+        if (avatarUrl != null) activity()?.loadProductImage(avatarUrl)
+    }
     StoreVerifiedBadge.drawInlineWithStoreName(
         view = this,
         c = c,
