@@ -85,7 +85,7 @@ class MainActivity : Activity() {
     /** Akses tema gelap untuk helper dialog bertema. */
     internal fun isDarkMode(): Boolean = ui.darkMode
     internal val authScope = CoroutineScope(Dispatchers.Main)
-    internal lateinit var inlineSearch: InlineSearchOverlay
+    internal var inlineSearch: InlineSearchOverlay? = null
     internal lateinit var loginOverlay: NativeLoginOverlay
     internal var pendingPasswordRecovery = false
     internal var adminObserver: OrderObserver? = null
@@ -376,13 +376,15 @@ class MainActivity : Activity() {
             ),
         )
         LiquidGlassNavHost(this, root, ui)
-        inlineSearch = InlineSearchOverlay(this, root)
+        val searchOverlay = InlineSearchOverlay(this, root)
+        inlineSearch = searchOverlay
+        searchOverlay.applyTheme()
         ui.inlineSearchBoundsListener = { rect, scale, textSize ->
-            inlineSearch.syncCanvasBounds(rect, scale, textSize)
+            inlineSearch?.syncCanvasBounds(rect, scale, textSize)
         }
         loginOverlay = NativeLoginOverlay(this, root)
         ui.screenChangedListener = { screen ->
-            inlineSearch.dismiss()
+            inlineSearch?.dismiss()
             val isLogin = screen == Screen.LOGIN
             if (isLogin) {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
@@ -538,7 +540,7 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
-        inlineSearch.dismiss()
+        inlineSearch?.dismiss()
         autoRefreshJob?.cancel()
         autoRefreshJob = null
         stopOnlinePresence()
@@ -941,7 +943,7 @@ class MainActivity : Activity() {
     internal var searchDialog: Dialog? = null
 
     fun showSearchForm() {
-        inlineSearch.open(InlineSearchOverlay.TARGET_MENU)
+        inlineSearch?.open(InlineSearchOverlay.TARGET_MENU)
     }
 
     internal fun submitSearch(dialog: Dialog, input: EditText) {
@@ -1151,8 +1153,8 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        if (inlineSearch.isActive()) {
-            inlineSearch.dismiss()
+        if (inlineSearch?.isActive() == true) {
+            inlineSearch?.dismiss()
             return
         }
         if (ui.currentScreen == Screen.LOGIN && loginOverlay.handleBack()) return

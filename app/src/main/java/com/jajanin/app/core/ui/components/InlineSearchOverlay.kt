@@ -175,10 +175,12 @@ internal class InlineSearchOverlay(
         editText.setTextColor(kit.ink)
         editText.setHintTextColor(kit.muted)
         if (Build.VERSION.SDK_INT >= 29) {
-            editText.textCursorDrawable = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                setSize((2f * density).roundToInt().coerceAtLeast(2), (18f * density).roundToInt())
-                setColor(kit.blue)
+            runCatching {
+                editText.textCursorDrawable = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setSize((2f * density).roundToInt().coerceAtLeast(2), (18f * density).roundToInt())
+                    setColor(kit.blue)
+                }
             }
         }
     }
@@ -187,7 +189,9 @@ internal class InlineSearchOverlay(
     fun syncCanvasBounds(virtualRect: RectF?, scale: Float, virtualTextSize: Float) {
         if (activeTarget == null || virtualRect == null || scale <= 0f) {
             if (editText.visibility == View.VISIBLE && activeTarget == null) {
-                editText.visibility = View.GONE
+                editText.post {
+                    if (activeTarget == null) editText.visibility = View.GONE
+                }
             }
             return
         }
@@ -195,17 +199,26 @@ internal class InlineSearchOverlay(
         val topPx = virtualRect.top * scale
         val wPx = (virtualRect.width() * scale).roundToInt().coerceAtLeast(40)
         val hPx = (virtualRect.height() * scale).roundToInt().coerceAtLeast(24)
-        val lp = editText.layoutParams as FrameLayout.LayoutParams
-        if (abs(lp.width - wPx) > 1 || abs(lp.height - hPx) > 1) {
-            lp.width = wPx
-            lp.height = hPx
-            editText.layoutParams = lp
-        }
         editText.translationX = leftPx
         editText.translationY = topPx
         val targetTextPx = virtualTextSize * scale
         if (abs(editText.textSize - targetTextPx) > 0.4f) {
-            editText.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetTextPx)
+            editText.post {
+                if (abs(editText.textSize - targetTextPx) > 0.4f) {
+                    editText.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetTextPx)
+                }
+            }
+        }
+        val lp = editText.layoutParams as? FrameLayout.LayoutParams ?: return
+        if (abs(lp.width - wPx) > 1 || abs(lp.height - hPx) > 1) {
+            editText.post {
+                val curLp = editText.layoutParams as? FrameLayout.LayoutParams ?: return@post
+                if (abs(curLp.width - wPx) > 1 || abs(curLp.height - hPx) > 1) {
+                    curLp.width = wPx
+                    curLp.height = hPx
+                    editText.layoutParams = curLp
+                }
+            }
         }
     }
 
