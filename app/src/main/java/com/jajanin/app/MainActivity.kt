@@ -213,14 +213,18 @@ class MainActivity : Activity() {
             if (oldPay != null && oldPay != newPay && (newPay == "paid" || newPay == "rejected")) {
                 statusChangedCount++
                 val title = if (newPay == "paid") {
-                    "Pembayaran #${order.pickupCode} Diverifikasi"
+                    "Pembayaran #${order.pickupCode} Lunas"
                 } else {
-                    "Bukti Bayar #${order.pickupCode} Ditolak"
+                    "Pembayaran #${order.pickupCode} Ditolak"
                 }
                 val body = if (newPay == "paid") {
-                    "Pembayaran pesanan #${order.pickupCode} telah ditandai lunas oleh penjual."
+                    if (order.paymentMethod.equals("qris", ignoreCase = true)) {
+                        "Pembayaran Midtrans untuk pesanan #${order.pickupCode} sudah terkonfirmasi lunas otomatis."
+                    } else {
+                        "Pembayaran tunai pesanan #${order.pickupCode} telah ditandai lunas oleh penjual."
+                    }
                 } else {
-                    "Bukti pembayaran QRIS #${order.pickupCode} ditolak penjual. Silakan konfirmasi ulang."
+                    "Pembayaran pesanan #${order.pickupCode} belum berhasil. Silakan coba lagi."
                 }
                 NotificationHelper.showOrderUpdate(
                     context = this,
@@ -265,13 +269,13 @@ class MainActivity : Activity() {
                     title = "Pesanan Baru #${order.pickupCode}",
                     body = "${order.buyerName} memesan $summary (${formatRupiah(order.totalIdr)})",
                 )
-            } else if (alreadyNotified && oldPay != null && oldPay != newPay && newPay == "waiting_verification") {
+            } else if (alreadyNotified && oldPay != null && oldPay != newPay && newPay == "paid" && order.paymentMethod.equals("qris", ignoreCase = true)) {
                 NotificationHelper.showOrderUpdate(
                     context = this,
-                    notificationKey = "${order.id}:qris_wait",
+                    notificationKey = "${order.id}:midtrans_paid",
                     orderId = order.id,
-                    title = "Bukti Bayar QRIS #${order.pickupCode}",
-                    body = "${order.buyerName} mengirim konfirmasi pembayaran QRIS (${formatRupiah(order.totalIdr)}).",
+                    title = "Pembayaran Midtrans #${order.pickupCode} Lunas",
+                    body = "${order.buyerName} telah menyelesaikan pembayaran (${formatRupiah(order.totalIdr)}). Pesanan siap diproses.",
                 )
             }
         }
@@ -587,29 +591,9 @@ class MainActivity : Activity() {
                 }
                 uploadProductImage(uri)
             }
-            REQUEST_QRIS_IMAGE -> {
-                val uri = data?.data
-                if (uri != null) {
-                    runCatching {
-                        contentResolver.takePersistableUriPermission(
-                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-                    }
-                    uploadStallQrisImage(uri)
-                }
-            }
             REQUEST_OTA_APK -> {
                 val uri = data?.data ?: return
                 publishOtaApkFromUri(uri)
-            }
-            REQUEST_PAYMENT_PROOF -> {
-                val uri = data?.data ?: return
-                runCatching {
-                    contentResolver.takePersistableUriPermission(
-                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                }
-                uploadPaymentProofImage(uri)
             }
             REQUEST_STORE_LOGO -> {
                 val uri = data?.data ?: return

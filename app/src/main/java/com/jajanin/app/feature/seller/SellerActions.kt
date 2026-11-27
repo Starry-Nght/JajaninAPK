@@ -705,10 +705,11 @@ internal fun MainActivity.rejectOrderPayment(orderId: String) {
     }
 }
 
-/** Muat pengaturan warung penjual (nama toko, nama asli, NIS, nomor telepon, ruangan, + QRIS) untuk layar profil. */
+/** Muat pengaturan warung penjual + ringkasan saldo Midtrans untuk layar profil. */
 internal fun MainActivity.refreshSellerSettings() {
     authScope.launch {
         val stall = runCatching { OrderRepository.fetchMyStall() }.getOrNull()
+        val ledger = runCatching { OrderRepository.fetchMySellerLedgerSummary() }.getOrNull()
         ui.myStallId = stall?.id
         ui.myStallName = stall?.name.orEmpty()
         ui.myStallRoom = stall?.location?.takeIf { it != "Kantin" }.orEmpty()
@@ -720,6 +721,11 @@ internal fun MainActivity.refreshSellerSettings() {
         ui.myStallBio = stall?.publicBio.orEmpty()
         ui.myStallIsVerified = stall?.isVerified ?: false
         ui.myStallCompletedOrders = stall?.completedOrdersCount ?: 0
+        if (ledger != null) {
+            ui.sellerLedgerAvailable = ledger.availableIdr
+            ui.sellerLedgerPaidOut = ledger.paidOutIdr
+            ui.sellerLedgerTxCount = ledger.txCount
+        }
         val rawName = runCatching { SupabaseRepository.myRawDisplayName() }.getOrNull().orEmpty()
         val cleanName = SupabaseRepository.extractCleanName(rawName)
         val nis = SupabaseRepository.extractNis(rawName)
@@ -736,6 +742,27 @@ internal fun MainActivity.refreshSellerSettings() {
         }
         ui.invalidate()
     }
+}
+
+/** Ringkasan pembayaran Midtrans otomatis & saldo warung. */
+internal fun MainActivity.showSellerMidtransInfo() {
+    refreshSellerSettings()
+    val avail = com.jajanin.app.core.util.formatRupiah(ui.sellerLedgerAvailable)
+    val paidOut = com.jajanin.app.core.util.formatRupiah(ui.sellerLedgerPaidOut)
+    val msg = buildString {
+        appendLine("Semua pembayaran non-tunai diproses otomatis lewat Midtrans Sandbox.")
+        appendLine()
+        appendLine("Saldo masuk tersedia: $avail")
+        appendLine("Sudah dicairkan: $paidOut")
+        appendLine("Total transaksi lunas: ${ui.sellerLedgerTxCount}")
+        appendLine()
+        append("Penjual tidak perlu mengunggah foto QRIS statis atau mengecek bukti transfer secara manual. Pesanan otomatis berstatus Lunas begitu pembayaran diterima Midtrans.")
+    }
+    android.app.AlertDialog.Builder(this)
+        .setTitle("Pembayaran Midtrans")
+        .setMessage(msg)
+        .setPositiveButton("Tutup", null)
+        .show()
 }
 
 /** Dialog pengaturan QRIS warung: unggah gambar atau tempel URL. */
@@ -1537,7 +1564,7 @@ internal fun MainActivity.cancelAdminOrder(orderId: String) {
         val lockMsg = if (order.paymentStatus.equals("paid", ignoreCase = true)) {
             "Pesanan yang sudah lunas tidak dapat dibatalkan oleh penjual."
         } else {
-            "Pembeli sudah mengunggah bukti bayar QRIS. Penjual tidak dapat membatalkan pesanan — verifikasi lunas atau tolak bukti jika tidak valid."
+            "Pembayaran Midtrans sedang diproses. Penjual tidak dapat membatalkan pesanan."
         }
         Toast.makeText(this, lockMsg, Toast.LENGTH_LONG).show()
         return
@@ -1561,7 +1588,7 @@ internal fun MainActivity.cancelAdminOrder(orderId: String) {
         text = if (order.stockDeducted) {
             "Pilih salah satu: kembalikan stok jika menu masih ada, atau tandai 0 jika stok benar-benar habis."
         } else {
-            "Stok menu belum terpotong karena pembayaran QRIS belum diverifikasi lunas."
+            "Stok menu belum terpotong karena pembayaran Midtrans belum lunas."
         }
         textSize = 12f
         setPadding(0, 14, 0, 8)

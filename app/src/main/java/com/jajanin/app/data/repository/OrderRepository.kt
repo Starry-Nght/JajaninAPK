@@ -289,6 +289,43 @@ internal data class PoAvailabilityResponse(
 )
 
 @Serializable
+internal data class GatewayPaymentSession(
+    @SerialName("order_id") val orderId: String = "",
+    @SerialName("gateway_order_id") val gatewayOrderId: String = "",
+    @SerialName("gateway_transaction_id") val gatewayTransactionId: String? = null,
+    @SerialName("payment_channel") val paymentChannel: String = "qris",
+    val environment: String = "sandbox",
+    val status: String = "pending",
+    @SerialName("gross_amount") val grossAmount: Int = 0,
+    @SerialName("qr_url") val qrUrl: String? = null,
+    @SerialName("qr_string") val qrString: String? = null,
+    @SerialName("redirect_url") val redirectUrl: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+internal data class GatewayStatusResult(
+    @SerialName("order_id") val orderId: String = "",
+    @SerialName("gateway_order_id") val gatewayOrderId: String = "",
+    val status: String = "pending",
+    @SerialName("payment_status") val paymentStatus: String = "unpaid",
+    @SerialName("qr_url") val qrUrl: String? = null,
+    @SerialName("redirect_url") val redirectUrl: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+    val message: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+internal data class SellerLedgerSummary(
+    @SerialName("available_idr") val availableIdr: Int = 0,
+    @SerialName("paid_out_idr") val paidOutIdr: Int = 0,
+    @SerialName("total_idr") val totalIdr: Int = 0,
+    @SerialName("tx_count") val txCount: Int = 0,
+)
+
+@Serializable
 private data class NewDevice(
     @SerialName("user_id") val userId: String,
     @SerialName("fcm_token") val fcmToken: String,
@@ -636,10 +673,47 @@ internal object OrderRepository {
         }
     }
 
-    /** Sapu pesanan QRIS yang melewati batas bayar 10 menit di server (idempoten, aman dipanggil berkala). */
+    /** Sapu pesanan Midtrans yang melewati batas bayar di server (idempoten, aman dipanggil berkala). */
     suspend fun expireUnpaidQrisOrders(): Int = runCatching {
         client.postgrest.rpc("expire_unpaid_qris_orders").decodeAs<Int>()
     }.getOrDefault(0)
+
+    /** Buat atau ambil ulang sesi pembayaran Midtrans Sandbox untuk order terkait. */
+    suspend fun createGatewayPayment(
+        orderId: String,
+        forceSnap: Boolean = false,
+    ): GatewayPaymentSession {
+        val token = SupabaseRepository.currentAccessToken()
+            ?: error("Masuk dulu untuk memproses pembayaran.")
+        val body = buildJsonObject {
+            put("order_id", orderId)
+            put("force_snap", forceSnap)
+        }.toString()
+        val (code, raw) = SupabaseRepository.postEdgeFunction("create-payment", body, token)
+        val parsed = runCatching { realtimeJson.decodeFromString<GatewayPaymentSession>(raw) }.getOrNull()
+        if (code !in 200..299) {
+            error(parsed?.error?.takeIf { it.isNotBlank() } ?: "Gagal membuat sesi Midtrans (HTTP $code).")
+        }
+        return parsed ?: error("Respons Midtrans tidak dapat dibaca.")
+    }
+
+    /** Periksa status pembayaran Midtrans secara real-time & sinkronkan ke DB bila sudah settlement. */
+    suspend fun checkGatewayPaymentStatus(orderId: String): GatewayStatusResult {
+        val token = SupabaseRepository.currentAccessToken()
+            ?: error("Masuk dulu untuk mengecek pembayaran.")
+        val body = buildJsonObject { put("order_id", orderId) }.toString()
+        val (code, raw) = SupabaseRepository.postEdgeFunction("check-payment-status", body, token)
+        val parsed = runCatching { realtimeJson.decodeFromString<GatewayStatusResult>(raw) }.getOrNull()
+        if (code !in 200..299) {
+            error(parsed?.error?.takeIf { it.isNotBlank() } ?: "Gagal mengecek status Midtrans (HTTP $code).")
+        }
+        return parsed ?: error("Respons status Midtrans tidak valid.")
+    }
+
+    /** Ambil ringkasan saldo hasil pembayaran Midtrans otomatis milik warung penjual. */
+    suspend fun fetchMySellerLedgerSummary(): SellerLedgerSummary = runCatching {
+        client.postgrest.rpc("my_seller_ledger_summary").decodeAs<SellerLedgerSummary>()
+    }.getOrDefault(SellerLedgerSummary())
 
     /**
      * Mengubah status satu order (dipakai aksi tombol detail admin).
@@ -1249,7 +1323,7 @@ internal fun sellerPoAdvanceBlockReason(order: AdminOrder, nextStatus: String): 
         && target in setOf(STATUS_CONFIRMED, STATUS_PREPARING, STATUS_PROCESSING_LEGACY, STATUS_READY, STATUS_COMPLETED)
         && !order.paymentStatus.equals("paid", ignoreCase = true)
     ) {
-        return "Verifikasi bukti bayar QRIS dulu sebelum menerima atau memproses pesanan."
+        return "Menunggu pembayaran Midtrans lunas otomatis sebelum menerima pesanan."
     }
     if (!order.isPreOrder) return null
     if (target !in setOf(STATUS_PREPARING, STATUS_PROCESSING_LEGACY, STATUS_READY, STATUS_COMPLETED)) return null

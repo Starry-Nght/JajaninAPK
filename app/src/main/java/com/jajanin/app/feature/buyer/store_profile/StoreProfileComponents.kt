@@ -123,11 +123,11 @@ internal object StoreProfileComponents {
         val statsRect = RectF(20f, y, 370f, y + 58f)
         kit.rounded(c, statsRect, kit.card, 10f, kit.border)
         val colW = statsRect.width() / 3f
-        val payInfo = if (store.hasQris) "Tunai & QRIS" else "Tunai"
+        val payInfo = "Tunai & Midtrans"
         val cols = listOf(
             Triple(store.completedOrdersCount.toString(), "Pesanan Selesai", kit.blue),
             Triple(productCount.toString(), "Menu Aktif", kit.ink),
-            Triple(payInfo, "Pembayaran", if (store.hasQris) kit.success else kit.ink),
+            Triple(payInfo, "Pembayaran", kit.success),
         )
         cols.forEachIndexed { idx, (valStr, label, clr) ->
             val left = 20f + idx * colW

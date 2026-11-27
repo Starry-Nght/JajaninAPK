@@ -10,6 +10,7 @@ import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
+import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.developer.inboxUnreadCount
 import com.jajanin.app.feature.seller.SellerSettingRow
@@ -115,22 +116,27 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
         sellerSurface(c, statsStrip)
         val colW = SellerTokens.WIDTH / 3f
         val activeMenus = sellerProducts.count { it.available }
-        val qrisReady = myStallQris.isNotBlank()
 
         val cols = listOf(
             Triple("$activeMenus/${sellerProducts.size}", "Menu Aktif", kit.ink),
             Triple(adminOrders.size.toString(), "Order Hari Ini", kit.blue),
-            Triple(if (qrisReady) "Siap" else "Belum", "Status QRIS", if (qrisReady) kit.success else kit.danger)
+            Triple(formatRupiah(sellerLedgerAvailable), "Saldo Midtrans", kit.blue)
         )
         cols.forEachIndexed { idx, (valText, label, colColor) ->
             val left = 20f + idx * colW
             if (idx > 0) kit.line(c, left, y + 8f, left, y + 44f, kit.divider)
-            kit.text(c, valText, left + 14f, y + 23f, 15.5f, colColor, true)
-            kit.text(c, label, left + 14f, y + 40f, 10f, kit.muted)
+            kit.textEllipsized(c, valText, left + 12f, y + 23f, colW - 20f, 13.5f, colColor, true)
+            kit.text(c, label, left + 12f, y + 40f, 10f, kit.muted)
         }
         bounds.putVisible(
             "openSellerMenu",
             RectF(20f, y, 20f + colW, y + 52f),
+            topLimit = HEADER_H,
+            bottomLimit = navClear,
+        )
+        bounds.putVisible(
+            "profileMidtrans",
+            RectF(20f + 2f * colW, y, 370f, y + 52f),
             topLimit = HEADER_H,
             bottomLimit = navClear,
         )
@@ -273,11 +279,11 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
                 chevron = false,
             ),
             SellerSettingRow(
-                title = "QRIS Warung",
-                key = "profileQris",
-                subtitle = if (myStallQris.isBlank()) "Belum dipasang" else "Siap menerima pembayaran QRIS",
-                badge = if (myStallQris.isBlank()) "Belum" else "Terpasang",
-                badgeColor = if (myStallQris.isBlank()) kit.danger else kit.success,
+                title = "Pembayaran Midtrans",
+                key = "profileMidtrans",
+                subtitle = "Otomatis lunas & masuk saldo · $sellerLedgerTxCount transaksi",
+                badge = "Aktif",
+                badgeColor = kit.success,
                 chevron = true,
             ),
         ),

@@ -152,6 +152,14 @@ internal suspend fun MainActivity.silentRefreshBuyerTick() {
                         ui.lastOrderStatus = matched.status
                     }
                 }
+                val activeQrisId = ui.qrisOrderId
+                if (ui.currentScreen == Screen.QRIS && !activeQrisId.isNullOrBlank()) {
+                    val paidOrder = freshOrders.firstOrNull { it.id == activeQrisId && it.paymentStatus == "paid" }
+                    if (paidOrder != null) {
+                        onMidtransPaymentCompleted(paidOrder.id, paidOrder.status)
+                        return@runCatching
+                    }
+                }
                 ui.myOrdersLoading = false
                 ui.invalidate()
             }
@@ -210,6 +218,10 @@ private fun MainActivity.applyRealtimeOrderToBuyer(action: PostgresAction): Bool
                 refreshOrderingStatus()
             }
             detectAndNotifyBuyerOrderChanges(ui.myOrders)
+            if (ui.currentScreen == Screen.QRIS && ui.qrisOrderId == patch.id && patch.paymentStatus == "paid") {
+                onMidtransPaymentCompleted(patch.id, patch.status ?: ui.lastOrderStatus)
+                return true
+            }
             ui.invalidate()
             true
         }
@@ -442,9 +454,9 @@ internal fun MainActivity.cartRequiresQrisForPo(pickupDate: String): Boolean {
 
 private fun MainActivity.cartQrisRequiredReason(pickupDate: String): String =
     if (OrderRepository.daysAheadFromTodayWib(pickupDate) > 3) {
-        "Pre-Order lebih dari 3 hari wajib pembayaran QRIS di muka."
+        "Pre-Order lebih dari 3 hari wajib pembayaran Midtrans di muka."
     } else {
-        "Menu Pre-Order ini mewajibkan pembayaran QRIS di muka."
+        "Menu Pre-Order ini mewajibkan pembayaran Midtrans di muka."
     }
 
 private fun MainActivity.syncCheckoutScheduleDefaults() {
@@ -473,7 +485,7 @@ private fun MainActivity.syncCheckoutScheduleDefaults() {
     ) {
         ui.checkoutPickupDate = defaultOpen
     }
-    if (ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate) && !ui.cartStallQris.isNullOrBlank()) {
+    if (ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate)) {
         ui.checkoutPayment = "qris"
     }
     val sessions = allowedCartPickupSessions()
@@ -519,16 +531,8 @@ internal fun MainActivity.setCheckoutPickupDate(isoDate: String) {
         ui.checkoutOrderMode = "pre_order"
     }
     if (cartRequiresQrisForPo(clean)) {
-        if (!ui.cartStallQris.isNullOrBlank()) {
-            ui.checkoutPayment = "qris"
-            Toast.makeText(this, cartQrisRequiredReason(clean), Toast.LENGTH_SHORT).show()
-        } else if (ui.cartStallQris != null) {
-            Toast.makeText(
-                this,
-                "PO > 3 hari wajib QRIS, tetapi warung ini belum memasang QRIS. Pilih tanggal 1–3 hari.",
-                Toast.LENGTH_LONG,
-            ).show()
-        }
+        ui.checkoutPayment = "qris"
+        Toast.makeText(this, cartQrisRequiredReason(clean), Toast.LENGTH_SHORT).show()
     }
     ui.invalidate()
 }
@@ -718,7 +722,7 @@ internal fun MainActivity.setCheckoutOrderMode(mode: String) {
     ui.checkoutOrderMode = target
     if (target == "pre_order") {
         syncCheckoutScheduleDefaults()
-        if (cartRequiresQrisForPo(ui.checkoutPickupDate) && !ui.cartStallQris.isNullOrBlank()) {
+        if (cartRequiresQrisForPo(ui.checkoutPickupDate)) {
             ui.checkoutPayment = "qris"
         }
     }
@@ -728,15 +732,7 @@ internal fun MainActivity.setCheckoutOrderMode(mode: String) {
 internal fun MainActivity.setCheckoutPayment(method: String) {
     if (method == "cash" && ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate)) {
         Toast.makeText(this, cartQrisRequiredReason(ui.checkoutPickupDate), Toast.LENGTH_LONG).show()
-        if (!ui.cartStallQris.isNullOrBlank()) {
-            ui.checkoutPayment = "qris"
-            ui.invalidate()
-        }
-        return
-    }
-    if (method == "qris" && ui.cartStallQris.isNullOrBlank()) {
-        Toast.makeText(this, "Toko ini belum memasang QRIS. Silakan bayar Tunai.", Toast.LENGTH_SHORT).show()
-        ui.checkoutPayment = "cash"
+        ui.checkoutPayment = "qris"
         ui.invalidate()
         return
     }
@@ -775,7 +771,7 @@ internal fun MainActivity.openCheckout() {
     }
     ui.placingOrder = false
     ui.checkoutPayment = "cash"
-    ui.cartStallQris = null
+    ui.cartStallQris = "midtrans_sandbox"
     ui.checkoutPoSlots = emptyMap()
     syncCheckoutScheduleDefaults()
     ui.go(Screen.CHECKOUT)
@@ -783,8 +779,7 @@ internal fun MainActivity.openCheckout() {
     authScope.launch {
         val stallId = ui.cartStallId
         if (stallId.isNullOrBlank()) {
-            ui.cartStallQris = ""
-            ui.checkoutPayment = "cash"
+            ui.cartStallQris = "midtrans_sandbox"
             ui.invalidate()
             return@launch
         }
@@ -792,10 +787,8 @@ internal fun MainActivity.openCheckout() {
             runCatching { OrderRepository.fetchStall(stallId) }.getOrNull()
         }
         ui.cartStallName = stall?.name ?: "Kantin Jajanin"
-        ui.cartStallQris = stall?.qrisImageUrl?.trim().orEmpty()
-        if (ui.cartStallQris.isNullOrBlank()) {
-            ui.checkoutPayment = "cash"
-        } else if (ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate)) {
+        ui.cartStallQris = "midtrans_sandbox"
+        if (ui.checkoutOrderMode == "pre_order" && cartRequiresQrisForPo(ui.checkoutPickupDate)) {
             ui.checkoutPayment = "qris"
         }
         val firstPoPid = cartProducts().firstOrNull { it.allowsNextDay }?.id
@@ -921,43 +914,15 @@ internal fun MainActivity.placeCartOrder() {
     }
     val lines = ui.cart.entries.map { it.key to it.value }
     val requestedMethod = ui.checkoutPayment
-    if (requestedMethod == "qris" && ui.cartStallQris.isNullOrBlank() && ui.cartStallQris != null) {
-        ui.checkoutPayment = "cash"
-        ui.invalidate()
-        Toast.makeText(this, "Toko belum memasang QRIS. Silakan bayar Tunai.", Toast.LENGTH_SHORT).show()
-        return
-    }
     ui.placingOrder = true
     ui.invalidate()
     authScope.launch {
         try {
-            val stallId = ui.cartStallId
-            var verifiedQris = ui.cartStallQris
-            if (requestedMethod == "qris" && verifiedQris == null && !stallId.isNullOrBlank()) {
-                val stall = withTimeoutOrNull(6_000L) {
-                    runCatching { OrderRepository.fetchStall(stallId) }.getOrNull()
-                }
-                verifiedQris = stall?.qrisImageUrl?.trim().orEmpty()
-                ui.cartStallQris = verifiedQris
-            }
             syncCheckoutScheduleDefaults()
             val chosenMode = ui.checkoutOrderMode
             val chosenSession = ui.checkoutPickupSession
             val chosenDate = if (chosenMode == "pre_order") ui.checkoutPickupDate else null
             val qrisMandatory = chosenMode == "pre_order" && chosenDate != null && cartRequiresQrisForPo(chosenDate)
-            if (qrisMandatory && verifiedQris.isNullOrBlank()) {
-                Toast.makeText(
-                    self,
-                    "Pre-Order ini wajib pembayaran QRIS, tetapi warung belum memasang QRIS. Pilih tanggal 1–3 hari.",
-                    Toast.LENGTH_LONG,
-                ).show()
-                return@launch
-            }
-            if (requestedMethod == "qris" && verifiedQris.isNullOrBlank()) {
-                ui.checkoutPayment = "cash"
-                Toast.makeText(self, "Toko ini belum memasang kode QRIS. Silakan pilih Tunai.", Toast.LENGTH_LONG).show()
-                return@launch
-            }
             val method = if (qrisMandatory || requestedMethod == "qris") "qris" else "cash"
             ui.checkoutPayment = method
             val placed = withTimeout(12_000L) {
@@ -981,16 +946,12 @@ internal fun MainActivity.placeCartOrder() {
             refreshUnreadChats()
             refreshChatList(silent = true)
             if (method == "qris") {
-                // Ambil QR warung lalu tampilkan layar bayar + timer 10 menit + unggah bukti wajib.
                 ui.lastOrderStatus = placed.status
                 refreshMyOrders()
-                openQrisPayment(
+                openMidtransPayment(
                     orderId = placed.id,
                     amountIdr = placed.totalIdr,
-                    stallId = stallId,
-                    preloadedQris = verifiedQris,
                     expiresAt = placed.paymentExpiresAt,
-                    existingProofUrl = null,
                 )
             } else {
                 refreshMyOrders()
@@ -1017,47 +978,80 @@ internal fun MainActivity.placeCartOrder() {
     }
 }
 
-/** Layar QRIS: tampilkan QR warung + nominal pas + batas waktu 10 menit + unggah bukti bayar wajib. */
-internal fun MainActivity.openQrisPayment(
+/** Layar pembayaran Midtrans Sandbox: buat sesi QRIS dinamis / Snap + timer 15 menit + cek status otomatis. */
+internal fun MainActivity.openMidtransPayment(
     orderId: String,
     amountIdr: Int,
-    stallId: String?,
-    preloadedQris: String? = null,
     expiresAt: String? = null,
-    existingProofUrl: String? = null,
+    forceSnap: Boolean = false,
 ) {
+    val self = this
     ui.qrisOrderId = orderId
     ui.qrisAmount = amountIdr
     ui.qrisExpiresAt = expiresAt
-    ui.qrisProofUrl = existingProofUrl?.takeIf { it.isNotBlank() }
+    ui.qrisProofUrl = null
     ui.qrisProofUploading = false
     ui.qrisProofSubmitting = false
-    ui.qrisExpiryTriggeredForId = null
-    val cachedUrl = preloadedQris?.trim()?.takeIf { it.isNotBlank() }
-    if (cachedUrl != null) {
-        ui.qrisImageUrl = cachedUrl
-        ui.qrisLoading = false
-        ui.go(Screen.QRIS)
-        return
-    }
     ui.qrisImageUrl = null
-    ui.qrisLoading = !stallId.isNullOrBlank()
+    ui.qrisQrString = null
+    ui.qrisRedirectUrl = null
+    ui.qrisGatewayOrderId = null
+    ui.qrisPaymentChannel = if (forceSnap) "snap" else "qris"
+    ui.qrisError = null
+    ui.qrisCheckingStatus = false
+    ui.qrisSavingImage = false
+    ui.qrisExpiryTriggeredForId = null
+    ui.qrisLoading = true
     ui.go(Screen.QRIS)
-    if (stallId.isNullOrBlank()) {
-        ui.qrisLoading = false
-        ui.invalidate()
-        return
-    }
     authScope.launch {
-        val stall = runCatching { OrderRepository.fetchStall(stallId) }.getOrNull()
-        ui.cartStallName = stall?.name ?: ui.cartStallName
-        ui.qrisImageUrl = stall?.qrisImageUrl?.takeIf { it.isNotBlank() }
-        ui.qrisLoading = false
-        ui.invalidate()
+        try {
+            val session = withTimeout(18_000L) {
+                OrderRepository.createGatewayPayment(orderId = orderId, forceSnap = forceSnap)
+            }
+            if (ui.qrisOrderId != orderId) return@launch
+            if (session.status.equals("paid", ignoreCase = true) ||
+                session.status.equals("settlement", ignoreCase = true) ||
+                session.status.equals("capture", ignoreCase = true)
+            ) {
+                self.onMidtransPaymentCompleted(orderId, STATUS_PENDING)
+                return@launch
+            }
+            val fetchedQrUrl = session.qrUrl?.takeIf { it.isNotBlank() }
+            ui.qrisImageUrl = fetchedQrUrl
+            ui.qrisQrString = session.qrString?.takeIf { it.isNotBlank() }
+            ui.qrisRedirectUrl = session.redirectUrl?.takeIf { it.isNotBlank() }
+            ui.qrisGatewayOrderId = session.gatewayOrderId
+            ui.qrisPaymentChannel = session.paymentChannel
+            ui.qrisEnvironment = session.environment
+            if (!session.expiresAt.isNullOrBlank()) ui.qrisExpiresAt = session.expiresAt
+            ui.qrisLoading = false
+            ui.qrisError = null
+            if (fetchedQrUrl != null) loadProductImage(fetchedQrUrl)
+            ui.invalidate()
+            val fetchedRedirect = ui.qrisRedirectUrl
+            if (forceSnap && !fetchedRedirect.isNullOrBlank()) {
+                launchCustomTabUrl(fetchedRedirect)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            if (ui.qrisOrderId != orderId) return@launch
+            val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
+            ui.qrisLoading = false
+            ui.qrisError = msg
+            ui.invalidate()
+            Toast.makeText(self, msg, Toast.LENGTH_LONG).show()
+        }
     }
 }
 
-/** Buka kembali layar QRIS & unggah bukti untuk pesanan yang belum bayar / ditolak dari riwayat pesanan. */
+/** Muat ulang / buat ulang tagihan Midtrans apabila permintaan sebelumnya gagal. */
+internal fun MainActivity.retryCreateGatewayPayment() {
+    val orderId = ui.qrisOrderId ?: return
+    openMidtransPayment(orderId = orderId, amountIdr = ui.qrisAmount, expiresAt = ui.qrisExpiresAt, forceSnap = false)
+}
+
+/** Buka kembali layar Midtrans untuk pesanan yang masih belum dibayar dari riwayat pesanan. */
 internal fun MainActivity.openPaymentProofForOrder(orderId: String) {
     val cached = ui.myOrders.firstOrNull { it.id == orderId }
     if (cached != null) {
@@ -1073,12 +1067,10 @@ internal fun MainActivity.openPaymentProofForOrder(orderId: String) {
         ui.lastOrderMethod = cached.paymentMethod ?: "qris"
         ui.lastOrderStatus = cached.status
         if (cached.sellerStoreName.isNotBlank()) ui.cartStallName = cached.sellerStoreName
-        openQrisPayment(
+        openMidtransPayment(
             orderId = cached.id,
             amountIdr = cached.totalIdr,
-            stallId = cached.stallId.takeIf { it.isNotBlank() },
             expiresAt = cached.paymentExpiresAt,
-            existingProofUrl = cached.paymentProofUrl.takeIf { it.isNotBlank() },
         )
         return
     }
@@ -1091,87 +1083,187 @@ internal fun MainActivity.openPaymentProofForOrder(orderId: String) {
         ui.lastOrderMethod = fresh.paymentMethod ?: "qris"
         ui.lastOrderStatus = fresh.status
         if (fresh.sellerStoreName.isNotBlank()) ui.cartStallName = fresh.sellerStoreName
-        openQrisPayment(
+        openMidtransPayment(
             orderId = fresh.id,
             amountIdr = fresh.totalIdr,
-            stallId = fresh.stallId.takeIf { it.isNotBlank() },
             expiresAt = fresh.paymentExpiresAt,
-            existingProofUrl = fresh.paymentProofUrl.takeIf { it.isNotBlank() },
         )
     }
 }
 
-/** Buka pemilih galeri untuk unggah screenshot bukti bayar QRIS. */
-internal fun MainActivity.pickPaymentProofImage() {
-    val orderId = ui.qrisOrderId ?: return
-    val rem = com.jajanin.app.data.repository.remainingPaymentSeconds(ui.qrisExpiresAt)
-    if (rem != null && rem <= 0L) {
-        onQrisTimerExpired(orderId)
-        return
-    }
-    if (ui.qrisProofUploading || ui.qrisProofSubmitting) return
-    val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
-        addCategory(android.content.Intent.CATEGORY_OPENABLE)
-        type = "image/*"
-    }
-    startActivityForResult(intent, REQUEST_PAYMENT_PROOF)
-}
-
-/** Unggah screenshot bukti bayar QRIS ke bucket `payment-proofs/$uid/<orderId>_<ts>.jpg`. */
-internal fun MainActivity.uploadPaymentProofImage(uri: android.net.Uri) {
+/** Cek status transaksi langsung ke Midtrans dan sinkronkan status pesanan secara atomik. */
+internal fun MainActivity.checkGatewayPaymentStatus() {
     val self = this
     val orderId = ui.qrisOrderId ?: return
-    ui.qrisProofUploading = true
+    if (ui.qrisCheckingStatus || ui.qrisLoading) return
+    ui.qrisCheckingStatus = true
+    ui.invalidate()
+    authScope.launch {
+        try {
+            val res = withTimeout(15_000L) {
+                OrderRepository.checkGatewayPaymentStatus(orderId)
+            }
+            ui.qrisCheckingStatus = false
+            when {
+                res.paymentStatus.equals("paid", ignoreCase = true) ||
+                    res.status.equals("paid", ignoreCase = true) ||
+                    res.status.equals("settlement", ignoreCase = true) ||
+                    res.status.equals("capture", ignoreCase = true) -> {
+                    self.onMidtransPaymentCompleted(orderId, STATUS_PENDING)
+                }
+                res.paymentStatus.equals("expired", ignoreCase = true) ||
+                    res.paymentStatus.equals("failed", ignoreCase = true) ||
+                    res.status.lowercase() in listOf("expired", "failed", "cancelled", "expire", "cancel", "deny") -> {
+                    onQrisTimerExpired(orderId)
+                }
+                else -> {
+                    res.qrUrl?.takeIf { it.isNotBlank() }?.let { qr ->
+                        if (ui.qrisImageUrl.isNullOrBlank()) ui.qrisImageUrl = qr
+                    }
+                    ui.invalidate()
+                    Toast.makeText(
+                        self,
+                        res.message?.takeIf { it.isNotBlank() } ?: "Menunggu pembayaran Midtrans (${res.status}).",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        } catch (error: CancellationException) {
+            ui.qrisCheckingStatus = false
+            throw error
+        } catch (error: Throwable) {
+            ui.qrisCheckingStatus = false
+            ui.invalidate()
+            val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
+            Toast.makeText(self, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+/** Dipanggil saat webhook atau check-payment-status memastikan Midtrans sudah lunas. */
+internal fun MainActivity.onMidtransPaymentCompleted(orderId: String, status: String) {
+    ui.qrisLoading = false
+    ui.qrisCheckingStatus = false
+    ui.qrisError = null
+    ui.lastOrderStatus = status.ifBlank { STATUS_PENDING }
+    ui.selectedBuyerOrderId = orderId
+    refreshMyOrders()
+    refreshProducts()
+    refreshChatList(silent = true)
+    ui.go(Screen.READY)
+    Toast.makeText(this, "Pembayaran Midtrans lunas otomatis. Pesanan diteruskan ke warung.", Toast.LENGTH_LONG).show()
+}
+
+/** Simpan gambar QRIS dinamis Midtrans ke galeri perangkat. */
+internal fun MainActivity.saveQrisBitmapToGallery() {
+    val self = this
+    val qrUrl = ui.qrisImageUrl?.takeIf { it.isNotBlank() } ?: run {
+        Toast.makeText(this, "Gambar QRIS belum siap disimpan.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    if (ui.qrisSavingImage) return
+    ui.qrisSavingImage = true
     ui.invalidate()
     authScope.launch(Dispatchers.IO) {
         try {
-            val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: error("Gambar bukti tidak bisa dibaca.")
-            val bytes = compressForUpload(raw, maxEdge = 1280, quality = 82)
-            require(bytes.size <= 5 * 1024 * 1024) { "Ukuran foto bukti maksimal 5MB." }
-            val token = SupabaseRepository.currentAccessToken() ?: error("Sesi habis, masuk ulang.")
-            val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
-            val path = "$uid/${orderId}_${System.currentTimeMillis()}.jpg"
-            val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/payment-proofs/$path")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                requestMethod = "PUT"
-                doOutput = true
-                setFixedLengthStreamingMode(bytes.size)
-                setRequestProperty("apikey", SupabaseRepository.publishableKey)
-                setRequestProperty("Authorization", "Bearer $token")
-                setRequestProperty("Content-Type", "image/jpeg")
-                setRequestProperty("x-upsert", "true")
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-            conn.outputStream.use { it.write(bytes) }
-            val code = conn.responseCode
-            if (code !in 200..299) error("Unggah bukti gagal (HTTP $code).")
-            val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/payment-proofs/$path"
-            val previewBmp = runCatching {
-                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }.getOrNull()
-            launch(Dispatchers.Main) {
-                if (previewBmp != null) {
-                    com.jajanin.app.core.ui.ProductImageCache.images[publicUrl] = previewBmp
+            val bmp = com.jajanin.app.core.ui.ProductImageCache.images[qrUrl] ?: run {
+                val conn = java.net.URL(qrUrl).openConnection().apply {
+                    connectTimeout = 10000
+                    readTimeout = 10000
                 }
-                ui.qrisProofUrl = publicUrl
-                ui.qrisProofUploading = false
+                conn.getInputStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+            } ?: error("Gagal mengunduh gambar QR.")
+
+            val fileName = "Jajanin_Midtrans_${ui.lastOrderPickup ?: System.currentTimeMillis()}.png"
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/Jajanin")
+                    put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            }
+            val resolver = self.contentResolver
+            val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: error("Tidak bisa membuat file di galeri.")
+            resolver.openOutputStream(uri)?.use { out ->
+                if (!bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)) {
+                    error("Gagal menyimpan gambar QR.")
+                }
+            } ?: error("Gagal membuka stream galeri.")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                values.clear()
+                values.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            }
+            launch(Dispatchers.Main) {
+                ui.qrisSavingImage = false
                 ui.invalidate()
-                Toast.makeText(self, "Foto bukti terunggah. Tekan Kirim Bukti di bawah.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(self, "QRIS tersimpan di Galeri (Pictures/Jajanin).", Toast.LENGTH_LONG).show()
             }
         } catch (error: Throwable) {
             launch(Dispatchers.Main) {
-                ui.qrisProofUploading = false
+                ui.qrisSavingImage = false
                 ui.invalidate()
-                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                Toast.makeText(self, error.message ?: "Gagal menyimpan QR ke galeri.", Toast.LENGTH_LONG).show()
             }
         }
     }
 }
 
-/** Tampilkan foto bukti transfer QRIS dalam dialog penuh (dipakai Pembeli & Penjual). */
-internal fun MainActivity.showPaymentProofPreview(url: String, title: String = "Bukti Transfer QRIS") {
+/** Salin QR string atau URL gambar QR ke clipboard untuk ditempel di aplikasi pembayaran / simulator. */
+internal fun MainActivity.copyMidtransQrCode() {
+    val payload = ui.qrisQrString?.takeIf { it.isNotBlank() }
+        ?: ui.qrisImageUrl?.takeIf { it.isNotBlank() }
+        ?: ui.qrisGatewayOrderId?.takeIf { it.isNotBlank() }
+        ?: run {
+            Toast.makeText(this, "Kode QRIS belum tersedia.", Toast.LENGTH_SHORT).show()
+            return
+        }
+    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    cm.setPrimaryClip(android.content.ClipData.newPlainText("Midtrans QR", payload))
+    Toast.makeText(this, "Kode QR Midtrans disalin ke clipboard.", Toast.LENGTH_SHORT).show()
+}
+
+/** Buka halaman Midtrans Snap Checkout di Chrome Custom Tab (mendukung QRIS & kanal lain). */
+internal fun MainActivity.openMidtransSnapCheckout() {
+    val existingUrl = ui.qrisRedirectUrl?.takeIf { it.isNotBlank() }
+    if (existingUrl != null) {
+        launchCustomTabUrl(existingUrl)
+        return
+    }
+    val orderId = ui.qrisOrderId ?: return
+    openMidtransPayment(orderId = orderId, amountIdr = ui.qrisAmount, expiresAt = ui.qrisExpiresAt, forceSnap = true)
+}
+
+/** Buka Midtrans Sandbox QRIS Simulator di Chrome Custom Tab untuk uji bayar. */
+internal fun MainActivity.openMidtransSandboxSimulator() {
+    val qrString = ui.qrisQrString?.takeIf { it.isNotBlank() }
+    if (qrString != null) {
+        val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("Midtrans QRIS String", qrString))
+        Toast.makeText(this, "QR String disalin. Tempel di Simulator Midtrans Sandbox.", Toast.LENGTH_LONG).show()
+    }
+    launchCustomTabUrl("https://simulator.sandbox.midtrans.com/qris/index")
+}
+
+private fun MainActivity.launchCustomTabUrl(url: String) {
+    runCatching {
+        val customTabs = androidx.browser.customtabs.CustomTabsIntent.Builder()
+            .setShowTitle(true)
+            .build()
+        customTabs.launchUrl(this, android.net.Uri.parse(url))
+    }.onFailure {
+        runCatching {
+            startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+        }.onFailure {
+            Toast.makeText(this, "Tidak ada browser untuk membuka halaman pembayaran.", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+/** Tampilkan foto bukti transfer lama (jika ada pada riwayat transaksi lama). */
+internal fun MainActivity.showPaymentProofPreview(url: String, title: String = "Bukti Transfer") {
     val self = this
     val cached = com.jajanin.app.core.ui.ProductImageCache.images[url]
     if (cached != null) {
@@ -1215,7 +1307,7 @@ internal fun MainActivity.showPaymentProofPreview(url: String, title: String = "
     }
 }
 
-/** Dipanggil otomatis saat timer 10 menit QRIS habis di layar pembeli. */
+/** Dipanggil otomatis saat timer pembayaran Midtrans (15 menit) habis di layar pembeli. */
 internal fun MainActivity.onQrisTimerExpired(orderId: String) {
     if (ui.qrisExpiryTriggeredForId == orderId) return
     ui.qrisExpiryTriggeredForId = orderId
@@ -1226,58 +1318,11 @@ internal fun MainActivity.onQrisTimerExpired(orderId: String) {
         refreshProducts()
         Toast.makeText(
             self,
-            "Batas waktu bayar QRIS (10 menit) habis. Pesanan otomatis dibatalkan.",
+            "Batas waktu pembayaran Midtrans habis. Pesanan otomatis dibatalkan.",
             Toast.LENGTH_LONG,
         ).show()
         if (ui.currentScreen == Screen.QRIS && ui.qrisOrderId == orderId) {
             ui.go(Screen.ORDERS)
-        }
-    }
-}
-
-/** Pembeli menekan "Kirim Bukti & Konfirmasi Bayar": wajib sudah mengunggah screenshot bukti QRIS. */
-internal fun MainActivity.submitPaymentProof() {
-    val self = this
-    val orderId = ui.qrisOrderId ?: return
-    if (ui.qrisProofSubmitting) return
-    if (ui.qrisProofUploading) {
-        Toast.makeText(this, "Tunggu foto bukti selesai diunggah.", Toast.LENGTH_SHORT).show()
-        return
-    }
-    val rem = com.jajanin.app.data.repository.remainingPaymentSeconds(ui.qrisExpiresAt)
-    if (rem != null && rem <= 0L) {
-        onQrisTimerExpired(orderId)
-        return
-    }
-    val proofUrl = ui.qrisProofUrl?.trim().orEmpty()
-    if (proofUrl.isBlank()) {
-        Toast.makeText(this, "Unggah foto screenshot bukti transfer QRIS terlebih dahulu.", Toast.LENGTH_LONG).show()
-        pickPaymentProofImage()
-        return
-    }
-    ui.qrisProofSubmitting = true
-    val previousOrders = ui.myOrders
-    val previousStatus = ui.lastOrderStatus
-    ui.myOrders = previousOrders.map {
-        if (it.id == orderId) it.copy(paymentStatus = "waiting_verification", paymentProofUrl = proofUrl, paymentExpiresAt = null)
-        else it
-    }
-    ui.lastOrderStatus = "pending"
-    ui.invalidate()
-    authScope.launch {
-        try {
-            OrderRepository.submitPaymentProof(orderId, proofUrl)
-            ui.qrisProofSubmitting = false
-            ui.go(Screen.READY)
-            refreshMyOrders()
-            Toast.makeText(self, "Bukti transfer terkirim. Menunggu verifikasi penjual.", Toast.LENGTH_LONG).show()
-        } catch (error: Throwable) {
-            ui.qrisProofSubmitting = false
-            ui.myOrders = previousOrders
-            ui.lastOrderStatus = previousStatus
-            ui.invalidate()
-            val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
-            Toast.makeText(self, msg, Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -1299,7 +1344,7 @@ internal fun MainActivity.cancelBuyerOrder(orderId: String) {
             || order.paymentStatus.equals("waiting_verification", ignoreCase = true)
             || order.paymentProofUrl.isNotBlank()
         ) {
-            "Pesanan yang sudah dibayar / mengunggah bukti QRIS tidak dapat dibatalkan."
+            "Pesanan yang sudah dibayar melalui Midtrans tidak dapat dibatalkan."
         } else {
             "Pesanan sudah dikonfirmasi penjual dan tidak bisa dibatalkan."
         }

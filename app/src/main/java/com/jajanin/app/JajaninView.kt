@@ -175,9 +175,8 @@ internal class JajaninView(context: Context) : View(context) {
     // --- Buyer checkout state (multi-item cart, satu warung per order) ---
     internal var cartStallId: String? = null
     internal var cartStallName: String = "Kantin Jajanin"
-    // QRIS warung isi keranjang: null = belum dicek (tampilkan semua),
-    // "" = warung belum pasang (tunai saja), berisi URL = QRIS tersedia.
-    internal var cartStallQris: String? = null
+    // QRIS warung isi keranjang: null = belum dicek, non-blank = Midtrans / non-tunai aktif
+    internal var cartStallQris: String? = "midtrans_sandbox"
     internal var checkoutPayment: String = "cash"
     internal var checkoutOrderMode: String = "same_day"
     internal var checkoutPickupDate: String = OrderRepository.nextOpenSchoolDatesWib(1).firstOrNull()
@@ -194,7 +193,15 @@ internal class JajaninView(context: Context) : View(context) {
     internal var qrisOrderId: String? = null
     internal var qrisAmount: Int = 0
     internal var qrisImageUrl: String? = null
+    internal var qrisQrString: String? = null
+    internal var qrisRedirectUrl: String? = null
+    internal var qrisGatewayOrderId: String? = null
+    internal var qrisPaymentChannel: String = "qris"
+    internal var qrisEnvironment: String = "sandbox"
     internal var qrisLoading = false
+    internal var qrisCheckingStatus = false
+    internal var qrisSavingImage = false
+    internal var qrisError: String? = null
     internal var qrisExpiresAt: String? = null
     internal var qrisProofUrl: String? = null
     internal var qrisProofUploading = false
@@ -206,6 +213,9 @@ internal class JajaninView(context: Context) : View(context) {
     internal var myStallRoom: String = ""
     internal var recentSellerRooms: List<String> = emptyList()
     internal var myStallQris: String = ""
+    internal var sellerLedgerAvailable: Int = 0
+    internal var sellerLedgerPaidOut: Int = 0
+    internal var sellerLedgerTxCount: Int = 0
     internal var myStallLogoUrl: String = ""
     internal var myStallBannerUrl: String = ""
     internal var myStallBio: String = ""
@@ -1168,21 +1178,21 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     hit == "placeOrder" -> if (!placingOrder) activity()?.placeCartOrder()
-                    hit == "qrisPickProof" || hit == "qrisPickProofCard" -> activity()?.pickPaymentProofImage()
-                    hit == "qrisViewProof" || hit == "qrisViewProofThumb" || hit == "qrisViewProofBtn" ->
-                        qrisProofUrl?.takeIf { it.isNotBlank() }?.let {
-                            activity()?.showPaymentProofPreview(it, "Bukti Transfer QRIS")
-                        }
+                    hit == "midtransSaveQr" -> activity()?.saveQrisBitmapToGallery()
+                    hit == "midtransCopyQr" -> activity()?.copyMidtransQrCode()
+                    hit == "midtransCheckStatus" -> activity()?.checkGatewayPaymentStatus()
+                    hit == "midtransOpenSnap" -> activity()?.openMidtransSnapCheckout()
+                    hit == "midtransOpenSimulator" -> activity()?.openMidtransSandboxSimulator()
+                    hit == "midtransRetryCreate" -> activity()?.retryCreateGatewayPayment()
                     hit.startsWith("viewProof:") -> {
                         val targetOrderId = hit.substringAfter(':')
                         val url = adminDetailOrder?.takeIf { it.id == targetOrderId }?.paymentProofUrl
                             ?: myOrders.firstOrNull { it.id == targetOrderId }?.paymentProofUrl
                             ?: adminOrders.firstOrNull { it.id == targetOrderId }?.paymentProofUrl
                         if (!url.isNullOrBlank()) {
-                            activity()?.showPaymentProofPreview(url, "Bukti Transfer QRIS")
+                            activity()?.showPaymentProofPreview(url, "Bukti Transfer")
                         }
                     }
-                    hit == "paid" -> activity()?.submitPaymentProof()
                     hit.startsWith("myOrderPaid:") -> activity()?.openPaymentProofForOrder(hit.substringAfter(':'))
                     hit.startsWith("buyerCancel:") -> activity()?.cancelBuyerOrder(hit.substringAfter(':'))
                     hit.startsWith("buyerOrder:") -> {
@@ -1196,7 +1206,7 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "expHistory" -> activity()?.openExpHistory()
                     hit == "expMore" -> activity()?.loadMoreExp()
                     hit == "expRetry" -> activity()?.loadExpPage()
-                    hit == "profileQris" -> activity()?.showQrisSettings()
+                    hit == "profileMidtrans" -> activity()?.showSellerMidtransInfo()
                     hit == "profileStallName" -> activity()?.showStallNameEdit()
                     hit == "profileStorePublic" -> {
                         val sid = myStallId?.takeIf { it.isNotBlank() }
@@ -1211,8 +1221,6 @@ internal class JajaninView(context: Context) : View(context) {
                     hit == "profileStoreCategory" -> activity()?.showSellerStoreCategoryPicker()
                     hit == "profileStoreLogo" -> activity()?.showSellerStoreImageOptions(isBanner = false)
                     hit == "profileStoreBanner" -> activity()?.showSellerStoreImageOptions(isBanner = true)
-                    hit == "qrisPick" -> activity()?.pickQrisImage()
-                    hit == "qrisUrl" -> activity()?.showQrisUrlForm()
                     hit.startsWith("tab:") -> selectBuyerTab(hit.removePrefix("tab:"))
                     // --- Sesi bersama ---
                     hit == "logout" -> activity()?.logout()

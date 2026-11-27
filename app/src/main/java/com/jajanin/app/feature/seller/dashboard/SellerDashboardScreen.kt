@@ -506,7 +506,7 @@ private fun JajaninView.drawCompactOrderRow(
     kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 76f, top + 65f, 280f, 10f, schedColor, true)
 
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
-    val method = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
+    val method = if (order.paymentMethod == "cash") "Tunai" else "Midtrans"
     val (stLabel, _) = statusLabel(order.status)
     kit.textEllipsized(c, "$stLabel · $method · $payLabel", 32f, top + 92f, 132f, 10.5f, payColor, true)
 
@@ -533,7 +533,7 @@ private fun JajaninView.drawCompactOrderRow(
         if (lockReason != null) {
             val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&
                 !order.paymentStatus.equals("paid", ignoreCase = true)
-            val lockLabel = if (needsQris) "Cek QRIS" else "Terkunci"
+            val lockLabel = if (needsQris) "Tunggu Midtrans" else "Terkunci"
             kit.rounded(c, actionBtn, kit.warnBox, 6f, Color.rgb(183, 116, 0))
             kit.centerText(c, lockLabel, actionBtn, 10.5f, Color.rgb(183, 116, 0), true)
             bounds.putVisible("adminStatus:${order.id}", actionBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
@@ -705,7 +705,7 @@ private fun JajaninView.drawOrderCard(
 
     // Row 4: Payment method & status
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
-    val payment = if (order.paymentMethod == "cash") "Tunai" else "QRIS"
+    val payment = if (order.paymentMethod == "cash") "Tunai" else "Midtrans"
     kit.text(c, "$payment · $payLabel", 32f, top + 99f, 10.5f, payColor, true)
 
     val unreadOrder = unreadChatByOrder[order.id] ?: 0
@@ -741,11 +741,11 @@ private fun JajaninView.drawOrderCard(
             val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&
                 !order.paymentStatus.equals("paid", ignoreCase = true)
             val lockedLabel = if (needsQris) {
-                "Verifikasi QRIS Dulu"
+                "Tunggu Bayar Midtrans"
             } else if (order.pickupDate.isNotBlank() && order.pickupDate > OrderRepository.todayWibDateString()) {
                 "Hari-H: ${formatShortIdDate(order.pickupDate)}"
             } else {
-                "Verifikasi QRIS Dulu"
+                "Tunggu Bayar Midtrans"
             }
             kit.rounded(c, action, kit.warnBox, 6f, Color.rgb(183, 116, 0))
             kit.centerText(c, lockedLabel, action, 10f, Color.rgb(183, 116, 0), true)
@@ -886,7 +886,7 @@ private fun JajaninView.drawNotifPanel(c: Canvas, w: Float, h: Float, today: Lis
         val top = panelTop + 46f + index * lineH
         if (top + lineH > panelBottom) return@forEachIndexed
         sellerDot(c, 28f, top + 21f, if (isNew) kit.star else kit.blue, 3.5f)
-        val title = if (isNew) "Pesanan baru · ${order.buyerName}" else "Verifikasi bayar · ${order.buyerName}"
+        val title = if (isNew) "Pesanan baru · ${order.buyerName}" else "Menunggu bayar Midtrans · ${order.buyerName}"
         kit.textEllipsized(c, title, 40f, top + 21f, 300f, 12f, kit.ink, true)
         kit.textEllipsized(
             c,

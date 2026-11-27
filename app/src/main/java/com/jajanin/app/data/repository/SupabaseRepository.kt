@@ -426,7 +426,7 @@ object SupabaseRepository {
             }
     }
 
-    private suspend fun postEdgeFunction(
+    internal suspend fun postEdgeFunction(
         slug: String,
         jsonBody: String,
         bearerToken: String?,

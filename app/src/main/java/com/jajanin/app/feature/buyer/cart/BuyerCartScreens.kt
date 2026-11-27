@@ -309,12 +309,9 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
 
     // 3. Metode Pembayaran
     kit.text(c, "Metode pembayaran", 22f, y + 22f, 15f, kit.ink, true)
-    val stallQris = cartStallQris
-    val qrisOffered = !stallQris.isNullOrBlank()
     val cashLockedByPo = poRequiresQris
-    val missingQrisForStrictPo = poRequiresQris && stallQris != null && !qrisOffered
-    val cashBox = if (qrisOffered) RectF(18f, y + 34f, 190f, y + 92f) else RectF(18f, y + 34f, 372f, y + 92f)
-    val cashOn = !cashLockedByPo && (checkoutPayment == "cash" || !qrisOffered)
+    val cashBox = RectF(18f, y + 34f, 190f, y + 92f)
+    val cashOn = !cashLockedByPo && checkoutPayment == "cash"
     kit.rounded(
         c,
         cashBox,
@@ -323,33 +320,28 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
         if (cashOn) kit.blue else kit.border,
     )
     kit.text(c, "Tunai", 34f, y + 59f, 13f, if (cashLockedByPo) kit.muted else kit.ink, true)
-    val cashSub = when {
-        cashLockedByPo -> poQrisReason
-        stallQris == null -> "Bayar saat ambil · memeriksa QRIS warung..."
-        qrisOffered -> "Bayar saat ambil"
-        else -> "Bayar saat ambil · toko belum pasang QRIS"
-    }
+    val cashSub = if (cashLockedByPo) poQrisReason else "Bayar saat ambil"
     kit.textEllipsized(c, cashSub, 34f, y + 79f, (cashBox.width() - 28f).coerceAtLeast(100f), 9.5f, if (cashLockedByPo) poAccent else kit.muted)
     if (cashOn) AppIcon.draw(c, "radioChecked", cashBox.right - 20f, y + 64f, 16f, kit.blue)
     bounds.putVisible("payMethod:cash", cashBox, topLimit = bodyTop, bottomLimit = bodyBottom)
-    if (qrisOffered) {
-        val qrisBox = RectF(198f, y + 34f, 372f, y + 92f)
-        val qrisOn = cashLockedByPo || !cashOn
-        kit.rounded(c, qrisBox, if (cashLockedByPo) kit.warnBox else kit.card, 13f, if (qrisOn) (if (cashLockedByPo) poAccent else kit.blue) else kit.border)
-        kit.text(c, if (cashLockedByPo) "QRIS (Wajib)" else "QRIS", 214f, y + 59f, 13f, kit.ink, true)
-        kit.text(c, if (cashLockedByPo) "Bayar di muka" else "Scan lalu konfirmasi", 214f, y + 79f, 10f, if (cashLockedByPo) poAccent else kit.muted)
-        if (qrisOn) AppIcon.draw(c, "radioChecked", 350f, y + 64f, 16f, if (cashLockedByPo) poAccent else kit.blue)
-        bounds.putVisible("payMethod:qris", qrisBox, topLimit = bodyTop, bottomLimit = bodyBottom)
-    }
 
-    var summaryOffset = y + 128f
-    if (missingQrisForStrictPo) {
-        val warnBox = RectF(18f, y + 100f, 372f, y + 140f)
-        kit.rounded(c, warnBox, kit.dangerBorder, 10f, kit.danger)
-        kit.textEllipsized(c, "Warung ini belum memasang QRIS untuk $poQrisReason.", 30f, y + 117f, 330f, 10f, kit.danger, true)
-        kit.textEllipsized(c, "Pilih tanggal PO 1–3 hari ke depan atau hubungi penjual.", 30f, y + 132f, 330f, 9.5f, kit.ink)
-        summaryOffset = y + 162f
-    }
+    val qrisBox = RectF(198f, y + 34f, 372f, y + 92f)
+    val qrisOn = cashLockedByPo || !cashOn
+    kit.rounded(c, qrisBox, if (cashLockedByPo) kit.warnBox else kit.card, 13f, if (qrisOn) (if (cashLockedByPo) poAccent else kit.blue) else kit.border)
+    kit.text(c, if (cashLockedByPo) "Midtrans (Wajib)" else "Midtrans", 212f, y + 59f, 13f, kit.ink, true)
+    kit.textEllipsized(
+        c,
+        if (cashLockedByPo) "QRIS otomatis lunas" else "QRIS dinamis · otomatis",
+        212f,
+        y + 79f,
+        130f,
+        9.5f,
+        if (cashLockedByPo) poAccent else kit.muted,
+    )
+    if (qrisOn) AppIcon.draw(c, "radioChecked", 352f, y + 64f, 16f, if (cashLockedByPo) poAccent else kit.blue)
+    bounds.putVisible("payMethod:qris", qrisBox, topLimit = bodyTop, bottomLimit = bodyBottom)
+
+    val summaryOffset = y + 128f
 
     val subtotal = lines.sumOf { (p, qty) -> p.priceIdr * qty }
     val totalY = summaryOffset
@@ -384,13 +376,10 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     if (placingOrder) {
         kit.rounded(c, cta, kit.muted, 14f)
         kit.centerText(c, "Membuat pesanan...", cta, 14f, Color.WHITE, true)
-    } else if (missingQrisForStrictPo) {
-        kit.rounded(c, cta, kit.muted, 14f)
-        kit.centerText(c, "QRIS Warung Belum Tersedia (Pilih 1–3 Hari)", cta, 12f, Color.WHITE, true)
     } else {
-        val activeMethod = if (qrisOffered && (poRequiresQris || checkoutPayment == "qris")) "qris" else "cash"
+        val activeMethod = if (poRequiresQris || checkoutPayment == "qris") "qris" else "cash"
         val prefix = if (activeMode == "pre_order") "Buat Pre-Order" else "Buat pesanan"
-        kit.button(c, if (activeMethod == "cash") "$prefix · bayar tunai" else "$prefix · bayar QRIS", cta)
+        kit.button(c, if (activeMethod == "cash") "$prefix · bayar tunai" else "$prefix · bayar Midtrans", cta)
         bounds["pay"] = RectF(cta)
     }
 }
@@ -404,11 +393,17 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
     c.clipRect(0f, bodyTop, w, bodyBottom)
 
     var y = 84f + off
-    val stallLabel = cartStallName.takeIf { it.isNotBlank() }?.take(24) ?: "Warung"
-    kit.textEllipsized(c, "Scan QRIS $stallLabel", 22f, y + 18f, 346f, 18f, kit.ink, true)
-    y += 28f
+    val stallLabel = cartStallName.takeIf { it.isNotBlank() }?.take(20) ?: "Warung"
+    kit.textEllipsized(c, "Bayar Midtrans · $stallLabel", 22f, y + 18f, 232f, 16.5f, kit.ink, true)
+    val isSandbox = qrisEnvironment.equals("sandbox", ignoreCase = true)
+    if (isSandbox) {
+        val envPill = RectF(260f, y + 2f, 370f, y + 22f)
+        kit.rounded(c, envPill, kit.warnBox, 7f, Color.rgb(183, 116, 0))
+        kit.centerText(c, "SANDBOX", envPill, 9.5f, Color.rgb(183, 116, 0), true)
+    }
+    y += 30f
 
-    // 1. Live 10-minute payment deadline & stock protection banner
+    // 1. Live payment deadline & automatic settlement banner
     val remSec = com.jajanin.app.data.repository.remainingPaymentSeconds(qrisExpiresAt)
     val isExpired = remSec != null && remSec <= 0L
     val isUrgent = remSec != null && remSec in 1L..120L
@@ -418,24 +413,18 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
         postInvalidateDelayed(1000)
     }
     val bannerRect = RectF(20f, y, 370f, y + 48f)
-    val bannerBg = when {
-        isExpired || isUrgent -> kit.dangerBorder
-        else -> kit.warnBox
-    }
-    val bannerAccent = when {
-        isExpired || isUrgent -> kit.danger
-        else -> Color.rgb(183, 116, 0)
-    }
+    val bannerBg = if (isExpired || isUrgent) kit.dangerBorder else kit.warnBox
+    val bannerAccent = if (isExpired || isUrgent) kit.danger else Color.rgb(183, 116, 0)
     kit.rounded(c, bannerRect, bannerBg, 10f, bannerAccent)
     val timerHeadline = when {
-        isExpired -> "Batas waktu bayar QRIS habis · Pesanan dibatalkan"
+        isExpired -> "Batas waktu bayar Midtrans habis · Dibatalkan"
         remSec != null -> "Batas waktu bayar: ${com.jajanin.app.data.repository.formatCountdownMmSs(remSec)}"
-        else -> "Selesaikan pembayaran & unggah screenshot bukti"
+        else -> "Pembayaran diproses otomatis oleh Midtrans"
     }
     kit.textEllipsized(c, timerHeadline, 32f, y + 20f, 326f, 12f, bannerAccent, true)
     kit.textEllipsized(
         c,
-        "Stok diamankan setelah penjual memverifikasi bukti transfer QRIS.",
+        "Stok diamankan & pesanan lunas otomatis saat pembayaran diterima.",
         32f,
         y + 38f,
         326f,
@@ -444,23 +433,44 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
     )
     y += 58f
 
-    // 2. QRIS Card
-    val qrCard = RectF(28f, y, 362f, y + 266f)
+    // 2. Dynamic Midtrans QRIS Card
+    val qrUrl = qrisImageUrl?.takeIf { it.isNotBlank() }
+    val hasQrPayload = qrUrl != null || !qrisQrString.isNullOrBlank()
+    val qrCardH = if (qrUrl != null || hasQrPayload) 304f else 258f
+    val qrCard = RectF(24f, y, 366f, y + qrCardH)
     kit.rounded(c, qrCard, kit.card, 18f, kit.border)
-    kit.centerText(c, "QRIS", RectF(28f, y + 10f, 362f, y + 34f), 15f, kit.blue, true)
-    val qr = RectF(90f, y + 38f, 300f, y + 248f)
-    val qrUrl = qrisImageUrl
+    val channelTitle = if (qrisPaymentChannel == "snap" && qrUrl == null) "MIDTRANS SNAP CHECKOUT" else "QRIS DINAMIS MIDTRANS"
+    kit.centerText(c, channelTitle, RectF(24f, y + 10f, 366f, y + 32f), 12.5f, kit.blue, true)
+    val qr = RectF(95f, y + 36f, 295f, y + 236f)
     when {
-        qrisLoading -> kit.centerText(c, "Memuat QR...", qr, 13f, kit.muted)
-        qrUrl.isNullOrBlank() -> {
-            kit.centerText(c, "Penjual belum memasang", RectF(90f, y + 115f, 300f, y + 142f), 13f, kit.danger, true)
-            kit.centerText(c, "kode QRIS.", RectF(90f, y + 137f, 300f, y + 164f), 13f, kit.danger, true)
-            drawQr(c, qr)
+        qrisLoading -> {
+            kit.centerText(c, "Menyiapkan tagihan Midtrans...", qr, 12.5f, kit.muted)
+        }
+        !qrisError.isNullOrBlank() && qrUrl == null -> {
+            kit.centerText(c, "Gagal membuat QRIS Midtrans", RectF(40f, y + 74f, 350f, y + 96f), 13f, kit.danger, true)
+            kit.textEllipsized(c, qrisError.orEmpty(), 44f, y + 114f, 302f, 10.5f, kit.muted)
+            val retryBtn = RectF(46f, y + 140f, 344f, y + 178f)
+            kit.rounded(c, retryBtn, kit.tint, 10f, kit.blue)
+            kit.centerText(c, "Muat Ulang Tagihan Midtrans", retryBtn, 12f, kit.blue, true)
+            bounds.putVisible("midtransRetryCreate", retryBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+
+            val snapFallbackBtn = RectF(46f, y + 188f, 344f, y + 226f)
+            kit.rounded(c, snapFallbackBtn, kit.bg, 10f, kit.border)
+            kit.centerText(c, "Buka Halaman Midtrans Snap", snapFallbackBtn, 12f, kit.ink, true)
+            bounds.putVisible("midtransOpenSnap", snapFallbackBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+        }
+        qrUrl == null -> {
+            kit.centerText(c, "Tagihan siap via Midtrans Snap", RectF(44f, y + 86f, 346f, y + 112f), 13f, kit.ink, true)
+            kit.centerText(c, "Tekan tombol di bawah untuk membayar.", RectF(44f, y + 112f, 346f, y + 136f), 11f, kit.muted)
+            val openSnapBtn = RectF(56f, y + 150f, 334f, y + 190f)
+            kit.rounded(c, openSnapBtn, kit.blue, 10f)
+            kit.centerText(c, "Buka Midtrans Snap", openSnapBtn, 12.5f, Color.WHITE, true)
+            bounds.putVisible("midtransOpenSnap", openSnapBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
         }
         else -> {
             val bmp = ProductImageCache.images[qrUrl]
             if (bmp == null) {
-                kit.centerText(c, "Memuat QR...", qr, 13f, kit.muted)
+                kit.centerText(c, "Memuat gambar QR...", qr, 12.5f, kit.muted)
                 activity()?.loadProductImage(qrUrl)
             } else {
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -470,14 +480,30 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
                 c.drawBitmap(bmp, null, qr, paint)
                 c.restoreToCount(save)
             }
+            val saveQrBtn = RectF(38f, y + 250f, 190f, y + 286f)
+            kit.rounded(c, saveQrBtn, kit.tint, 9f, kit.blue)
+            kit.centerText(
+                c,
+                if (qrisSavingImage) "Menyimpan..." else "Simpan QR",
+                saveQrBtn,
+                11.5f,
+                kit.blue,
+                true,
+            )
+            bounds.putVisible("midtransSaveQr", saveQrBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+
+            val copyQrBtn = RectF(198f, y + 250f, 352f, y + 286f)
+            kit.rounded(c, copyQrBtn, kit.bg, 9f, kit.border)
+            kit.centerText(c, "Salin Kode QR", copyQrBtn, 11.5f, kit.ink, true)
+            bounds.putVisible("midtransCopyQr", copyQrBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
         }
     }
-    y += 278f
+    y += qrCardH + 12f
 
     // 3. Total & Pickup Code Card
     val amtCard = RectF(20f, y, 370f, y + 66f)
     kit.rounded(c, amtCard, kit.card, 12f, kit.border)
-    kit.text(c, "Total bayar pas", 34f, y + 22f, 11f, kit.muted)
+    kit.text(c, "Total tagihan Midtrans", 34f, y + 22f, 11f, kit.muted)
     kit.text(c, formatRupiah(qrisAmount), 34f, y + 50f, 22f, kit.ink, true)
     if (!lastOrderPickup.isNullOrBlank()) {
         val codePill = RectF(268f, y + 19f, 356f, y + 47f)
@@ -486,76 +512,41 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
     }
     y += 78f
 
-    // 4. Mandatory Payment Proof Upload Card
-    val proofUrl = qrisProofUrl?.takeIf { it.isNotBlank() }
-    val proofCardH = if (proofUrl != null) 120f else 104f
-    val proofCard = RectF(20f, y, 370f, y + proofCardH)
-    kit.rounded(
-        c,
-        proofCard,
-        kit.card,
-        12f,
-        if (proofUrl != null) kit.success else kit.blue,
-    )
-    kit.text(c, "BUKTI TRANSFER QRIS (WAJIB)", 34f, y + 22f, 10f, kit.muted, true)
-    when {
-        qrisProofUploading -> {
-            kit.text(c, "Mengunggah screenshot bukti transfer...", 34f, y + 52f, 13f, kit.blue, true)
-            kit.text(c, "Mohon tunggu sebentar.", 34f, y + 74f, 11f, kit.muted)
-        }
-        proofUrl != null -> {
-            val statusPill = RectF(256f, y + 10f, 356f, y + 28f)
-            kit.rounded(c, statusPill, kit.successSoft, 6f)
-            kit.centerText(c, "Terunggah", statusPill, 9.5f, kit.success, true)
+    // 4. Sandbox Testing Helper & Snap Alternative Card
+    val helperCardH = if (isSandbox) 108f else 74f
+    val helperCard = RectF(20f, y, 370f, y + helperCardH)
+    kit.rounded(c, helperCard, kit.card, 12f, kit.border)
+    if (isSandbox) {
+        kit.text(c, "UJI COBA MIDTRANS SANDBOX", 34f, y + 22f, 10f, kit.blue, true)
+        kit.textEllipsized(
+            c,
+            "Bayar pakai Simulator QRIS atau halaman Midtrans Snap, lalu cek status.",
+            34f,
+            y + 42f,
+            322f,
+            10.5f,
+            kit.muted,
+        )
+        val simBtn = RectF(34f, y + 58f, 192f, y + 94f)
+        kit.rounded(c, simBtn, kit.tint, 9f, kit.blue)
+        kit.centerText(c, "Simulator QRIS", simBtn, 11.5f, kit.blue, true)
+        bounds.putVisible("midtransOpenSimulator", simBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
 
-            val thumb = RectF(34f, y + 36f, 98f, y + 104f)
-            kit.rounded(c, thumb, kit.bg, 8f, kit.border)
-            val bmp = ProductImageCache.images[proofUrl]
-            if (bmp != null) {
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                val path = Path().apply { addRoundRect(thumb, 8f, 8f, Path.Direction.CW) }
-                val save = c.save()
-                c.clipPath(path)
-                c.drawBitmap(bmp, null, thumb, paint)
-                c.restoreToCount(save)
-            } else {
-                kit.centerText(c, "Foto", thumb, 10.5f, kit.muted)
-                activity()?.loadProductImage(proofUrl)
-            }
-            bounds.putVisible("qrisViewProofThumb", thumb, topLimit = bodyTop, bottomLimit = bodyBottom)
-
-            kit.text(c, "Screenshot bukti siap dikirim", 110f, y + 54f, 12.5f, kit.ink, true)
-            val viewBtn = RectF(110f, y + 68f, 224f, y + 102f)
-            kit.rounded(c, viewBtn, kit.tint, 8f, kit.blue)
-            kit.centerText(c, "Lihat Foto", viewBtn, 11.5f, kit.blue, true)
-            bounds.putVisible("qrisViewProofBtn", viewBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-
-            val changeBtn = RectF(232f, y + 68f, 356f, y + 102f)
-            kit.rounded(c, changeBtn, kit.bg, 8f, kit.border)
-            kit.centerText(c, "Ganti Foto", changeBtn, 11.5f, kit.ink, true)
-            bounds.putVisible("qrisPickProofCard", changeBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-        }
-        else -> {
-            kit.textEllipsized(
-                c,
-                "Unggah screenshot bukti berhasil bayar dari e-wallet / m-banking.",
-                34f,
-                y + 44f,
-                322f,
-                11.5f,
-                kit.muted,
-            )
-            val pickBtn = RectF(34f, y + 58f, 356f, y + 92f)
-            kit.rounded(c, pickBtn, kit.tint, 8f, kit.blue)
-            kit.centerText(c, "Unggah Screenshot Bukti Bayar", pickBtn, 12.5f, kit.blue, true)
-            bounds.putVisible("qrisPickProofCard", pickBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-        }
+        val snapBtn = RectF(200f, y + 58f, 356f, y + 94f)
+        kit.rounded(c, snapBtn, kit.bg, 9f, kit.border)
+        kit.centerText(c, "Buka Snap", snapBtn, 11.5f, kit.ink, true)
+        bounds.putVisible("midtransOpenSnap", snapBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+    } else {
+        val snapBtn = RectF(34f, y + 18f, 356f, y + 56f)
+        kit.rounded(c, snapBtn, kit.bg, 9f, kit.border)
+        kit.centerText(c, "Bayar lewat Midtrans Snap (Alternatif)", snapBtn, 12f, kit.ink, true)
+        bounds.putVisible("midtransOpenSnap", snapBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
     }
 
     c.restoreToCount(bodySave)
-    contentHeight = (y - off) + proofCardH + 28f
+    contentHeight = (y - off) + helperCardH + 28f
 
-    header(c, "Pembayaran QRIS")
+    header(c, "Pembayaran Midtrans")
 
     // Sticky Bottom CTA
     kit.rect(c, 0f, bodyBottom, w, h, kit.bg)
@@ -566,23 +557,18 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
             kit.rounded(c, cta, kit.muted, 14f)
             kit.centerText(c, "Waktu Bayar Habis", cta, 14f, Color.WHITE, true)
         }
-        qrisProofSubmitting -> {
+        qrisLoading -> {
             kit.rounded(c, cta, kit.muted, 14f)
-            kit.centerText(c, "Mengirim bukti bayar...", cta, 14f, Color.WHITE, true)
+            kit.centerText(c, "Menyiapkan Tagihan...", cta, 14f, Color.WHITE, true)
         }
-        qrisProofUploading -> {
+        qrisCheckingStatus -> {
             kit.rounded(c, cta, kit.muted, 14f)
-            kit.centerText(c, "Mengunggah foto bukti...", cta, 14f, Color.WHITE, true)
-        }
-        proofUrl == null -> {
-            kit.rounded(c, cta, kit.blue, 14f)
-            kit.centerText(c, "Unggah Bukti Bayar Dulu", cta, 14f, Color.WHITE, true)
-            bounds["qrisPickProof"] = RectF(cta)
+            kit.centerText(c, "Memeriksa Status...", cta, 14f, Color.WHITE, true)
         }
         else -> {
-            kit.rounded(c, cta, kit.success, 14f)
-            kit.centerText(c, "Kirim Bukti & Konfirmasi Bayar", cta, 14f, Color.WHITE, true)
-            bounds["paid"] = RectF(cta)
+            kit.rounded(c, cta, kit.blue, 14f)
+            kit.centerText(c, "Cek Status Pembayaran", cta, 14f, Color.WHITE, true)
+            bounds["midtransCheckStatus"] = RectF(cta)
         }
     }
 }
