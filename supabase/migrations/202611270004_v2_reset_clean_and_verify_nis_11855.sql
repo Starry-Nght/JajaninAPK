@@ -1,5 +1,5 @@
 -- ============================================================================
--- JAJANIN v2.22 — Clean Reset of All Stalls/NIS Activity & Official Verified+Dev Status for NIS 11855
+-- JAJANIN v2.23 — Clean Reset of All Stalls/NIS Activity & Official Verified+Dev Status for NIS 11855
 -- Migration: 202611270004_v2_reset_clean_and_verify_nis_11855.sql
 -- ============================================================================
 
@@ -10,7 +10,7 @@ BEGIN
     PERFORM set_config('app.internal_stock_op', 'on', true);
 
     -- 1. Bersihkan seluruh riwayat pesanan, transaksi Midtrans, saldo, chat, menu uji coba, dan log
-    --    (TANPA menghapus akun user, data NIS siswa, maupun entitas warung).
+    --    (TANPA menghapus akun user, data NIS siswa, maupun daftar warung).
     DELETE FROM public.chat_messages;
     DELETE FROM public.conversations;
     DELETE FROM public.payment_transactions;
@@ -27,15 +27,10 @@ BEGIN
     UPDATE public.profiles
        SET warning_count = 0,
            account_status = 'active',
-           quota_reset_at = now(),
-           nis = CASE
-               WHEN nis IS NULL AND display_name LIKE '%[NIS:11855]%' THEN '11855'
-               WHEN nis IS NULL AND display_name LIKE '%[NIS:11883]%' THEN '11883'
-               ELSE nis
-           END;
+           quota_reset_at = now();
 
     -- 3. Reset seluruh warung ke kondisi bersih (0 pesanan selesai),
-    --    dan berikan status Verified permanen khusus untuk akun NIS 11855.
+    --    dan berikan status Verified permanen khusus untuk warung milik NIS 11855.
     UPDATE public.stalls s
        SET completed_orders_count = 0,
            qris_image_url = NULL,

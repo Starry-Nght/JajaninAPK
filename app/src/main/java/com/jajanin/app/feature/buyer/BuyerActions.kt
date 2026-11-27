@@ -1029,8 +1029,15 @@ internal fun MainActivity.openMidtransPayment(
             if (fetchedQrUrl != null) loadProductImage(fetchedQrUrl)
             ui.invalidate()
             val fetchedRedirect = ui.qrisRedirectUrl
-            if (forceSnap && !fetchedRedirect.isNullOrBlank()) {
-                launchCustomTabUrl(fetchedRedirect)
+            if (!fetchedRedirect.isNullOrBlank()) {
+                com.jajanin.app.feature.buyer.cart.MidtransSnapDialog(
+                    activity = self,
+                    orderId = orderId,
+                    snapUrl = fetchedRedirect,
+                    amountIdr = ui.qrisAmount,
+                    pickupCode = ui.lastOrderPickup,
+                    isSandbox = session.environment.equals("sandbox", ignoreCase = true),
+                ).show()
             }
         } catch (error: CancellationException) {
             throw error
@@ -1225,26 +1232,57 @@ internal fun MainActivity.copyMidtransQrCode() {
     Toast.makeText(this, "Kode QR Midtrans disalin ke clipboard.", Toast.LENGTH_SHORT).show()
 }
 
-/** Buka halaman Midtrans Snap Checkout di Chrome Custom Tab (mendukung QRIS & kanal lain). */
+/** Buka halaman resmi Midtrans Snap langsung di dalam aplikasi (In-App Popup). */
 internal fun MainActivity.openMidtransSnapCheckout() {
+    val orderId = ui.qrisOrderId ?: return
     val existingUrl = ui.qrisRedirectUrl?.takeIf { it.isNotBlank() }
     if (existingUrl != null) {
-        launchCustomTabUrl(existingUrl)
+        com.jajanin.app.feature.buyer.cart.MidtransSnapDialog(
+            activity = this,
+            orderId = orderId,
+            snapUrl = existingUrl,
+            amountIdr = ui.qrisAmount,
+            pickupCode = ui.lastOrderPickup,
+            isSandbox = ui.qrisEnvironment.equals("sandbox", ignoreCase = true),
+        ).show()
         return
     }
-    val orderId = ui.qrisOrderId ?: return
     openMidtransPayment(orderId = orderId, amountIdr = ui.qrisAmount, expiresAt = ui.qrisExpiresAt, forceSnap = true)
 }
 
-/** Buka Midtrans Sandbox QRIS Simulator di Chrome Custom Tab untuk uji bayar. */
+/** Selesaikan pembayaran Sandbox dalam 1 klik langsung di aplikasi tanpa harus copy-paste ke web simulator. */
 internal fun MainActivity.openMidtransSandboxSimulator() {
-    val qrString = ui.qrisQrString?.takeIf { it.isNotBlank() }
-    if (qrString != null) {
-        val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        cm.setPrimaryClip(android.content.ClipData.newPlainText("Midtrans QRIS String", qrString))
-        Toast.makeText(this, "QR String disalin. Tempel di Simulator Midtrans Sandbox.", Toast.LENGTH_LONG).show()
+    val self = this
+    val orderId = ui.qrisOrderId ?: return
+    if (ui.qrisCheckingStatus || ui.qrisLoading) return
+    ui.qrisCheckingStatus = true
+    ui.invalidate()
+    authScope.launch {
+        try {
+            val res = withTimeout(15_000L) {
+                OrderRepository.checkGatewayPaymentStatus(orderId = orderId, simulatePay = true)
+            }
+            ui.qrisCheckingStatus = false
+            if (res.paymentStatus.equals("paid", ignoreCase = true) ||
+                res.status.equals("paid", ignoreCase = true) ||
+                res.status.equals("settlement", ignoreCase = true) ||
+                res.status.equals("capture", ignoreCase = true)
+            ) {
+                self.onMidtransPaymentCompleted(orderId, STATUS_PENDING)
+            } else {
+                ui.invalidate()
+                Toast.makeText(self, res.message ?: "Menunggu konfirmasi Midtrans.", Toast.LENGTH_SHORT).show()
+            }
+        } catch (error: CancellationException) {
+            ui.qrisCheckingStatus = false
+            throw error
+        } catch (error: Throwable) {
+            ui.qrisCheckingStatus = false
+            ui.invalidate()
+            val msg = (error as? IllegalStateException)?.message ?: SupabaseRepository.errorMessage(error)
+            Toast.makeText(self, msg, Toast.LENGTH_LONG).show()
+        }
     }
-    launchCustomTabUrl("https://simulator.sandbox.midtrans.com/qris/index")
 }
 
 private fun MainActivity.launchCustomTabUrl(url: String) {

@@ -433,74 +433,7 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
     )
     y += 58f
 
-    // 2. Dynamic Midtrans QRIS Card
-    val qrUrl = qrisImageUrl?.takeIf { it.isNotBlank() }
-    val hasQrPayload = qrUrl != null || !qrisQrString.isNullOrBlank()
-    val qrCardH = if (qrUrl != null || hasQrPayload) 304f else 258f
-    val qrCard = RectF(24f, y, 366f, y + qrCardH)
-    kit.rounded(c, qrCard, kit.card, 18f, kit.border)
-    val channelTitle = if (qrisPaymentChannel == "snap" && qrUrl == null) "MIDTRANS SNAP CHECKOUT" else "QRIS DINAMIS MIDTRANS"
-    kit.centerText(c, channelTitle, RectF(24f, y + 10f, 366f, y + 32f), 12.5f, kit.blue, true)
-    val qr = RectF(95f, y + 36f, 295f, y + 236f)
-    when {
-        qrisLoading -> {
-            kit.centerText(c, "Menyiapkan tagihan Midtrans...", qr, 12.5f, kit.muted)
-        }
-        !qrisError.isNullOrBlank() && qrUrl == null -> {
-            kit.centerText(c, "Gagal membuat QRIS Midtrans", RectF(40f, y + 74f, 350f, y + 96f), 13f, kit.danger, true)
-            kit.textEllipsized(c, qrisError.orEmpty(), 44f, y + 114f, 302f, 10.5f, kit.muted)
-            val retryBtn = RectF(46f, y + 140f, 344f, y + 178f)
-            kit.rounded(c, retryBtn, kit.tint, 10f, kit.blue)
-            kit.centerText(c, "Muat Ulang Tagihan Midtrans", retryBtn, 12f, kit.blue, true)
-            bounds.putVisible("midtransRetryCreate", retryBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-
-            val snapFallbackBtn = RectF(46f, y + 188f, 344f, y + 226f)
-            kit.rounded(c, snapFallbackBtn, kit.bg, 10f, kit.border)
-            kit.centerText(c, "Buka Halaman Midtrans Snap", snapFallbackBtn, 12f, kit.ink, true)
-            bounds.putVisible("midtransOpenSnap", snapFallbackBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-        }
-        qrUrl == null -> {
-            kit.centerText(c, "Tagihan siap via Midtrans Snap", RectF(44f, y + 86f, 346f, y + 112f), 13f, kit.ink, true)
-            kit.centerText(c, "Tekan tombol di bawah untuk membayar.", RectF(44f, y + 112f, 346f, y + 136f), 11f, kit.muted)
-            val openSnapBtn = RectF(56f, y + 150f, 334f, y + 190f)
-            kit.rounded(c, openSnapBtn, kit.blue, 10f)
-            kit.centerText(c, "Buka Midtrans Snap", openSnapBtn, 12.5f, Color.WHITE, true)
-            bounds.putVisible("midtransOpenSnap", openSnapBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-        }
-        else -> {
-            val bmp = ProductImageCache.images[qrUrl]
-            if (bmp == null) {
-                kit.centerText(c, "Memuat gambar QR...", qr, 12.5f, kit.muted)
-                activity()?.loadProductImage(qrUrl)
-            } else {
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                val path = Path().apply { addRoundRect(qr, 10f, 10f, Path.Direction.CW) }
-                val save = c.save()
-                c.clipPath(path)
-                c.drawBitmap(bmp, null, qr, paint)
-                c.restoreToCount(save)
-            }
-            val saveQrBtn = RectF(38f, y + 250f, 190f, y + 286f)
-            kit.rounded(c, saveQrBtn, kit.tint, 9f, kit.blue)
-            kit.centerText(
-                c,
-                if (qrisSavingImage) "Menyimpan..." else "Simpan QR",
-                saveQrBtn,
-                11.5f,
-                kit.blue,
-                true,
-            )
-            bounds.putVisible("midtransSaveQr", saveQrBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-
-            val copyQrBtn = RectF(198f, y + 250f, 352f, y + 286f)
-            kit.rounded(c, copyQrBtn, kit.bg, 9f, kit.border)
-            kit.centerText(c, "Salin Kode QR", copyQrBtn, 11.5f, kit.ink, true)
-            bounds.putVisible("midtransCopyQr", copyQrBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-        }
-    }
-    y += qrCardH + 12f
-
-    // 3. Total & Pickup Code Card
+    // 2. Total & Pickup Code Card
     val amtCard = RectF(20f, y, 370f, y + 66f)
     kit.rounded(c, amtCard, kit.card, 12f, kit.border)
     kit.text(c, "Total tagihan Midtrans", 34f, y + 22f, 11f, kit.muted)
@@ -512,39 +445,66 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
     }
     y += 78f
 
-    // 4. Sandbox Testing Helper & Snap Alternative Card
-    val helperCardH = if (isSandbox) 108f else 74f
-    val helperCard = RectF(20f, y, 370f, y + helperCardH)
-    kit.rounded(c, helperCard, kit.card, 12f, kit.border)
-    if (isSandbox) {
-        kit.text(c, "UJI COBA MIDTRANS SANDBOX", 34f, y + 22f, 10f, kit.blue, true)
-        kit.textEllipsized(
-            c,
-            "Bayar pakai Simulator QRIS atau halaman Midtrans Snap, lalu cek status.",
-            34f,
-            y + 42f,
-            322f,
-            10.5f,
-            kit.muted,
-        )
-        val simBtn = RectF(34f, y + 58f, 192f, y + 94f)
-        kit.rounded(c, simBtn, kit.tint, 9f, kit.blue)
-        kit.centerText(c, "Simulator QRIS", simBtn, 11.5f, kit.blue, true)
-        bounds.putVisible("midtransOpenSimulator", simBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+    // 3. Standard Midtrans Snap Checkout Card
+    val snapCardH = if (isSandbox) 216f else 170f
+    val snapCard = RectF(20f, y, 370f, y + snapCardH)
+    kit.rounded(c, snapCard, kit.card, 14f, kit.border)
+    kit.text(c, "PEMBAYARAN MIDTRANS", 34f, y + 24f, 11f, kit.blue, true)
+    when {
+        qrisLoading -> {
+            kit.text(c, "Membuka jendela pembayaran Midtrans...", 34f, y + 56f, 13f, kit.ink, true)
+            kit.text(c, "Mohon tunggu sebentar.", 34f, y + 78f, 11f, kit.muted)
+        }
+        !qrisError.isNullOrBlank() && qrisRedirectUrl.isNullOrBlank() -> {
+            kit.text(c, "Gagal memuat Midtrans Snap", 34f, y + 50f, 13f, kit.danger, true)
+            kit.textEllipsized(c, qrisError.orEmpty(), 34f, y + 70f, 322f, 10.5f, kit.muted)
+            val retryBtn = RectF(34f, y + 90f, 356f, y + 132f)
+            kit.rounded(c, retryBtn, kit.blue, 10f)
+            kit.centerText(c, "Coba Lagi Buka Midtrans", retryBtn, 12.5f, Color.WHITE, true)
+            bounds.putVisible("midtransRetryCreate", retryBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+        }
+        else -> {
+            kit.textEllipsized(
+                c,
+                "Pilih metode bayar (QRIS, GoPay, ShopeePay, DANA, Virtual Account BCA/BNI/BRI/Mandiri).",
+                34f,
+                y + 48f,
+                322f,
+                11.5f,
+                kit.ink,
+            )
+            val openSnapBtn = RectF(34f, y + 68f, 356f, y + 112f)
+            kit.rounded(c, openSnapBtn, kit.blue, 10f)
+            kit.centerText(c, "Buka Pembayaran Midtrans", openSnapBtn, 13.5f, Color.WHITE, true)
+            bounds.putVisible("midtransOpenSnap", openSnapBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
 
-        val snapBtn = RectF(200f, y + 58f, 356f, y + 94f)
-        kit.rounded(c, snapBtn, kit.bg, 9f, kit.border)
-        kit.centerText(c, "Buka Snap", snapBtn, 11.5f, kit.ink, true)
-        bounds.putVisible("midtransOpenSnap", snapBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
-    } else {
-        val snapBtn = RectF(34f, y + 18f, 356f, y + 56f)
-        kit.rounded(c, snapBtn, kit.bg, 9f, kit.border)
-        kit.centerText(c, "Bayar lewat Midtrans Snap (Alternatif)", snapBtn, 12f, kit.ink, true)
-        bounds.putVisible("midtransOpenSnap", snapBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+            if (isSandbox) {
+                kit.textEllipsized(
+                    c,
+                    "Atau lunasi langsung 1-klik dalam mode uji coba Sandbox:",
+                    34f,
+                    y + 138f,
+                    322f,
+                    10.5f,
+                    kit.muted,
+                )
+                val simBtn = RectF(34f, y + 150f, 356f, y + 194f)
+                kit.rounded(c, simBtn, kit.tint, 10f, kit.blue)
+                kit.centerText(
+                    c,
+                    if (qrisCheckingStatus) "Melunasi pembayaran..." else "Bayar Lunas Sekarang (Simulasi Sandbox)",
+                    simBtn,
+                    12.5f,
+                    kit.blue,
+                    true,
+                )
+                bounds.putVisible("midtransOpenSimulator", simBtn, topLimit = bodyTop, bottomLimit = bodyBottom)
+            }
+        }
     }
 
     c.restoreToCount(bodySave)
-    contentHeight = (y - off) + helperCardH + 28f
+    contentHeight = (y - off) + snapCardH + 28f
 
     header(c, "Pembayaran Midtrans")
 
@@ -559,16 +519,16 @@ internal fun JajaninView.drawPayment(c: Canvas, w: Float, h: Float) {
         }
         qrisLoading -> {
             kit.rounded(c, cta, kit.muted, 14f)
-            kit.centerText(c, "Menyiapkan Tagihan...", cta, 14f, Color.WHITE, true)
+            kit.centerText(c, "Menyiapkan Midtrans...", cta, 14f, Color.WHITE, true)
         }
         qrisCheckingStatus -> {
             kit.rounded(c, cta, kit.muted, 14f)
-            kit.centerText(c, "Memeriksa Status...", cta, 14f, Color.WHITE, true)
+            kit.centerText(c, "Memproses Pembayaran...", cta, 14f, Color.WHITE, true)
         }
         else -> {
             kit.rounded(c, cta, kit.blue, 14f)
-            kit.centerText(c, "Cek Status Pembayaran", cta, 14f, Color.WHITE, true)
-            bounds["midtransCheckStatus"] = RectF(cta)
+            kit.centerText(c, "Buka Pembayaran Midtrans", cta, 14f, Color.WHITE, true)
+            bounds["midtransOpenSnap"] = RectF(cta)
         }
     }
 }

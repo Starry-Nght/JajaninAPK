@@ -49,7 +49,7 @@ Deno.serve(async (req: Request) => {
   }
   const userId = userData.user.id;
 
-  let body: { order_id?: string };
+  let body: { order_id?: string; simulate_pay?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -117,6 +117,32 @@ Deno.serve(async (req: Request) => {
   const env = (tx.environment ?? "sandbox").toLowerCase() === "production"
     ? "production"
     : "sandbox";
+
+  // In Sandbox mode, allow 1-click simulation settlement directly inside the app
+  // so buyers do not have to copy-paste VA/QR codes into an external simulator browser tab.
+  if (env === "sandbox" && body.simulate_pay === true) {
+    const simTxId = tx.gateway_transaction_id || `SANDBOX-${Date.now()}`;
+    const { error } = await db.rpc("finalize_gateway_payment", {
+      p_gateway_order_id: tx.gateway_order_id,
+      p_gateway_tx_id: simTxId,
+      p_raw_notification: {
+        transaction_status: "settlement",
+        payment_type: tx.payment_channel ?? "snap",
+        simulated_sandbox: true,
+        settled_at: new Date().toISOString(),
+      },
+    });
+    if (error) {
+      return json({ error: error.message }, 500);
+    }
+    return json({
+      order_id: order.id,
+      gateway_order_id: tx.gateway_order_id,
+      status: "paid",
+      payment_status: "paid",
+      message: "Pembayaran Midtrans Sandbox berhasil diselesaikan.",
+    });
+  }
 
   const statusRes = await fetch(
     `${midtransCoreBaseUrl(env)}/v2/${encodeURIComponent(tx.gateway_order_id)}/status`,

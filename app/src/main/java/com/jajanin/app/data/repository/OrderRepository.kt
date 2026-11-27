@@ -698,10 +698,16 @@ internal object OrderRepository {
     }
 
     /** Periksa status pembayaran Midtrans secara real-time & sinkronkan ke DB bila sudah settlement. */
-    suspend fun checkGatewayPaymentStatus(orderId: String): GatewayStatusResult {
+    suspend fun checkGatewayPaymentStatus(
+        orderId: String,
+        simulatePay: Boolean = false,
+    ): GatewayStatusResult {
         val token = SupabaseRepository.currentAccessToken()
             ?: error("Masuk dulu untuk mengecek pembayaran.")
-        val body = buildJsonObject { put("order_id", orderId) }.toString()
+        val body = buildJsonObject {
+            put("order_id", orderId)
+            if (simulatePay) put("simulate_pay", true)
+        }.toString()
         val (code, raw) = SupabaseRepository.postEdgeFunction("check-payment-status", body, token)
         val parsed = runCatching { realtimeJson.decodeFromString<GatewayStatusResult>(raw) }.getOrNull()
         if (code !in 200..299) {

@@ -148,8 +148,7 @@ Deno.serve(async (req: Request) => {
     existingTx &&
     existingTx.status === "pending" &&
     existingExpMs > Date.now() + 15_000 &&
-    !body.force_snap &&
-    (existingTx.qr_url || existingTx.redirect_url)
+    existingTx.redirect_url
   ) {
     return json({
       order_id: order.id,
@@ -227,149 +226,46 @@ Deno.serve(async (req: Request) => {
 
   const authValue = basicAuthHeader(serverKey);
 
-  // Primary: Midtrans Core API QRIS Dinamis (except if force_snap explicitly requested)
-  if (!body.force_snap) {
-    const chargePayload = {
-      payment_type: "qris",
-      transaction_details: {
-        order_id: gatewayOrderId,
-        gross_amount: Number(order.total_idr),
-      },
-      item_details: itemDetails,
-      customer_details: {
-        first_name: rawDisplay.slice(0, 40),
-        email: buyerEmail,
-      },
-      custom_expiry: {
-        order_time: formatMidtransTimestampWib(new Date()),
-        expiry_duration: 15,
-        unit: "minute",
-      },
-    };
-
-    const chargeRes = await fetch(`${midtransCoreBaseUrl(environment)}/v2/charge`, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: authValue,
-      },
-      body: JSON.stringify(chargePayload),
-    });
-    const chargeJson = await chargeRes.json().catch(() => ({} as Record<string, unknown>));
-    rawChargeResp = chargeJson;
-
-    const statusCode = String(chargeJson.status_code ?? chargeRes.status);
-    if (chargeRes.ok && (statusCode === "201" || statusCode === "200")) {
-      const actions = Array.isArray(chargeJson.actions) ? chargeJson.actions : [];
-      const qrAction = actions.find((a: Record<string, unknown>) =>
-        a?.name === "generate-qr-code-v2" || a?.name === "generate-qr-code"
-      ) as Record<string, unknown> | undefined;
-      qrUrl = qrAction?.url ? String(qrAction.url) : null;
-      qrString = chargeJson.qr_string ? String(chargeJson.qr_string) : null;
-      gatewayTxId = chargeJson.transaction_id ? String(chargeJson.transaction_id) : null;
-      expiresAtIso = parseExpiryToIso(
-        chargeJson.expiry_time ? String(chargeJson.expiry_time) : undefined,
-        15,
-      );
-    } else {
-      console.warn("Core API QRIS unavailable/declined, falling back to Midtrans Snap:", JSON.stringify(chargeJson));
-    }
-  }
-
-  // Fallback or Snap mode: Midtrans Snap Transaction (`redirect_url` for all channels: QRIS, GoPay, DANA, VA)
-  if (!qrUrl) {
-    paymentChannel = "snap";
-    const snapOrderId = body.force_snap ? `${gatewayOrderId}S` : gatewayOrderId;
-    const snapPayload = {
-      transaction_details: {
-        order_id: snapOrderId,
-        gross_amount: Number(order.total_idr),
-      },
-      item_details: itemDetails,
-      customer_details: {
-        first_name: rawDisplay.slice(0, 40),
-        email: buyerEmail,
-      },
-      expiry: {
-        start_time: formatMidtransTimestampWib(new Date()),
-        unit: "minutes",
-        duration: 15,
-      },
-    };
-
-    const snapRes = await fetch(`${midtransSnapBaseUrl(environment)}/snap/v1/transactions`, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: authValue,
-      },
-      body: JSON.stringify(snapPayload),
-    });
-    const snapJson = await snapRes.json().catch(() => ({} as Record<string, unknown>));
-    rawChargeResp = snapJson;
-
-    if (!snapRes.ok || !snapJson.redirect_url) {
-      const errMsgs = Array.isArray(snapJson.error_messages)
-        ? snapJson.error_messages.join(", ")
-        : String(snapJson.status_message ?? "Gagal membuat transaksi Midtrans.");
-      return json({ error: `Midtrans error: ${errMsgs}` }, 502);
-    }
-    redirectUrl = String(snapJson.redirect_url);
-    gatewayTxId = snapJson.token ? String(snapJson.token) : gatewayTxId;
-    const actualOrderId = snapOrderId;
-
-    const feeIdr = Math.min(1000, Number(order.total_idr));
-    const netSeller = Math.max(0, Number(order.total_idr) - feeIdr);
-
-    const { error: upsertErr } = await db
-      .from("payment_transactions")
-      .upsert(
-        {
-          order_id: order.id,
-          provider: "midtrans",
-          environment,
-          gateway_order_id: actualOrderId,
-          gateway_transaction_id: gatewayTxId,
-          payment_channel: "snap",
-          gross_amount: Number(order.total_idr),
-          fee_idr: feeIdr,
-          net_seller_amount: netSeller,
-          status: "pending",
-          qr_url: null,
-          qr_string: null,
-          redirect_url: redirectUrl,
-          expires_at: expiresAtIso,
-          raw_notification: rawChargeResp,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "order_id" },
-      );
-
-    if (upsertErr) {
-      return json({ error: `Gagal menyimpan transaksi: ${upsertErr.message}` }, 500);
-    }
-
-    await db
-      .from("orders")
-      .update({ payment_expires_at: expiresAtIso })
-      .eq("id", order.id);
-
-    return json({
-      order_id: order.id,
-      gateway_order_id: actualOrderId,
-      gateway_transaction_id: gatewayTxId,
-      payment_channel: "snap",
-      environment,
-      status: "pending",
+  // Standard Midtrans Snap Checkout (supports QRIS, GoPay, ShopeePay, DANA, Virtual Account BCA/BNI/BRI/Mandiri, dll.)
+  paymentChannel = "snap";
+  const snapOrderId = gatewayOrderId;
+  const snapPayload = {
+    transaction_details: {
+      order_id: snapOrderId,
       gross_amount: Number(order.total_idr),
-      qr_url: null,
-      qr_string: null,
-      redirect_url: redirectUrl,
-      expires_at: expiresAtIso,
-    });
+    },
+    item_details: itemDetails,
+    customer_details: {
+      first_name: rawDisplay.slice(0, 40),
+      email: buyerEmail,
+    },
+    expiry: {
+      start_time: formatMidtransTimestampWib(new Date()),
+      unit: "minutes",
+      duration: 15,
+    },
+  };
+
+  const snapRes = await fetch(`${midtransSnapBaseUrl(environment)}/snap/v1/transactions`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: authValue,
+    },
+    body: JSON.stringify(snapPayload),
+  });
+  const snapJson = await snapRes.json().catch(() => ({} as Record<string, unknown>));
+  rawChargeResp = snapJson;
+
+  if (!snapRes.ok || !snapJson.redirect_url) {
+    const errMsgs = Array.isArray(snapJson.error_messages)
+      ? snapJson.error_messages.join(", ")
+      : String(snapJson.status_message ?? "Gagal membuat transaksi Midtrans Snap.");
+    return json({ error: `Midtrans error: ${errMsgs}` }, 502);
   }
+  redirectUrl = String(snapJson.redirect_url);
+  gatewayTxId = snapJson.token ? String(snapJson.token) : null;
 
   const feeIdr = Math.min(1000, Number(order.total_idr));
   const netSeller = Math.max(0, Number(order.total_idr) - feeIdr);
@@ -381,16 +277,16 @@ Deno.serve(async (req: Request) => {
         order_id: order.id,
         provider: "midtrans",
         environment,
-        gateway_order_id: gatewayOrderId,
+        gateway_order_id: snapOrderId,
         gateway_transaction_id: gatewayTxId,
-        payment_channel: paymentChannel,
+        payment_channel: "snap",
         gross_amount: Number(order.total_idr),
         fee_idr: feeIdr,
         net_seller_amount: netSeller,
         status: "pending",
         qr_url: qrUrl,
         qr_string: qrString,
-        redirect_url: null,
+        redirect_url: redirectUrl,
         expires_at: expiresAtIso,
         raw_notification: rawChargeResp,
         updated_at: new Date().toISOString(),
@@ -409,15 +305,15 @@ Deno.serve(async (req: Request) => {
 
   return json({
     order_id: order.id,
-    gateway_order_id: gatewayOrderId,
+    gateway_order_id: snapOrderId,
     gateway_transaction_id: gatewayTxId,
-    payment_channel: paymentChannel,
+    payment_channel: "snap",
     environment,
     status: "pending",
     gross_amount: Number(order.total_idr),
     qr_url: qrUrl,
     qr_string: qrString,
-    redirect_url: null,
+    redirect_url: redirectUrl,
     expires_at: expiresAtIso,
   });
 });
