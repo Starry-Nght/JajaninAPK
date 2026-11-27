@@ -831,7 +831,7 @@ internal class ChatRoomDialog(
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
                 setTextColor(kit.ink)
                 typeface = Typeface.DEFAULT_BOLD
-                maxLines = 1
+                maxLines = 3
                 ellipsize = TextUtils.TruncateAt.END
             }
             infoCol.addView(subLine)
@@ -1418,7 +1418,7 @@ internal class ChatRoomDialog(
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             setTextColor(kit.ink)
             typeface = Typeface.DEFAULT_BOLD
-            maxLines = 2
+            maxLines = 6
             ellipsize = TextUtils.TruncateAt.END
         }
         val prodTotalTv = TextView(activity).apply {

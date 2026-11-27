@@ -115,19 +115,37 @@ internal fun JajaninView.drawCheckout(c: Canvas, w: Float, h: Float) {
     checkoutLines.forEach { line ->
         val p = line.product
         val qty = line.qty
-        val hasVar = line.variantLabel.isNotBlank()
-        val cardH = if (hasVar) 90f else 76f
+        val sub = formatRupiah(p.priceIdr * qty)
+        val subW = kit.measure(sub, 12f, true)
+        val nameMaxW = (358f - subW - 10f - 32f).coerceAtLeast(180f)
+        val nameLines = kit.wrap(p.name, nameMaxW, 13f, maxLines = 2, bold = true).ifEmpty { listOf(p.name) }
+        val varLines = if (line.variantLabel.isNotBlank()) {
+            kit.wrap(line.variantLabel, 326f, 11f, maxLines = 4, bold = true)
+        } else {
+            emptyList()
+        }
+        val nameStep = 16.5f
+        val varStep = 14.5f
+        val nameEndRelY = 26f + (nameLines.size - 1) * nameStep
+        val varStartRelY = nameEndRelY + 16f
+        val ctrlTopRel = if (varLines.isNotEmpty()) {
+            varStartRelY + (varLines.size - 1) * varStep + 12f
+        } else {
+            nameEndRelY + 14f
+        }
+        val cardH = maxOf(76f, ctrlTopRel + 34f)
         if (y + cardH >= bodyTop && y <= bodyBottom) {
             kit.card(c, RectF(18f, y, 372f, y + cardH), 14f)
-            kit.textEllipsized(c, p.name, 32f, y + 26f, 210f, 13f, kit.ink, true)
-            val sub = formatRupiah(p.priceIdr * qty)
-            kit.text(c, sub, 358f - kit.measure(sub, 12f, true), y + 26f, 12f, kit.ink, true)
-            if (hasVar) {
-                kit.textEllipsized(c, line.variantLabel, 32f, y + 45f, 236f, 10.5f, kit.blue, true)
+            nameLines.forEachIndexed { idx, nLine ->
+                kit.text(c, nLine, 32f, y + 26f + idx * nameStep, 13f, kit.ink, true)
             }
-            val priceY = if (hasVar) y + 66f else y + 51f
+            kit.text(c, sub, 358f - subW, y + 26f, 12f, kit.ink, true)
+            varLines.forEachIndexed { idx, vLine ->
+                kit.text(c, vLine, 32f, y + varStartRelY + idx * varStep, 11f, kit.blue, true)
+            }
+            val ctrlTop = y + ctrlTopRel
+            val priceY = ctrlTop + 15f
             kit.text(c, "${formatRupiah(p.priceIdr)}  ×  $qty", 32f, priceY, 11f, kit.muted)
-            val ctrlTop = if (hasVar) y + 56f else y + 44f
             val minus = RectF(216f, ctrlTop, 244f, ctrlTop + 24f)
             val plus = RectF(274f, ctrlTop, 302f, ctrlTop + 24f)
             val rm = RectF(308f, ctrlTop, 358f, ctrlTop + 24f)

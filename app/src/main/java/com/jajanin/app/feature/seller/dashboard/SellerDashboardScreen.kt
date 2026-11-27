@@ -194,9 +194,12 @@ internal fun JajaninView.drawAdminDashboard(c: Canvas, w: Float, h: Float) {
 
         val shownUrgent = urgentOrders.take(5)
         shownUrgent.forEach { order ->
-            val rowH = 112f
+            val summaryLines = kit.wrap("${order.itemCount} item · ${order.itemsSummary}", 280f, 11.5f, maxLines = 3, bold = true)
+                .ifEmpty { listOf("${order.itemCount} item") }
+            val extraH = ((summaryLines.size - 1).coerceAtLeast(0)) * 14.5f
+            val rowH = 112f + extraH
             if (visible(y, y + rowH)) {
-                drawCompactOrderRow(c, order, y, rowH, bottomLimit)
+                drawCompactOrderRow(c, order, summaryLines, extraH, y, rowH, bottomLimit)
             }
             y += rowH + 8f
         }
@@ -442,9 +445,15 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
     } else {
         filtered.forEach { order ->
             val hasNext = statusNextAction(order.status) != null
-            val rowH = if (hasNext) 150f else 116f
+            val totalStr = formatRupiah(order.totalIdr)
+            val totalWidth = kit.measure(totalStr, 12.5f, true)
+            val summaryMaxW = (350f - 81f - totalWidth - 8f).coerceAtLeast(150f)
+            val summaryLines = kit.wrap("${order.itemCount} item · ${order.itemsSummary}", summaryMaxW, 11.5f, maxLines = 3, bold = true)
+                .ifEmpty { listOf("${order.itemCount} item") }
+            val extraH = ((summaryLines.size - 1).coerceAtLeast(0)) * 14.5f
+            val rowH = (if (hasNext) 150f else 116f) + extraH
             if (visible(y, y + rowH)) {
-                drawOrderCard(c, order, y, rowH, bottomLimit)
+                drawOrderCard(c, order, summaryLines, extraH, y, rowH, bottomLimit)
             }
             y += rowH + 10f
         }
@@ -466,6 +475,8 @@ private fun JajaninView.drawSellerOrdersBoard(c: Canvas, w: Float, h: Float) {
 private fun JajaninView.drawCompactOrderRow(
     c: Canvas,
     order: AdminOrder,
+    summaryLines: List<String>,
+    extraH: Float,
     top: Float,
     height: Float,
     bottomLimit: Float
@@ -483,32 +494,26 @@ private fun JajaninView.drawCompactOrderRow(
     kit.rounded(c, codeTag, kit.tint, 4f)
     kit.centerText(c, "#${order.pickupCode}", codeTag, 10.5f, kit.blue, true)
 
-    kit.textEllipsized(c, order.buyerName, 88f, top + 24f, 180f, 13f, kit.ink, true)
+    val (cleanBuyer, _) = com.jajanin.app.data.repository.splitBuyerNameAndNis(order.buyerName)
+    kit.textEllipsized(c, cleanBuyer, 88f, top + 24f, 180f, 13f, kit.ink, true)
     kit.textRight(c, formatRupiah(order.totalIdr), 358f, top + 24f, 95f, 13f, kit.ink, true)
 
     val firstCompactItem = order.items.firstOrNull()
-    val compactProd = firstCompactItem?.let { resolveOrderItemProduct(it.menuItemId, it.itemName) }
+    val compactProd = firstCompactItem?.let { resolveOrderItemProduct(it.menuItemId, it.displayBaseName) }
     val compactThumb = RectF(32f, top + 34f, 68f, top + 70f)
     drawProductImageUrl(c, compactProd?.imageUrl, compactThumb)
 
-    kit.textEllipsized(
-        c,
-        "${order.itemCount} item · ${order.itemsSummary}",
-        76f,
-        top + 48f,
-        280f,
-        11.5f,
-        kit.ink,
-        true
-    )
+    summaryLines.forEachIndexed { idx, line ->
+        kit.text(c, line, 76f, top + 48f + idx * 14.5f, 11.5f, kit.ink, true)
+    }
 
     val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.blue
-    kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 76f, top + 65f, 280f, 10f, schedColor, true)
+    kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 76f, top + 65f + extraH, 280f, 10f, schedColor, true)
 
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
     val method = if (order.paymentMethod == "cash") "Tunai" else "Midtrans"
     val (stLabel, _) = statusLabel(order.status)
-    kit.textEllipsized(c, "$stLabel · $method · $payLabel", 32f, top + 92f, 132f, 10.5f, payColor, true)
+    kit.textEllipsized(c, "$stLabel · $method · $payLabel", 32f, top + 92f + extraH, 132f, 10.5f, payColor, true)
 
     bounds.putVisible(
         "adminOrder:${order.id}",
@@ -521,14 +526,14 @@ private fun JajaninView.drawCompactOrderRow(
     if (nextAction != null) {
         val canCancel = com.jajanin.app.data.repository.sellerCanCancelOrder(order)
         if (canCancel) {
-            val cancelBtn = RectF(168f, top + 74f, 238f, top + 102f)
+            val cancelBtn = RectF(168f, top + 74f + extraH, 238f, top + 102f + extraH)
             kit.rounded(c, cancelBtn, kit.card, 6f, kit.dangerBorder)
             kit.centerText(c, "Batal", cancelBtn, 10.5f, kit.danger, true)
             press(c, "adminCancel:${order.id}", cancelBtn, 6f)
             bounds.putVisible("adminCancel:${order.id}", cancelBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
         }
 
-        val actionBtn = RectF(if (canCancel) 244f else 168f, top + 74f, 358f, top + 102f)
+        val actionBtn = RectF(if (canCancel) 244f else 168f, top + 74f + extraH, 358f, top + 102f + extraH)
         val lockReason = sellerPoAdvanceBlockReason(order, nextAction.second)
         if (lockReason != null) {
             val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&
@@ -639,6 +644,8 @@ private fun JajaninView.drawProductImageUrl(c: Canvas, imageUrl: String?, rect: 
 private fun JajaninView.drawOrderCard(
     c: Canvas,
     order: AdminOrder,
+    summaryLines: List<String>,
+    extraH: Float,
     top: Float,
     height: Float,
     bottomLimit: Float
@@ -666,14 +673,15 @@ private fun JajaninView.drawOrderCard(
         height = 20f, size = 9.5f,
     )
 
+    val (cleanBuyer, _) = com.jajanin.app.data.repository.splitBuyerNameAndNis(order.buyerName)
     val buyerMaxW = (pillRect.left - 90f - 8f).coerceAtLeast(80f)
-    kit.textEllipsized(c, "${order.buyerName} · ${order.timeLabel}", 90f, top + 25f, buyerMaxW, 12.5f, kit.ink, true)
+    kit.textEllipsized(c, "$cleanBuyer · ${order.timeLabel}", 90f, top + 25f, buyerMaxW, 12.5f, kit.ink, true)
 
-    // Row 2: Product Banner Strip (Thumbnail + Items Summary + Schedule + Total Price)
+    // Row 2: Product Banner Strip (Thumbnail + Wrapped Items Summary + Schedule + Total Price)
     val isConfirmedBanner = order.status.equals(STATUS_CONFIRMED, ignoreCase = true) ||
         order.status.equals(STATUS_PREPARING, ignoreCase = true) ||
         order.status.equals(STATUS_PROCESSING_LEGACY, ignoreCase = true)
-    val prodStrip = RectF(32f, top + 36f, 358f, top + 82f)
+    val prodStrip = RectF(32f, top + 36f, 358f, top + 82f + extraH)
     kit.rounded(
         c,
         prodStrip,
@@ -682,39 +690,32 @@ private fun JajaninView.drawOrderCard(
         if (isConfirmedBanner) kit.blue else kit.border,
     )
     val firstOrderItem = order.items.firstOrNull()
-    val matchedOrderProd = firstOrderItem?.let { resolveOrderItemProduct(it.menuItemId, it.itemName) }
+    val matchedOrderProd = firstOrderItem?.let { resolveOrderItemProduct(it.menuItemId, it.displayBaseName) }
     val itemThumb = RectF(37f, top + 41f, 73f, top + 77f)
     drawProductImageUrl(c, matchedOrderProd?.imageUrl, itemThumb)
 
     val total = formatRupiah(order.totalIdr)
     val totalWidth = kit.measure(total, 12.5f, true)
-    kit.textEllipsized(
-        c,
-        "${order.itemCount} item · ${order.itemsSummary}",
-        81f,
-        top + 55f,
-        350f - 81f - totalWidth - 8f,
-        11.5f,
-        kit.ink,
-        true
-    )
+    summaryLines.forEachIndexed { idx, line ->
+        kit.text(c, line, 81f, top + 55f + idx * 14.5f, 11.5f, kit.ink, true)
+    }
     kit.textRight(c, total, 350f, top + 55f, totalWidth + 12f, 12.5f, kit.blue, true)
 
     val schedColor = if (order.isPreOrder) Color.rgb(183, 116, 0) else kit.muted
-    kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 81f, top + 72f, 266f, 10f, schedColor, order.isPreOrder)
+    kit.textEllipsized(c, "Jadwal: ${order.pickupScheduleLabel}", 81f, top + 72f + extraH, 266f, 10f, schedColor, order.isPreOrder)
 
     // Row 4: Payment method & status
     val (payLabel, payColor) = paymentLabel(order.paymentStatus)
     val payment = if (order.paymentMethod == "cash") "Tunai" else "Midtrans"
-    kit.text(c, "$payment · $payLabel", 32f, top + 99f, 10.5f, payColor, true)
+    kit.text(c, "$payment · $payLabel", 32f, top + 99f + extraH, 10.5f, payColor, true)
 
     val unreadOrder = unreadChatByOrder[order.id] ?: 0
     val chatLabel = if (unreadOrder > 0) "Chat ($unreadOrder)" else "Chat"
     val nextAction = statusNextAction(order.status)
     if (nextAction != null) {
-        kit.line(c, 32f, top + 109f, 358f, top + 109f, kit.divider)
+        kit.line(c, 32f, top + 109f + extraH, 358f, top + 109f + extraH, kit.divider)
 
-        val chatBtn = RectF(32f, top + 115f, 110f, top + 143f)
+        val chatBtn = RectF(32f, top + 115f + extraH, 110f, top + 143f + extraH)
         kit.rounded(
             c,
             chatBtn,
@@ -728,14 +729,14 @@ private fun JajaninView.drawOrderCard(
 
         val canCancel = com.jajanin.app.data.repository.sellerCanCancelOrder(order)
         if (canCancel) {
-            val cancel = RectF(118f, top + 115f, 204f, top + 143f)
+            val cancel = RectF(118f, top + 115f + extraH, 204f, top + 143f + extraH)
             kit.rounded(c, cancel, kit.card, 6f, kit.dangerBorder)
             kit.centerText(c, "Batalkan", cancel, 10.5f, kit.danger, true)
             press(c, "adminCancel:${order.id}", cancel, 6f)
             bounds.putVisible("adminCancel:${order.id}", cancel, topLimit = HEADER_H, bottomLimit = bottomLimit)
         }
 
-        val action = RectF(if (canCancel) 212f else 118f, top + 115f, 358f, top + 143f)
+        val action = RectF(if (canCancel) 212f else 118f, top + 115f + extraH, 358f, top + 143f + extraH)
         val lockReason = sellerPoAdvanceBlockReason(order, nextAction.second)
         if (lockReason != null) {
             val needsQris = order.paymentMethod.equals("qris", ignoreCase = true) &&
@@ -757,7 +758,7 @@ private fun JajaninView.drawOrderCard(
             bounds.putVisible("adminStatus:${order.id}", action, topLimit = HEADER_H, bottomLimit = bottomLimit)
         }
     } else {
-        val chatBtn = RectF(286f, top + 86f, 358f, top + 108f)
+        val chatBtn = RectF(286f, top + 86f + extraH, 358f, top + 108f + extraH)
         kit.rounded(
             c,
             chatBtn,
@@ -770,7 +771,7 @@ private fun JajaninView.drawOrderCard(
         bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = HEADER_H, bottomLimit = bottomLimit)
     }
 
-    val bodyHitBottom = if (nextAction != null) top + 109f else top + height
+    val bodyHitBottom = if (nextAction != null) top + 109f + extraH else top + height
     bounds.putVisible(
         "adminOrder:${order.id}",
         RectF(card.left, card.top, card.right, bodyHitBottom),

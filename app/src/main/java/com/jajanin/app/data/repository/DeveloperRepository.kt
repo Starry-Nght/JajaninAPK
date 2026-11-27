@@ -299,7 +299,7 @@ internal object DeveloperRepository {
             .select(
                 Columns.raw(
                     "id,user_id,status,total_idr,pickup_code,created_at,payment_method,payment_status," +
-                        "order_items(id,menu_item_id,item_name,unit_price_idr,quantity)"
+                        "order_items(id,menu_item_id,item_name,variant_label,unit_price_idr,quantity)"
                 )
             ) {
                 order("created_at", Order.DESCENDING); limit(max.toLong())

@@ -83,18 +83,26 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 height = 22f, size = 9.5f,
             )
 
-            kit.textEllipsized(c, order.buyerName, 20f, y + 70f, 232f, 15f, kit.ink, true)
+            val (cleanBuyerName, buyerNis) = com.jajanin.app.data.repository.splitBuyerNameAndNis(order.buyerName)
+            val buyerNameLines = kit.wrap(cleanBuyerName, 232f, 14.5f, maxLines = 2, bold = true)
+            val nameStep = 18f
+            buyerNameLines.forEachIndexed { i, line ->
+                kit.text(c, line, 20f, y + 70f + i * nameStep, 14.5f, kit.ink, true)
+            }
             val phone = order.buyerPhone.takeIf { it.isNotBlank() }
             val phoneLine = if (phone != null) "HP: ${displayPhone(phone)}" else "Nomor HP belum diisi"
-            kit.textEllipsized(
-                c,
-                "$phoneLine  ·  Masuk ${order.timeLabel}",
-                20f,
-                y + 89f,
-                234f,
-                11.5f,
-                kit.muted
-            )
+            val buyerMetaText = buildList {
+                if (!buyerNis.isNullOrBlank()) add("NIS $buyerNis")
+                add(phoneLine)
+                add("Masuk ${order.timeLabel}")
+            }.joinToString(" · ")
+            val buyerMetaLines = kit.wrap(buyerMetaText, 234f, 11f, maxLines = 2)
+            val metaStartY = y + 70f + (buyerNameLines.size - 1).coerceAtLeast(0) * nameStep + 18f
+            val metaStep = 14.5f
+            buyerMetaLines.forEachIndexed { i, line ->
+                kit.text(c, line, 20f, metaStartY + i * metaStep, 11f, kit.muted)
+            }
+            val metaBottomY = metaStartY + (buyerMetaLines.size - 1).coerceAtLeast(0) * metaStep + 6f
 
             val unreadForOrder = unreadChatByOrder[order.id] ?: 0
             val chatBtn = RectF(258f, y + 58f, 370f, y + 90f)
@@ -109,7 +117,7 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             kit.centerText(c, chatLabel, chatBtn, 11f, if (unreadForOrder > 0) Color.WHITE else kit.blue, true)
             press(c, "chatOrder:${order.id}", chatBtn, 6f)
             bounds.putVisible("chatOrder:${order.id}", chatBtn, topLimit = 60f, bottomLimit = h - 68f)
-            y += 102f
+            y = maxOf(y + 102f, metaBottomY + 10f)
 
             // 1b. Jadwal & Sesi Pengambilan Banner
             val schedRect = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 36f)
@@ -170,14 +178,38 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             }
             y += 52f
 
-            // 2b. Highlighted Product Banner (Memudahkan seller melihat produk yang dibeli & ditanyakan)
+            // 2b. Highlighted Product Banner (Memudahkan seller melihat produk yang dibeli & variannya secara lengkap)
             val primaryItem = order.items.firstOrNull()
             if (primaryItem != null) {
-                val matchedProd = resolveOrderItemProduct(primaryItem.menuItemId, primaryItem.itemName)
+                val matchedProd = resolveOrderItemProduct(primaryItem.menuItemId, primaryItem.displayBaseName)
                 val isConfirmedHighlight = order.status.equals(STATUS_CONFIRMED, ignoreCase = true) ||
                     order.status.equals(STATUS_PREPARING, ignoreCase = true) ||
                     order.status.equals(STATUS_PROCESSING_LEGACY, ignoreCase = true)
-                val prodBannerH = 74f
+
+                val extraItems = (order.items.size - 1).coerceAtLeast(0)
+                val mainHeadline = if (extraItems > 0) {
+                    "${primaryItem.quantity}× ${primaryItem.displayBaseName} (+$extraItems menu lain)"
+                } else {
+                    "${primaryItem.quantity}× ${primaryItem.displayBaseName}"
+                }
+                val headlineLines = kit.wrap(mainHeadline, 262f, 13f, maxLines = 2, bold = true)
+                val primaryVariant = primaryItem.resolvedVariantLabel
+                val variantLines = if (primaryVariant.isNotBlank()) {
+                    kit.wrap(primaryVariant, 262f, 11f, maxLines = 3, bold = true)
+                } else {
+                    emptyList()
+                }
+                val headlineStartRelY = 40f
+                val headlineStep = 16.5f
+                val variantStep = 14.5f
+                val afterHeadlineRelY = headlineStartRelY + (headlineLines.size - 1).coerceAtLeast(0) * headlineStep
+                val variantStartRelY = afterHeadlineRelY + 15.5f
+                val metaRelY = if (variantLines.isNotEmpty()) {
+                    variantStartRelY + (variantLines.size - 1) * variantStep + 16f
+                } else {
+                    afterHeadlineRelY + 17f
+                }
+                val prodBannerH = maxOf(74f, metaRelY + 14f)
                 val prodBanner = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + prodBannerH)
                 kit.rounded(
                     c,
@@ -187,14 +219,15 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                     if (isConfirmedHighlight) kit.blue else kit.border,
                 )
 
-                val pThumb = RectF(32f, y + 11f, 84f, y + 63f)
+                val pThumbTop = y + ((prodBannerH - 52f) / 2f).coerceAtLeast(11f)
+                val pThumb = RectF(32f, pThumbTop, 84f, pThumbTop + 52f)
                 val pUrl = matchedProd?.imageUrl?.takeIf { it.startsWith("https://") }
                 val pBmp = pUrl?.let { ProductImageCache.images[it] }
                 if (pBmp != null) {
                     drawBitmapCenterCrop(c, pBmp, pThumb, 7f)
                 } else {
                     kit.rounded(c, pThumb, kit.card, 7f, kit.border)
-                    val initChar = primaryItem.itemName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "P"
+                    val initChar = primaryItem.displayBaseName.firstOrNull()?.uppercaseChar()?.toString() ?: "P"
                     kit.centerText(c, initChar, pThumb, 17f, kit.blue, true)
                     if (pUrl != null) activity()?.loadProductImage(pUrl)
                 }
@@ -204,26 +237,58 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 } else {
                     "PRODUK YANG DIBELI"
                 }
-                kit.textEllipsized(c, bannerTag, 96f, y + 23f, 260f, 9.5f, kit.blue, true)
+                kit.textEllipsized(c, bannerTag, 96f, y + 22f, 260f, 9.5f, kit.blue, true)
 
-                val extraItems = (order.items.size - 1).coerceAtLeast(0)
-                val mainHeadline = if (extraItems > 0) {
-                    "${primaryItem.quantity}× ${primaryItem.itemName} (+$extraItems menu lain)"
-                } else {
-                    "${primaryItem.quantity}× ${primaryItem.itemName}"
+                headlineLines.forEachIndexed { idx, line ->
+                    kit.text(c, line, 96f, y + headlineStartRelY + idx * headlineStep, 13f, kit.ink, true)
                 }
-                kit.textEllipsized(c, mainHeadline, 96f, y + 43f, 262f, 13.5f, kit.ink, true)
+                variantLines.forEachIndexed { idx, line ->
+                    kit.text(c, line, 96f, y + variantStartRelY + idx * variantStep, 11f, kit.blue, true)
+                }
 
                 val stockMeta = matchedProd?.stock?.let { "Sisa stok etalase: $it porsi" }
                     ?: "Subtotal: ${formatRupiah(primaryItem.unitPriceIdr * primaryItem.quantity)}"
-                kit.textEllipsized(c, stockMeta, 96f, y + 60f, 262f, 10.5f, kit.muted)
+                kit.textEllipsized(c, stockMeta, 96f, y + metaRelY, 262f, 10.5f, kit.muted)
 
                 y += prodBannerH + 12f
             }
 
-            // 3. Unified Receipt Surface (Items with Product Thumbnails + Dashed Line + Total)
-            val itemRowH = 44f
-            val itemsH = if (order.items.isEmpty()) 36f else order.items.size * itemRowH
+            // 3. Unified Receipt Surface (Items with Product Thumbnails + Wrapped Variants + Dashed Line + Total)
+            data class ReceiptItemLayout(
+                val item: com.jajanin.app.data.repository.OrderItemRow,
+                val subtotal: String,
+                val subtotalW: Float,
+                val titleLines: List<String>,
+                val variantLines: List<String>,
+                val variantStartRelY: Float,
+                val priceRelY: Float,
+                val rowH: Float,
+            )
+            val titleStep = 16f
+            val varStep = 14.5f
+            val receiptLayouts = order.items.map { item ->
+                val subtotal = formatRupiah(item.unitPriceIdr * item.quantity)
+                val subtotalW = kit.measure(subtotal, 12.5f, true)
+                val textMaxW = (356f - subtotalW - 12f - 76f).coerceAtLeast(150f)
+                val titleLines = kit.wrap("${item.quantity}× ${item.displayBaseName}", textMaxW, 12.5f, maxLines = 3, bold = true)
+                    .ifEmpty { listOf("${item.quantity}× ${item.displayBaseName}") }
+                val variant = item.resolvedVariantLabel
+                val variantLines = if (variant.isNotBlank()) {
+                    kit.wrap(variant, textMaxW, 11f, maxLines = 5, bold = true)
+                } else {
+                    emptyList()
+                }
+                val titleEndRelY = 18f + (titleLines.size - 1) * titleStep
+                val variantStartRelY = titleEndRelY + 15f
+                val priceRelY = if (variantLines.isNotEmpty()) {
+                    variantStartRelY + (variantLines.size - 1) * varStep + 14.5f
+                } else {
+                    titleEndRelY + 15f
+                }
+                val rowH = maxOf(46f, priceRelY + 11f)
+                ReceiptItemLayout(item, subtotal, subtotalW, titleLines, variantLines, variantStartRelY, priceRelY, rowH)
+            }
+            val itemsH = if (receiptLayouts.isEmpty()) 36f else receiptLayouts.sumOf { it.rowH.toDouble() }.toFloat()
             val receiptTop = y
             val receiptBottom = receiptTop + 34f + itemsH + 52f
             sellerSurface(c, RectF(SellerTokens.PAD, receiptTop, SellerTokens.RIGHT, receiptBottom))
@@ -231,38 +296,39 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             kit.text(c, "RINCIAN PESANAN (${order.itemCount} ITEM)", 34f, receiptTop + 23f, 10f, kit.muted, true)
 
             var iy = receiptTop + 34f
-            if (order.items.isEmpty()) {
+            if (receiptLayouts.isEmpty()) {
                 kit.text(c, "Tidak ada rincian item.", 34f, iy + 20f, 12f, kit.muted)
             } else {
-                order.items.forEachIndexed { index, item ->
-                    val itemProd = resolveOrderItemProduct(item.menuItemId, item.itemName)
-                    val rowThumb = RectF(34f, iy + 5f, 66f, iy + 37f)
+                receiptLayouts.forEachIndexed { index, row ->
+                    val item = row.item
+                    val itemProd = resolveOrderItemProduct(item.menuItemId, item.displayBaseName)
+                    val rowThumb = RectF(34f, iy + 6f, 66f, iy + 38f)
                     val rowUrl = itemProd?.imageUrl?.takeIf { it.startsWith("https://") }
                     val rowBmp = rowUrl?.let { ProductImageCache.images[it] }
                     if (rowBmp != null) {
                         drawBitmapCenterCrop(c, rowBmp, rowThumb, 5f)
                     } else {
                         kit.rounded(c, rowThumb, kit.tint, 5f)
-                        val ch = item.itemName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "M"
+                        val ch = item.displayBaseName.firstOrNull()?.uppercaseChar()?.toString() ?: "M"
                         kit.centerText(c, ch, rowThumb, 12f, kit.blue, true)
                         if (rowUrl != null) activity()?.loadProductImage(rowUrl)
                     }
 
-                    val subtotal = formatRupiah(item.unitPriceIdr * item.quantity)
-                    val subtotalW = kit.measure(subtotal, 12.5f, true)
-                    kit.textEllipsized(
-                        c, "${item.quantity}× ${item.itemName}", 76f, iy + 19f,
-                        196f, 12.5f, kit.ink, true,
-                    )
-                    kit.textEllipsized(
-                        c, "@${formatRupiah(item.unitPriceIdr)}", 76f, iy + 34f,
-                        140f, 10f, kit.muted,
-                    )
-                    kit.textRight(c, subtotal, 356f, iy + 25f, subtotalW + 16f, 12.5f, kit.ink, true)
-                    if (index < order.items.size - 1) {
-                        kit.line(c, 76f, iy + itemRowH - 1f, 356f, iy + itemRowH - 1f, kit.divider)
+                    row.titleLines.forEachIndexed { lIdx, line ->
+                        kit.text(c, line, 76f, iy + 18f + lIdx * titleStep, 12.5f, kit.ink, true)
                     }
-                    iy += itemRowH
+                    row.variantLines.forEachIndexed { lIdx, line ->
+                        kit.text(c, line, 76f, iy + row.variantStartRelY + lIdx * varStep, 11f, kit.blue, true)
+                    }
+                    kit.text(
+                        c, "@${formatRupiah(item.unitPriceIdr)}", 76f, iy + row.priceRelY,
+                        10f, kit.muted,
+                    )
+                    kit.textRight(c, row.subtotal, 356f, iy + 20f, row.subtotalW + 16f, 12.5f, kit.ink, true)
+                    if (index < receiptLayouts.lastIndex) {
+                        kit.line(c, 76f, iy + row.rowH - 1f, 356f, iy + row.rowH - 1f, kit.divider)
+                    }
+                    iy += row.rowH
                 }
             }
 
@@ -289,8 +355,16 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
             if (qrisRemSec != null && qrisRemSec > 0L && currentScreen == com.jajanin.app.core.navigation.Screen.ADMIN_DETAIL) {
                 postInvalidateDelayed(1000)
             }
+            val hint = when {
+                isCancelled -> "Pesanan dibatalkan."
+                order.paymentStatus == "paid" -> if (isCash) "Pembayaran tunai telah ditandai lunas." else "Lunas otomatis via Midtrans Sandbox · Masuk ke saldo warung."
+                qrisRemSec != null && qrisRemSec <= 0L -> "Batas waktu bayar Midtrans habis · dibatalkan otomatis."
+                qrisRemSec != null -> "Menunggu pembayaran Midtrans (${com.jajanin.app.data.repository.formatCountdownMmSs(qrisRemSec)}) · Stok dipotong saat lunas."
+                else -> "Menunggu pembayaran otomatis via Midtrans · Stok dipotong saat lunas."
+            }
+            val hintLines = if (needsAction) emptyList() else kit.wrap(hint, 322f, 10.5f, maxLines = 3)
             val proofStripH = if (hasProof) 62f else 0f
-            val basePayH = if (needsAction) 98f else 66f
+            val basePayH = if (needsAction) 98f else maxOf(66f, 44f + hintLines.size * 14f + 10f)
             val payH = basePayH + proofStripH
             val payCard = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + payH)
             sellerSurface(c, payCard)
@@ -343,30 +417,28 @@ internal fun JajaninView.drawAdminDetail(c: Canvas, w: Float, h: Float) {
                 press(c, "payPaid:${order.id}", paidBtn, 6f)
                 bounds.putVisible("payPaid:${order.id}", paidBtn, topLimit = 60f, bottomLimit = h - 68f)
             } else {
-                val hint = when {
-                    isCancelled -> "Pesanan dibatalkan."
-                    order.paymentStatus == "paid" -> if (isCash) "Pembayaran tunai telah ditandai lunas." else "Lunas otomatis via Midtrans Sandbox · Masuk ke saldo warung."
-                    qrisRemSec != null && qrisRemSec <= 0L -> "Batas waktu bayar Midtrans habis · dibatalkan otomatis."
-                    qrisRemSec != null -> "Menunggu pembayaran Midtrans (${com.jajanin.app.data.repository.formatCountdownMmSs(qrisRemSec)}) · Stok dipotong saat lunas."
-                    else -> "Menunggu pembayaran otomatis via Midtrans · Stok dipotong saat lunas."
+                hintLines.forEachIndexed { idx, line ->
+                    kit.text(c, line, 34f, innerY + 2f + idx * 14f, 10.5f, kit.muted)
                 }
-                kit.textEllipsized(c, hint, 34f, innerY + 2f, 322f, 10.5f, kit.muted)
             }
 
             var endPayY = y + payH
             if (!isCancelled && !com.jajanin.app.core.ui.isTerminalStatus(order.status) && !com.jajanin.app.data.repository.sellerCanCancelOrder(order)) {
-                val lockBanner = RectF(SellerTokens.PAD, endPayY + 10f, SellerTokens.RIGHT, endPayY + 46f)
-                kit.rounded(c, lockBanner, kit.warnBox, 7f, Color.rgb(183, 116, 0))
-                kit.textEllipsized(
-                    c,
+                val lockLines = kit.wrap(
                     "Pesanan terkunci · pembayaran sudah lunas, penjual tidak bisa membatalkan.",
-                    32f,
-                    endPayY + 32f,
                     326f,
-                    10f,
-                    Color.rgb(183, 116, 0),
-                    true,
+                    10.5f,
+                    maxLines = 3,
+                    bold = true,
                 )
+                val lockLineH = 14.5f
+                val lockH = maxOf(38f, 14f + lockLines.size * lockLineH + 8f)
+                val lockBanner = RectF(SellerTokens.PAD, endPayY + 10f, SellerTokens.RIGHT, endPayY + 10f + lockH)
+                kit.rounded(c, lockBanner, kit.warnBox, 7f, Color.rgb(183, 116, 0))
+                val lockTextTop = lockBanner.top + 20f
+                lockLines.forEachIndexed { idx, line ->
+                    kit.text(c, line, 32f, lockTextTop + idx * lockLineH, 10.5f, Color.rgb(183, 116, 0), true)
+                }
                 endPayY = lockBanner.bottom
             }
 

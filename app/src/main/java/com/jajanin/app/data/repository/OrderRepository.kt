@@ -64,9 +64,43 @@ internal data class OrderItemRow(
     @SerialName("order_id") val orderId: String = "",
     @SerialName("menu_item_id") val menuItemId: String? = null,
     @SerialName("item_name") val itemName: String,
+    @SerialName("variant_label") val variantLabel: String = "",
     @SerialName("unit_price_idr") val unitPriceIdr: Int,
     val quantity: Int,
-)
+) {
+    /** Label varian/rasa yang dipilih (fallback parsing dari item_name untuk order lama). */
+    val resolvedVariantLabel: String
+        get() {
+            if (variantLabel.isNotBlank()) return variantLabel.trim()
+            val trimmed = itemName.trim()
+            val open = trimmed.lastIndexOf(" (")
+            if (open > 0 && trimmed.endsWith(")")) {
+                val inside = trimmed.substring(open + 2, trimmed.length - 1).trim()
+                if (inside.contains(':')) return inside
+            }
+            return ""
+        }
+
+    /** Nama produk bersih tanpa akhiran " (Rasa: ...)" agar nama & varian bisa dirender rapi terpisah. */
+    val displayBaseName: String
+        get() {
+            val trimmed = itemName.trim()
+            val variant = resolvedVariantLabel
+            if (variant.isBlank()) return trimmed
+            val suffix = " ($variant)"
+            return if (trimmed.endsWith(suffix)) trimmed.removeSuffix(suffix).trim() else trimmed
+        }
+}
+
+private val BUYER_NIS_TAG_REGEX = Regex("\\s*\\[NIS:([^\\]]+)\\]\\s*")
+
+/** Pisahkan nama tampilan pembeli dari tag internal `[NIS:xxxxx]` agar tidak terpotong jelek `[NI...`. */
+internal fun splitBuyerNameAndNis(raw: String): Pair<String, String?> {
+    val match = BUYER_NIS_TAG_REGEX.find(raw)
+    val nis = match?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+    val clean = raw.replace(BUYER_NIS_TAG_REGEX, " ").replace(Regex("\\s+"), " ").trim()
+    return (clean.ifBlank { raw.trim() }) to nis
+}
 
 @Serializable
 internal data class ProfileRow(
@@ -354,7 +388,7 @@ internal object OrderRepository {
         "id,user_id,stall_id,status,total_idr,pickup_code,created_at,payment_method,payment_status,payment_reference," +
             "payment_proof_url,payment_expires_at,stock_deducted," +
             "order_mode,pickup_date,pickup_session," +
-            "order_items(id,menu_item_id,item_name,unit_price_idr,quantity)"
+            "order_items(id,menu_item_id,item_name,variant_label,unit_price_idr,quantity)"
     )
 
     private val productColumns = Columns.raw(
