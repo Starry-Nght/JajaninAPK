@@ -1182,6 +1182,12 @@ class MainActivity : Activity() {
         }
         if (ui.currentScreen == Screen.LOGIN && loginOverlay.handleBack()) return
         if (ui.currentScreen == Screen.PRODUCT_FORM && productFormOverlay.handleBack()) return
+        if (ui.currentScreen == Screen.DETAIL && ui.detailSheetMode != null) {
+            ui.detailSheetMode = null
+            ui.detailSheetScroll = 0f
+            ui.invalidate()
+            return
+        }
         if (!ui.goBack()) super.onBackPressed()
     }
 }

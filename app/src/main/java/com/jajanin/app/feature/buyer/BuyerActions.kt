@@ -606,7 +606,12 @@ internal fun MainActivity.showPreOrderDatePicker() {
 }
 
 /** Tambah ke keranjang; mendukung multi-varian (mis. Rasa) & qty > 1 dari 1 warung dengan jadwal kompatibel. */
-internal fun MainActivity.addToCart(productId: String, qty: Int = 1, variantLabel: String = "") {
+internal fun MainActivity.addToCart(
+    productId: String,
+    qty: Int = 1,
+    variantLabel: String = "",
+    onAdded: (() -> Unit)? = null,
+) {
     if (ui.myAccountStatus == "suspended") {
         Toast.makeText(this, "Akun ditangguhkan. Kamu tidak bisa memesan.", Toast.LENGTH_LONG).show()
         return
@@ -640,7 +645,7 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1, variantLabe
                 ui.cart.clear()
                 ui.cartStallId = null
                 ui.cartStallQris = null
-                addToCart(productId, addAmount, variantLabel)
+                addToCart(productId, addAmount, variantLabel, onAdded)
             },
             negLabel = "Batal",
             destructivePos = true,
@@ -697,6 +702,7 @@ internal fun MainActivity.addToCart(productId: String, qty: Int = 1, variantLabe
     val varSuffix = if (variantLabel.isNotBlank()) " ($variantLabel)" else ""
     Toast.makeText(this, "${product.name}$varSuffix (${nextQty}x) di keranjang", Toast.LENGTH_SHORT).show()
     ui.invalidate()
+    onAdded?.invoke()
 }
 
 /** Dialog pemilih varian/rasa untuk pembeli saat ketuk + Tambah pada menu yang punya pilihan varian. */

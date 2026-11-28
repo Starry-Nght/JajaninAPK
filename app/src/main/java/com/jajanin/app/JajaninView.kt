@@ -159,6 +159,11 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productPoRequireQris = false
     internal var productVariantSections: MutableList<com.jajanin.app.data.model.ProductVariantSection> = mutableListOf()
     internal var detailSelectedVariants: MutableMap<Int, String> = linkedMapOf()
+    // Bottom sheet pemilih varian & jumlah di Detail Produk (null = tutup, "cart" = Keranjang, "buy" = Beli Sekarang).
+    internal var detailSheetMode: String? = null
+    internal var detailSheetScroll: Float = 0f
+    internal var detailSheetMaxScroll: Float = 0f
+    internal var detailSheetTopY: Float = 0f
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
     internal var productSaving = false
@@ -497,6 +502,8 @@ internal class JajaninView(context: Context) : View(context) {
         // Panel notifikasi hanya hidup di dashboard; kalau tidak dibersihkan,
         // scroll di layar lain ikut terkunci (gerakan gulir mengecek flag ini).
         if (next != Screen.ADMIN) adminNotifOpen = false
+        detailSheetMode = null
+        detailSheetScroll = 0f
         history.addLast(screen)
         screen = next
         scroll = 0f
@@ -509,6 +516,8 @@ internal class JajaninView(context: Context) : View(context) {
         if (history.isEmpty()) return false
         val target = history.removeLast()
         if (target != Screen.ADMIN) adminNotifOpen = false
+        detailSheetMode = null
+        detailSheetScroll = 0f
         screen = target
         scroll = 0f
         beginSlide(-1f)
@@ -930,11 +939,19 @@ internal class JajaninView(context: Context) : View(context) {
                     screen == Screen.PRODUCT_FORM || screen == Screen.SELLER_MENU || screen == Screen.DEV ||
                     screen == Screen.CHECKOUT || screen == Screen.NOTIF || screen == Screen.EXP_HISTORY ||
                     screen == Screen.PROFILE || screen == Screen.CHAT_LIST
-                val maxScroll = (contentHeight - hVirtual + navScrollPad()).coerceAtLeast(0f)
-                val touchInPinnedHeader = touchStartY <= 68f
-                val touchInStickyFooter =
-                    (screen == Screen.DETAIL && touchStartY >= hVirtual - 168f) ||
+                val sheetOpen = screen == Screen.DETAIL && detailSheetMode != null
+                val maxScroll = if (sheetOpen) {
+                    detailSheetMaxScroll.coerceAtLeast(0f)
+                } else {
+                    (contentHeight - hVirtual + navScrollPad()).coerceAtLeast(0f)
+                }
+                val touchInPinnedHeader = !sheetOpen && touchStartY <= 68f
+                val touchInStickyFooter = if (sheetOpen) {
+                    touchStartY < detailSheetTopY || touchStartY >= hVirtual - 76f
+                } else {
+                    (screen == Screen.DETAIL && touchStartY >= hVirtual - 64f) ||
                         ((screen == Screen.QRIS || screen == Screen.CHECKOUT) && touchStartY >= hVirtual - 84f)
+                }
                 val dx = x - touchStartX
                 val dy = y - touchStartY
                 val absDx = abs(dx)
@@ -942,9 +959,9 @@ internal class JajaninView(context: Context) : View(context) {
                 if (swipeMode == 0 && !adminNotifOpen && !touchInPinnedHeader && !touchInStickyFooter) {
                     val canScrollVert = scrollable && (
                         maxScroll > 0.5f ||
-                            (dy > 0f && scroll <= 0.5f && canPullRefresh())
+                            (!sheetOpen && dy > 0f && scroll <= 0.5f && canPullRefresh())
                     )
-                    if (canSwipeHorizontal() && absDx > 12f && absDx >= absDy * 1.1f) {
+                    if (!sheetOpen && canSwipeHorizontal() && absDx > 12f && absDx >= absDy * 1.1f) {
                         swipeMode = 2
                         moved = true
                         downHitKey = null
@@ -952,7 +969,7 @@ internal class JajaninView(context: Context) : View(context) {
                         swipeMode = 1
                         moved = true
                         downHitKey = null
-                    } else if (!canSwipeHorizontal() && canScrollVert && absDy > 12f) {
+                    } else if ((sheetOpen || !canSwipeHorizontal()) && canScrollVert && absDy > 12f) {
                         swipeMode = 1
                         moved = true
                         downHitKey = null
@@ -984,13 +1001,17 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     1 -> {
-                        val deltaY = y - previousY
-                        if (scroll <= 0.5f && (deltaY > 0f || pullRefreshDragY > 0f) && canPullRefresh()) {
-                            pullRefreshDragY = (pullRefreshDragY + deltaY * 0.58f).coerceIn(0f, 84f)
-                            scroll = 0f
+                        if (sheetOpen) {
+                            detailSheetScroll = (detailSheetScroll + previousY - y).coerceIn(0f, maxScroll)
                         } else {
-                            pullRefreshDragY = 0f
-                            scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
+                            val deltaY = y - previousY
+                            if (scroll <= 0.5f && (deltaY > 0f || pullRefreshDragY > 0f) && canPullRefresh()) {
+                                pullRefreshDragY = (pullRefreshDragY + deltaY * 0.58f).coerceIn(0f, 84f)
+                                scroll = 0f
+                            } else {
+                                pullRefreshDragY = 0f
+                                scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
+                            }
                         }
                         previousY = y
                         invalidate()
@@ -1042,11 +1063,12 @@ internal class JajaninView(context: Context) : View(context) {
                 }
                 val upDx = x - touchStartX
                 val upDy = y - touchStartY
-                val touchInPinnedHeader = touchStartY <= 68f
+                val sheetOpenUp = screen == Screen.DETAIL && detailSheetMode != null
+                val touchInPinnedHeader = !sheetOpenUp && touchStartY <= 68f
                 val touchInStickyFooter =
-                    (screen == Screen.DETAIL && touchStartY >= hVirtual - 168f) ||
+                    (screen == Screen.DETAIL && touchStartY >= hVirtual - 64f) ||
                         ((screen == Screen.QRIS || screen == Screen.CHECKOUT) && touchStartY >= hVirtual - 84f)
-                if (swipeMode == 0 && !moved && !adminNotifOpen && !touchInPinnedHeader && !touchInStickyFooter &&
+                if (!sheetOpenUp && swipeMode == 0 && !moved && !adminNotifOpen && !touchInPinnedHeader && !touchInStickyFooter &&
                     canSwipeHorizontal() && elapsed < 280L && abs(upDx) >= 32f && abs(upDx) >= abs(upDy) * 1.15f
                 ) {
                     stepHorizontalPage(if (upDx < 0f) 1 else -1)
@@ -1126,6 +1148,8 @@ internal class JajaninView(context: Context) : View(context) {
                             ?: storeProfileProducts.firstOrNull { it.id == id }
                             ?: sellerProducts.firstOrNull { it.id == id }
                         quantity = 1
+                        detailSheetMode = null
+                        detailSheetScroll = 0f
                         detailSelectedVariants.clear()
                         selectedProduct?.activeVariantSections?.forEachIndexed { idx, sec ->
                             sec.options.firstOrNull()?.let { firstOpt ->
@@ -1133,6 +1157,42 @@ internal class JajaninView(context: Context) : View(context) {
                             }
                         }
                         if (selectedProduct != null) go(Screen.DETAIL)
+                    }
+                    hit == "detailSheetNoop" -> Unit
+                    hit == "detailSheetClose" -> {
+                        detailSheetMode = null
+                        detailSheetScroll = 0f
+                        invalidate()
+                    }
+                    hit.startsWith("detailOpenSheet:") -> {
+                        val mode = hit.substringAfter(':')
+                        detailSheetMode = if (mode == "buy") "buy" else "cart"
+                        detailSheetScroll = 0f
+                        invalidate()
+                    }
+                    hit.startsWith("detailSheetConfirm:") -> {
+                        val mode = hit.substringAfter(':')
+                        selectedProduct?.let { product ->
+                            val sections = product.activeVariantSections
+                            val variantLabel = if (sections.isEmpty()) {
+                                ""
+                            } else {
+                                sections.mapIndexed { idx, sec ->
+                                    val chosen = detailSelectedVariants[idx] ?: sec.options.firstOrNull().orEmpty()
+                                    "${sec.name}: $chosen"
+                                }.joinToString(" · ")
+                            }
+                            detailSheetMode = null
+                            detailSheetScroll = 0f
+                            invalidate()
+                            if (mode == "buy") {
+                                activity()?.addToCart(product.id, quantity, variantLabel) {
+                                    activity()?.openCheckout()
+                                }
+                            } else {
+                                activity()?.addToCart(product.id, quantity, variantLabel)
+                            }
+                        }
                     }
                     hit.startsWith("detailVar:") -> {
                         val parts = hit.removePrefix("detailVar:").split(":")
