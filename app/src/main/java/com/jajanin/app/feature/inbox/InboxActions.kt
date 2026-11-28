@@ -206,52 +206,149 @@ internal fun MainActivity.showNotifAnn(annId: String) {
 
 // ================= Nomor HP =================
 
-/** Editor nomor HP sendiri (validasi + normalisasi server). */
+/** Menangkap intent tap dari push notification Android (cold start & warm start). */
 internal fun MainActivity.handleOrderNotification(intent: Intent?) {
-    val chatConvoId = intent?.getStringExtra(NotificationHelper.EXTRA_CONVERSATION_ID)
+    if (intent == null) return
+    val chatConvoId = intent.getStringExtra(NotificationHelper.EXTRA_CONVERSATION_ID)
+        ?.trim()
         ?.takeIf { it.isNotBlank() }
-    if (chatConvoId != null) {
-        intent.removeExtra(NotificationHelper.EXTRA_CONVERSATION_ID)
-        intent.removeExtra(NotificationHelper.EXTRA_ORDER_ID)
-        pendingChatConversationId = chatConvoId
-        authScope.launch {
-            if (!SupabaseRepository.awaitLoggedIn()) return@launch
-            if (pendingChatConversationId != chatConvoId) return@launch
-            pendingChatConversationId = null
-            openConversationById(chatConvoId)
-        }
+    val orderId = intent.getStringExtra(NotificationHelper.EXTRA_ORDER_ID)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+    val stallId = intent.getStringExtra(NotificationHelper.EXTRA_STALL_ID)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+    val targetRole = intent.getStringExtra(NotificationHelper.EXTRA_TARGET_ROLE)
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotBlank() }
+    val targetScreen = intent.getStringExtra(NotificationHelper.EXTRA_TARGET_SCREEN)
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotBlank() }
+    val eventType = intent.getStringExtra(NotificationHelper.EXTRA_EVENT_TYPE)
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotBlank() }
+
+    if (chatConvoId == null && orderId == null && stallId == null && targetScreen == null) {
         return
     }
 
-    val orderId = intent?.getStringExtra(NotificationHelper.EXTRA_ORDER_ID) ?: return
+    // Bersihkan extra dari Intent agar tidak terpicu ulang saat konfigurasi berubah.
+    intent.removeExtra(NotificationHelper.EXTRA_CONVERSATION_ID)
     intent.removeExtra(NotificationHelper.EXTRA_ORDER_ID)
+    intent.removeExtra(NotificationHelper.EXTRA_STALL_ID)
+    intent.removeExtra(NotificationHelper.EXTRA_TARGET_ROLE)
+    intent.removeExtra(NotificationHelper.EXTRA_TARGET_SCREEN)
+    intent.removeExtra(NotificationHelper.EXTRA_EVENT_TYPE)
+
+    val resolvedScreen = targetScreen ?: when {
+        chatConvoId != null -> "chat"
+        orderId != null -> "order_detail"
+        stallId != null && eventType == "store_activity" -> "store_profile"
+        else -> "notif"
+    }
+    val resolvedRole = targetRole ?: when (eventType) {
+        "new_order", "order_cancelled_by_buyer" -> "seller"
+        "order_created", "order_status" -> "buyer"
+        else -> null
+    }
+
+    pendingChatConversationId = chatConvoId
     pendingOrderNotificationId = orderId
-    authScope.launch {
-        if (!SupabaseRepository.awaitLoggedIn()) return@launch
-        val prof = SupabaseRepository.fetchMyAccountProfile()
-        val isSeller = prof?.isSellerVerified == true || prof?.role == "seller" || ui.myIsSellerVerified
-        ui.myIsSellerVerified = isSeller
-        // Bila user sedang di Mode Pembeli atau bukan penjual, cek dulu apakah order ini miliknya sebagai pembeli.
-        val openAsSeller = isSeller && (ui.myRole == "seller" || ui.myOrders.none { it.id == orderId })
-        if (!openAsSeller) {
-            if (pendingOrderNotificationId != orderId) return@launch
-            pendingOrderNotificationId = null
-            ui.selectedBuyerOrderId = orderId
-            ui.lastOrderId = orderId
-            refreshMyOrders()
-            ui.go(Screen.READY)
-            return@launch
+    pendingPushStallId = stallId
+    pendingPushTargetRole = resolvedRole
+    pendingPushTargetScreen = resolvedScreen
+
+    // Jika sesi & routing layar sudah aktif (warm start / onNewIntent), navigasi langsung;
+    // jika masih cold start, `routeSignedInUser()` akan memanggil `consumePendingPushNavigation()`.
+    if (SupabaseRepository.hasSession() && ui.myRole != null) {
+        authScope.launch {
+            consumePendingPushNavigation()
         }
-        // Bila routeSignedInUser sudah lebih dulu mengonsumsi id ini, jangan navigasi ulang.
-        if (pendingOrderNotificationId != orderId) return@launch
-        pendingOrderNotificationId = null
-        ui.myRole = "seller"
-        if (ui.currentScreen != Screen.ADMIN_DETAIL) ui.showAdmin()
-        ensureSellerStallName {
+    }
+}
+
+/**
+ * Mengeksekusi deep-link push notification yang tertunda secara deterministik (1 jalur tunggal)
+ * setelah sesi login & profil user selesai dimuat.
+ */
+internal suspend fun MainActivity.consumePendingPushNavigation() {
+    val screen = pendingPushTargetScreen ?: when {
+        pendingChatConversationId != null -> "chat"
+        pendingOrderNotificationId != null -> "order_detail"
+        pendingPushStallId != null -> "store_profile"
+        else -> null
+    } ?: return
+
+    val chatConvoId = pendingChatConversationId
+    val orderId = pendingOrderNotificationId
+    val stallId = pendingPushStallId
+    val targetRole = pendingPushTargetRole
+
+    pendingChatConversationId = null
+    pendingOrderNotificationId = null
+    pendingPushStallId = null
+    pendingPushTargetRole = null
+    pendingPushTargetScreen = null
+
+    if (!SupabaseRepository.awaitLoggedIn()) return
+
+    when (screen) {
+        "chat" -> {
+            val cid = chatConvoId?.takeIf { it.isNotBlank() } ?: return
+            openConversationById(cid)
+        }
+        "order_detail" -> {
+            val oid = orderId?.takeIf { it.isNotBlank() } ?: return
+            val prof = SupabaseRepository.fetchMyAccountProfile()
+            val isSeller = prof?.isSellerVerified == true || prof?.role == "seller" || ui.myIsSellerVerified
+            ui.myIsSellerVerified = isSeller
+
+            val openAsSeller = when (targetRole) {
+                "seller" -> isSeller
+                "buyer" -> false
+                else -> isSeller && (ui.myRole == "seller" || ui.myOrders.none { it.id == oid })
+            }
+
+            if (!openAsSeller) {
+                if (ui.myRole == "seller") {
+                    ui.myRole = "buyer"
+                    ui.isSellerProfile = false
+                }
+                ui.selectedBuyerOrderId = oid
+                ui.lastOrderId = oid
+                refreshMyOrders()
+                ui.go(Screen.READY)
+                return
+            }
+
+            ui.myRole = "seller"
+            ui.isSellerProfile = false
             if (ui.currentScreen != Screen.ADMIN_DETAIL) ui.showAdmin()
-            startAdminOrders()
-            refreshSellerProducts()
-            openOrderDetail(orderId)
+            ensureSellerStallName {
+                if (ui.currentScreen != Screen.ADMIN_DETAIL) ui.showAdmin()
+                startAdminOrders()
+                refreshSellerProducts()
+                openOrderDetail(oid)
+            }
+        }
+        "store_profile" -> {
+            val sid = stallId?.takeIf { it.isNotBlank() } ?: ui.myStallId?.takeIf { it.isNotBlank() }
+            if (sid != null) {
+                com.jajanin.app.feature.buyer.store_profile.StoreProfileViewModel.openStoreProfile(this, sid)
+            } else {
+                openNotif()
+            }
+        }
+        else -> {
+            if (targetRole == "seller" && ui.myIsSellerVerified && ui.myRole != "seller") {
+                ui.myRole = "seller"
+                ui.isSellerProfile = false
+                startAdminOrders()
+            }
+            openNotif()
         }
     }
 }

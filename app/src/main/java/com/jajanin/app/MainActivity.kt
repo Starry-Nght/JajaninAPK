@@ -219,10 +219,11 @@ class MainActivity : Activity() {
                 }
                 NotificationHelper.showOrderUpdate(
                     context = this,
-                    notificationKey = "${order.id}:status:$newStatus",
+                    notificationKey = "order:${order.id}:status:$newStatus",
                     orderId = order.id,
                     title = title,
                     body = body,
+                    targetRole = "buyer",
                 )
             }
 
@@ -244,10 +245,11 @@ class MainActivity : Activity() {
                 }
                 NotificationHelper.showOrderUpdate(
                     context = this,
-                    notificationKey = "${order.id}:pay:$newPay",
+                    notificationKey = "order:${order.id}:pay:$newPay",
                     orderId = order.id,
                     title = title,
                     body = body,
+                    targetRole = "buyer",
                 )
             }
         }
@@ -294,18 +296,20 @@ class MainActivity : Activity() {
                 val summary = order.itemsSummary.ifBlank { "${order.itemCount} item" }
                 NotificationHelper.showOrderUpdate(
                     context = this,
-                    notificationKey = "${order.id}:new",
+                    notificationKey = "order:${order.id}:new",
                     orderId = order.id,
                     title = "Pesanan Baru #${order.pickupCode}",
                     body = "${order.buyerName} memesan $summary (${formatRupiah(order.totalIdr)})",
+                    targetRole = "seller",
                 )
             } else if (alreadyNotified && oldPay != null && oldPay != newPay && newPay == "paid" && order.paymentMethod.equals("qris", ignoreCase = true)) {
                 NotificationHelper.showOrderUpdate(
                     context = this,
-                    notificationKey = "${order.id}:midtrans_paid",
+                    notificationKey = "order:${order.id}:midtrans_paid",
                     orderId = order.id,
                     title = "Pembayaran Midtrans #${order.pickupCode} Lunas",
                     body = "${order.buyerName} telah menyelesaikan pembayaran (${formatRupiah(order.totalIdr)}). Pesanan siap diproses.",
+                    targetRole = "seller",
                 )
             }
         }
@@ -512,6 +516,7 @@ class MainActivity : Activity() {
         refreshMyAvatarUrl()
         refreshMyOrderRatings()
         if (role == "developer") {
+            registerMyDevice()
             if (!developerUnlocked) {
                 ui.myRole = "buyer"
                 ui.showHome()
@@ -528,7 +533,7 @@ class MainActivity : Activity() {
             ui.showDev()
             startDeveloper()
             refreshInbox()
-            pendingOrderNotificationId?.let { pendingOrderNotificationId = null }
+            consumePendingPushNavigation()
             return
         }
         // Semua akun non-developer default masuk sebagai Pembeli (Mode Buyer);
@@ -544,16 +549,7 @@ class MainActivity : Activity() {
         startInboxObserver()
         startChatObserver()
         ensureOnlinePresence("buyer")
-        pendingOrderNotificationId?.let { orderId ->
-            pendingOrderNotificationId = null
-            ui.selectedBuyerOrderId = orderId
-            ui.lastOrderId = orderId
-            ui.go(Screen.READY)
-        }
-        pendingChatConversationId?.let { cid ->
-            pendingChatConversationId = null
-            openConversationById(cid)
-        }
+        consumePendingPushNavigation()
     }
 
     /** Status akun sendiri (mis. suspended) untuk banner + blokir client-side. */
@@ -570,6 +566,7 @@ class MainActivity : Activity() {
             if (SupabaseRepository.hasSession()) {
                 refreshMyStatus()
                 ensureOnlinePresence()
+                registerMyDevice()
             }
         }
         if (ui.myRole == "buyer") {
@@ -580,6 +577,7 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        NotificationHelper.isAppInForeground = false
         inlineSearch?.dismiss()
         autoRefreshJob?.cancel()
         autoRefreshJob = null
@@ -589,7 +587,29 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        NotificationHelper.attachActivity(this)
+        NotificationHelper.isAppInForeground = true
         resumePendingOtaIfPermitted()
+    }
+
+    override fun onPause() {
+        NotificationHelper.isAppInForeground = false
+        super.onPause()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 4411 &&
+            grantResults.isNotEmpty() &&
+            grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            NotificationHelper.ensureChannel(this)
+            registerMyDevice()
+        }
     }
 
     /** Mendaftarkan token FCM perangkat ini (semua role). Gagal = diam. */
@@ -597,9 +617,13 @@ class MainActivity : Activity() {
         if (!SupabaseRepository.hasSession()) return
         authScope.launch {
             runCatching {
-                val uid = SupabaseRepository.currentUid() ?: return@runCatching
-                val token = NotificationHelper.currentFcmToken() ?: return@runCatching
-                OrderRepository.registerDevice(uid, token)
+                val (_, uid) = SupabaseRepository.requireFreshSessionAuth()
+                val token = NotificationHelper.currentFcmToken(this@MainActivity) ?: return@runCatching
+                OrderRepository.registerDevice(
+                    userId = uid,
+                    fcmToken = token,
+                    deviceLabel = NotificationHelper.deviceLabel(),
+                )
             }
         }
     }
@@ -737,8 +761,13 @@ class MainActivity : Activity() {
 
     /** Dasbor developer wajib kode akses + login DAN ber-role developer di database. */
     internal var pendingOrderNotificationId: String? = null
+    internal var pendingPushTargetRole: String? = null
+    internal var pendingPushTargetScreen: String? = null
+    internal var pendingPushStallId: String? = null
 
     override fun onDestroy() {
+        NotificationHelper.isAppInForeground = false
+        NotificationHelper.detachActivity(this)
         autoRefreshJob?.cancel()
         otaDownloadJob?.cancel()
         chatListJob?.cancel()
@@ -1147,7 +1176,7 @@ class MainActivity : Activity() {
                 ui.unreadChatByOrder = emptyMap()
                 runCatching {
                     val uid = SupabaseRepository.currentUid()
-                    val token = NotificationHelper.currentFcmToken()
+                    val token = NotificationHelper.currentFcmToken(this@MainActivity)
                     if (uid != null && token != null) OrderRepository.removeDevice(uid, token)
                 }
                 SupabaseRepository.logout()
@@ -1157,6 +1186,11 @@ class MainActivity : Activity() {
                 devObserver = null
                 inboxObserverClose()
                 resetOrderNotificationState()
+                pendingOrderNotificationId = null
+                pendingChatConversationId = null
+                pendingPushTargetRole = null
+                pendingPushTargetScreen = null
+                pendingPushStallId = null
                 ui.adminNotifOpen = false
                 ui.isSellerProfile = false
                 ui.myRole = null

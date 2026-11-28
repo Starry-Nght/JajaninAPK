@@ -48,6 +48,7 @@ internal fun MainActivity.switchToSellerMode() {
     refreshInbox()
     startInboxObserver()
     startChatObserver()
+    registerMyDevice()
     ensureOnlinePresence("seller")
     Toast.makeText(this, "Beralih ke Mode Penjual", Toast.LENGTH_SHORT).show()
 }
@@ -63,6 +64,7 @@ internal fun MainActivity.switchToBuyerMode() {
     refreshInbox()
     startInboxObserver()
     startChatObserver()
+    registerMyDevice()
     ensureOnlinePresence("buyer")
     Toast.makeText(this, "Beralih ke Mode Pembeli", Toast.LENGTH_SHORT).show()
 }

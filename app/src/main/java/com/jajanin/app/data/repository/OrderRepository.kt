@@ -1120,21 +1120,42 @@ internal object OrderRepository {
     }.getOrNull().orEmpty()
 
     /**
-     * Mendaftarkan token FCM perangkat ini untuk notifikasi order admin.
-     * Upsert pada (user_id, fcm_token) agar token yang sama tidak ganda.
+     * Mendaftarkan/memperbarui token FCM perangkat ini untuk seluruh role (Buyer, Seller, Developer).
+     * Memanggil RPC `upsert_user_device_token` agar satu akun dapat memiliki multi-perangkat
+     * sekaligus mencegah kebocoran notifikasi lintas akun saat ganti akun di perangkat yang sama.
      */
-    suspend fun registerDevice(userId: String, fcmToken: String) {
-        client.postgrest.from("admin_devices")
-            .upsert(NewDevice(userId, fcmToken), onConflict = "user_id,fcm_token", defaultToNull = false)
+    suspend fun registerDevice(
+        userId: String,
+        fcmToken: String,
+        deviceLabel: String = "",
+    ) {
+        val cleanToken = fcmToken.trim()
+        if (cleanToken.length < 20) return
+        val rpcResult = runCatching {
+            client.postgrest.rpc(
+                "upsert_user_device_token",
+                buildJsonObject {
+                    put("p_fcm_token", cleanToken)
+                    put("p_platform", "android")
+                    put("p_device_label", deviceLabel.take(120))
+                },
+            )
+        }
+        if (rpcResult.isFailure) {
+            client.postgrest.from("admin_devices")
+                .upsert(NewDevice(userId, cleanToken), onConflict = "fcm_token", defaultToNull = false)
+        }
     }
 
     /** Melepas token perangkat ini saat logout agar notifikasi tidak dikirim ke sesi yang sudah keluar. */
     suspend fun removeDevice(userId: String, fcmToken: String) {
+        val cleanToken = fcmToken.trim()
+        if (cleanToken.isEmpty()) return
         client.postgrest.from("admin_devices")
             .delete {
                 filter {
                     eq("user_id", userId)
-                    eq("fcm_token", fcmToken)
+                    eq("fcm_token", cleanToken)
                 }
             }
     }
