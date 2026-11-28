@@ -153,6 +153,10 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
         }
         val priceY = if (storeInfo != null) top + photoH + 60f else top + photoH + 45f
         kit.text(c, formatRupiah(product.priceIdr), left + 2f, priceY, 13f, kit.ink, true)
+        bounds["item:${product.id}"] = RectF(left, top.coerceAtLeast(96f), left + tileW, (top + tileH).coerceAtMost(h - 82f))
+        if (storeInfo != null && top + photoH + 24f >= 96f && top + photoH + 42f <= h - 82f) {
+            bounds["openStore:${storeInfo.id}"] = RectF(left, top + photoH + 24f, left + tileW, top + photoH + 42f)
+        }
         if (available) {
             val inCartQty = com.jajanin.app.data.model.totalQtyForProductInCart(cart, product.id)
             val addLabel = when {
@@ -167,10 +171,6 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
             kit.rounded(c, add, kit.tint, 13f)
             kit.centerText(c, addLabel, add, 10.5f, kit.blue, true)
             bounds["add:${product.id}"] = add
-        }
-        bounds["item:${product.id}"] = RectF(left, top.coerceAtLeast(96f), left + tileW, (top + photoH + 42f).coerceAtMost(h - 82f))
-        if (storeInfo != null && top + photoH + 24f >= 96f && top + photoH + 42f <= h - 82f) {
-            bounds["openStore:${storeInfo.id}"] = RectF(left, top + photoH + 24f, left + tileW, top + photoH + 42f)
         }
     }
     contentHeight = gridTop + (matches.size + 1) / 2 * (tileH + 14f) + 40f

@@ -19,6 +19,7 @@ import com.jajanin.app.core.constants.STATUS_READY
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.DrawKit
 import com.jajanin.app.core.ui.HERO_TOP_OFFSET
+import com.jajanin.app.core.ui.HitBounds
 import com.jajanin.app.core.ui.NavSpec
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.components.InlineSearchOverlay
@@ -100,8 +101,8 @@ internal class JajaninView(context: Context) : View(context) {
 
     internal val kit = DrawKit(resources) { width / 390f }
 
-    // Insertion-ordered so overlapping hit areas resolve exactly as they draw.
-    internal val bounds = LinkedHashMap<String, RectF>()
+    // Append-only draw-ordered hit regions so duplicate keys never overwrite earlier hitboxes.
+    internal val bounds = HitBounds()
 
     internal var products: List<ProductRow> = emptyList()
     internal var sellerProducts: List<ProductRow> = emptyList()
@@ -365,6 +366,7 @@ internal class JajaninView(context: Context) : View(context) {
     private var moved = false
     private var swipeMode = 0 // 0 = undecided, 1 = vertical scroll, 2 = horizontal tab swipe
     private var swipeDragX = 0f
+    private var downHitKey: String? = null
 
     // Dikonsumsi drawBottomNav di BottomNav.kt: tab yang ditekan + waktu mulai animasi indikator.
     internal var pressedTab: String? = null
@@ -531,7 +533,7 @@ internal class JajaninView(context: Context) : View(context) {
     }
 
     internal fun selectDevTab(nextTab: String) {
-        val tabOrder = listOf("Overview", "Users", "Sellers", "Orders", "Warn", "Info")
+        val tabOrder = listOf("Overview", "Users", "Sellers", "Orders", "Laporan", "Warn", "Info")
         val dir = when {
             tabOrder.indexOf(nextTab) > tabOrder.indexOf(devTab) -> 1f
             tabOrder.indexOf(nextTab) < tabOrder.indexOf(devTab) -> -1f
@@ -784,7 +786,7 @@ internal class JajaninView(context: Context) : View(context) {
         navContentInvalidator?.invoke()
     }
 
-    private fun navScrollPad(): Float = 82f
+    private fun navScrollPad(): Float = if (screen == Screen.DETAIL) 0f else 82f
 
     private fun canPullRefresh(): Boolean =
         screen == Screen.HOME || screen == Screen.EXPLORE || screen == Screen.STORE_SEARCH ||
@@ -889,9 +891,10 @@ internal class JajaninView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val s = width / 390f
+        val s = (width / 390f).takeIf { it > 0f } ?: return false
         val x = event.x / s
         val y = event.y / s
+        val hVirtual = height / s
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 touchStartX = x; touchStartY = y; previousY = y
@@ -900,9 +903,10 @@ internal class JajaninView(context: Context) : View(context) {
                 swipeMode = 0
                 swipeDragX = 0f
                 pullRefreshDragY = 0f
-                // Sama seperti dispatch di ACTION_UP (terbalik) supaya highlight
-                // menunjuk kontrol yang benar saat area tumpang tindih.
-                val hitKey = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key
+                // Scan terbalik (topmost-first) agar highlight menunjuk kontrol
+                // paling atas saat area tumpang tindih.
+                val hitKey = bounds.hitTest(x, y)
+                downHitKey = hitKey
                 if (inlineSearchActiveTarget != null &&
                     hitKey != "search" &&
                     hitKey != "clearSearch" &&
@@ -920,21 +924,38 @@ internal class JajaninView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_MOVE -> {
                 val scrollable = screen == Screen.HOME || screen == Screen.EXPLORE ||
-                    screen == Screen.STORE_SEARCH || screen == Screen.STORE_PROFILE || screen == Screen.ORDERS ||
+                    screen == Screen.STORE_SEARCH || screen == Screen.STORE_PROFILE ||
+                    screen == Screen.DETAIL || screen == Screen.QRIS || screen == Screen.ORDERS ||
                     screen == Screen.READY || screen == Screen.ADMIN || screen == Screen.ADMIN_DETAIL ||
-                    screen == Screen.PRODUCT_FORM || screen == Screen.SELLER_MENU || screen == Screen.DEV || screen == Screen.CHECKOUT ||
-                    screen == Screen.NOTIF || screen == Screen.EXP_HISTORY || screen == Screen.PROFILE ||
-                    screen == Screen.CHAT_LIST
+                    screen == Screen.PRODUCT_FORM || screen == Screen.SELLER_MENU || screen == Screen.DEV ||
+                    screen == Screen.CHECKOUT || screen == Screen.NOTIF || screen == Screen.EXP_HISTORY ||
+                    screen == Screen.PROFILE || screen == Screen.CHAT_LIST
+                val maxScroll = (contentHeight - hVirtual + navScrollPad()).coerceAtLeast(0f)
                 val touchInPinnedHeader = touchStartY <= 68f
+                val touchInStickyFooter =
+                    (screen == Screen.DETAIL && touchStartY >= hVirtual - 168f) ||
+                        ((screen == Screen.QRIS || screen == Screen.CHECKOUT) && touchStartY >= hVirtual - 84f)
                 val dx = x - touchStartX
                 val dy = y - touchStartY
-                if (swipeMode == 0 && !adminNotifOpen && !touchInPinnedHeader) {
-                    if (abs(dx) > 12f && abs(dx) > abs(dy) * 1.25f && canSwipeHorizontal()) {
+                val absDx = abs(dx)
+                val absDy = abs(dy)
+                if (swipeMode == 0 && !adminNotifOpen && !touchInPinnedHeader && !touchInStickyFooter) {
+                    val canScrollVert = scrollable && (
+                        maxScroll > 0.5f ||
+                            (dy > 0f && scroll <= 0.5f && canPullRefresh())
+                    )
+                    if (canSwipeHorizontal() && absDx > 12f && absDx >= absDy * 1.1f) {
                         swipeMode = 2
                         moved = true
-                    } else if (scrollable && abs(dy) > 12f) {
+                        downHitKey = null
+                    } else if (canScrollVert && absDy > 12f && absDy > absDx) {
                         swipeMode = 1
                         moved = true
+                        downHitKey = null
+                    } else if (!canSwipeHorizontal() && canScrollVert && absDy > 12f) {
+                        swipeMode = 1
+                        moved = true
+                        downHitKey = null
                     }
                     if (swipeMode != 0 && (pressedTab != null || pressedKey != null || inlineSearchActiveTarget != null)) {
                         if (inlineSearchActiveTarget != null) {
@@ -942,6 +963,14 @@ internal class JajaninView(context: Context) : View(context) {
                         }
                         pressedTab = null
                         pressedKey = null
+                        invalidate()
+                    }
+                }
+                if (swipeMode == 0 && (absDx > 22f || absDy > 22f)) {
+                    if (pressedTab != null || pressedKey != null || downHitKey != null) {
+                        pressedTab = null
+                        pressedKey = null
+                        downHitKey = null
                         invalidate()
                     }
                 }
@@ -961,7 +990,6 @@ internal class JajaninView(context: Context) : View(context) {
                             scroll = 0f
                         } else {
                             pullRefreshDragY = 0f
-                            val maxScroll = (contentHeight - height / s + navScrollPad()).coerceAtLeast(0f)
                             scroll = (scroll + previousY - y).coerceIn(0f, maxScroll)
                         }
                         previousY = y
@@ -976,12 +1004,15 @@ internal class JajaninView(context: Context) : View(context) {
                 swipeMode = 0
                 swipeDragX = 0f
                 pullRefreshDragY = 0f
+                downHitKey = null
                 pressedTab = null
                 pressedKey = null
                 if (wasHorizontal) snapSlideBack(offset) else invalidate()
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                val fallbackHit = downHitKey
+                downHitKey = null
                 if (pressedTab != null || pressedKey != null) {
                     pressedTab = null
                     pressedKey = null
@@ -999,9 +1030,9 @@ internal class JajaninView(context: Context) : View(context) {
                     pullRefreshDragY = 0f
                     invalidate()
                 }
+                val elapsed = SystemClock.uptimeMillis() - touchDownAt
                 if (swipeMode == 2) {
                     val drag = swipeDragX
-                    val elapsed = SystemClock.uptimeMillis() - touchDownAt
                     swipeMode = 0
                     swipeDragX = 0f
                     val passed = abs(drag) >= 48f || (elapsed < 260L && abs(drag) >= 22f)
@@ -1009,10 +1040,22 @@ internal class JajaninView(context: Context) : View(context) {
                     if (!switched) snapSlideBack(drag)
                     return true
                 }
+                val upDx = x - touchStartX
+                val upDy = y - touchStartY
+                val touchInPinnedHeader = touchStartY <= 68f
+                val touchInStickyFooter =
+                    (screen == Screen.DETAIL && touchStartY >= hVirtual - 168f) ||
+                        ((screen == Screen.QRIS || screen == Screen.CHECKOUT) && touchStartY >= hVirtual - 84f)
+                if (swipeMode == 0 && !moved && !adminNotifOpen && !touchInPinnedHeader && !touchInStickyFooter &&
+                    canSwipeHorizontal() && elapsed < 280L && abs(upDx) >= 32f && abs(upDx) >= abs(upDy) * 1.15f
+                ) {
+                    stepHorizontalPage(if (upDx < 0f) 1 else -1)
+                    return true
+                }
                 swipeMode = 0
                 swipeDragX = 0f
-                if (moved) return true
-                val hit = bounds.entries.toList().asReversed().firstOrNull { it.value.contains(x, y) }?.key ?: return true
+                if (moved || abs(upDx) > 22f || abs(upDy) > 22f) return true
+                val hit = bounds.hitTest(x, y) ?: fallbackHit ?: return true
                 when {
                     // --- Fondasi: onboarding, pilihan role, autentikasi ---
                     hit == "welcome" -> go(Screen.LOGIN)

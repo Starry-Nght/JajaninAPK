@@ -8,6 +8,7 @@ import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.DrawKit
 import com.jajanin.app.core.ui.FloatNavItem
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.HitBounds
 import com.jajanin.app.core.ui.NavVariant
 import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.components.AppIcon
@@ -838,7 +839,7 @@ internal fun JajaninView.inboxUnreadCount(): Int =
 private fun displayLocalPhone(raw: String): String =
     if (raw.startsWith("+62")) "0" + raw.removePrefix("+62") else raw
 
-private fun LinkedHashMap<String, RectF>.putVisible(
+private fun HitBounds.putVisible(
     key: String,
     r: RectF,
     topLimit: Float = HEADER_H,

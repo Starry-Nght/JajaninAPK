@@ -163,7 +163,6 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                     11.5f,
                     if (isFav) kit.danger else kit.ink
                 )
-                bounds.putVisible("fav:${product.id}", favRect, topLimit = HEADER_H, bottomLimit = bottomClip)
 
                 // Open typography below image (no card box!)
                 kit.textEllipsized(c, product.name, left, y + imgH + 16f, tileW, 12.5f, kit.ink, true)
@@ -189,8 +188,10 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                     kit.textEllipsized(c, "${stat.totalQty}x terjual", left, y + imgH + 62f, tileW, 9.5f, kit.muted)
                 }
 
+                // Register tile hit BEFORE heart toggle so heart wins back-to-front hit-testing
                 val tileHit = RectF(left, y, left + tileW, y + tileH)
                 bounds.putVisible("item:${product.id}", tileHit, topLimit = HEADER_H, bottomLimit = bottomClip)
+                bounds.putVisible("fav:${product.id}", favRect, topLimit = HEADER_H, bottomLimit = bottomClip)
             }
         }
         y += tileH + 16f
@@ -271,6 +272,15 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                 val rowTop = y
                 val rowBottom = y + rowH
                 if (isVisible(rowTop, rowBottom)) {
+                    // Register full-row product detail hitbox first so specific inline controls
+                    // (heart, store link, add/stepper) registered after it always take priority.
+                    bounds.putVisible(
+                        "item:${product.id}",
+                        RectF(20f, rowTop, 370f, rowBottom),
+                        topLimit = HEADER_H,
+                        bottomLimit = bottomClip
+                    )
+
                     val imgRect = RectF(20f, rowTop + 16f, 98f, rowTop + 94f)
                     drawProductImage(c, product, imgRect, 8f)
 
@@ -303,6 +313,12 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                             textSize = 11f,
                             textColor = kit.blue,
                             bold = true,
+                        )
+                        bounds.putVisible(
+                            "openStore:${storeSummary.id}",
+                            RectF(108f, rowTop + 29f, 282f, rowTop + 47f),
+                            topLimit = HEADER_H,
+                            bottomLimit = bottomClip
                         )
                     }
 
@@ -379,21 +395,6 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                     // Hairline divider between rows
                     if (index < matches.size - 1) {
                         kit.line(c, 110f, rowBottom, 370f, rowBottom, kit.divider)
-                    }
-
-                    bounds.putVisible(
-                        "item:${product.id}",
-                        RectF(20f, rowTop, 284f, rowBottom),
-                        topLimit = HEADER_H,
-                        bottomLimit = bottomClip
-                    )
-                    if (storeSummary != null) {
-                        bounds.putVisible(
-                            "openStore:${storeSummary.id}",
-                            RectF(108f, rowTop + 29f, 282f, rowTop + 47f),
-                            topLimit = HEADER_H,
-                            bottomLimit = bottomClip
-                        )
                     }
                 }
                 y += rowH

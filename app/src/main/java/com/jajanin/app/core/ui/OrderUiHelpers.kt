@@ -65,7 +65,36 @@ internal fun JajaninView.press(c: Canvas, key: String, r: RectF, radius: Float =
     if (pressedKey == key) kit.rounded(c, r, kit.pressOverlay, radius)
 }
 
-internal fun LinkedHashMap<String, RectF>.putVisible(
+/**
+ * Append-only hit-test registry preserving draw order without overwriting
+ * duplicate action keys (e.g. the same store or product shown in multiple
+ * sections on Home/Explore/Payment). Scans back-to-front so topmost controls win.
+ */
+internal class HitBounds {
+    private val entries = ArrayList<Pair<String, RectF>>(64)
+
+    fun clear() {
+        entries.clear()
+    }
+
+    operator fun set(key: String, rect: RectF) {
+        entries.add(key to rect)
+    }
+
+    fun put(key: String, rect: RectF) {
+        entries.add(key to rect)
+    }
+
+    fun hitTest(x: Float, y: Float): String? {
+        for (i in entries.lastIndex downTo 0) {
+            val (key, rect) = entries[i]
+            if (rect.contains(x, y)) return key
+        }
+        return null
+    }
+}
+
+internal fun HitBounds.putVisible(
     key: String,
     r: RectF,
     topLimit: Float = 86f,
