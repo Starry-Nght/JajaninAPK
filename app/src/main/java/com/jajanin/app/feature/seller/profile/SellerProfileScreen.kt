@@ -217,14 +217,6 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
             key = "profileStoreCategory",
         ),
         CleanProfileRow(
-            icon = "location",
-            title = "Kelas / Ruangan Ambil",
-            value = myStallRoom.takeIf { it.isNotBlank() } ?: "Atur",
-            valueColor = if (myStallRoom.isBlank()) kit.blue else kit.muted,
-            key = "profileStallRoom",
-            useAppIcon = true,
-        ),
-        CleanProfileRow(
             icon = "receipt",
             title = "Deskripsi Warung",
             value = if (myStallBio.isBlank()) "Isi" else "Ubah",
