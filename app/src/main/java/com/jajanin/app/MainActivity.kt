@@ -65,6 +65,7 @@ import com.jajanin.app.data.repository.SellerInvite
 import com.jajanin.app.data.repository.StallInfo
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.auth.NativeLoginOverlay
+import com.jajanin.app.feature.seller.menu.NativeProductFormOverlay
 import com.jajanin.app.feature.buyer.exp.EXP_MAX_LEVEL
 import com.jajanin.app.feature.buyer.exp.ExpEntry
 import com.jajanin.app.feature.buyer.exp.ExpRepository
@@ -87,6 +88,7 @@ class MainActivity : Activity() {
     internal val authScope = CoroutineScope(Dispatchers.Main)
     internal var inlineSearch: InlineSearchOverlay? = null
     internal lateinit var loginOverlay: NativeLoginOverlay
+    internal lateinit var productFormOverlay: NativeProductFormOverlay
     internal var pendingPasswordRecovery = false
     internal var adminObserver: OrderObserver? = null
     internal var adminRefreshJob: Job? = null
@@ -391,18 +393,22 @@ class MainActivity : Activity() {
             inlineSearch?.syncCanvasBounds(rect, scale, textSize)
         }
         loginOverlay = NativeLoginOverlay(this, root)
+        productFormOverlay = NativeProductFormOverlay(this, root)
         ui.screenChangedListener = { screen ->
             inlineSearch?.dismiss()
             val isLogin = screen == Screen.LOGIN
-            if (isLogin) {
+            val isProductForm = screen == Screen.PRODUCT_FORM
+            if (isLogin || isProductForm) {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
             } else {
                 window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
             }
             loginOverlay.setVisible(isLogin)
+            productFormOverlay.setVisible(isProductForm)
         }
         ui.loginThemeListener = { dark ->
             loginOverlay.applyTheme(dark)
+            productFormOverlay.applyTheme(dark)
         }
         @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -1175,6 +1181,7 @@ class MainActivity : Activity() {
             return
         }
         if (ui.currentScreen == Screen.LOGIN && loginOverlay.handleBack()) return
+        if (ui.currentScreen == Screen.PRODUCT_FORM && productFormOverlay.handleBack()) return
         if (!ui.goBack()) super.onBackPressed()
     }
 }

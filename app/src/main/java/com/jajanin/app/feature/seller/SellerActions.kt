@@ -185,6 +185,7 @@ internal fun MainActivity.showSellerProductPoDatePicker() {
                 Toast.makeText(this, "Tanggal PO ditambahkan: ${com.jajanin.app.data.repository.formatCalendarShortChip(picked)}", Toast.LENGTH_SHORT).show()
             }
             ui.invalidate()
+            productFormOverlay.syncAsyncState()
         },
         curCal.get(java.util.Calendar.YEAR),
         curCal.get(java.util.Calendar.MONTH),
@@ -443,6 +444,7 @@ internal fun MainActivity.saveProductForm() {
     if (ui.productImageUploading) {
         ui.productError = "Tunggu gambar selesai diunggah."
         ui.invalidate()
+        productFormOverlay.syncAsyncState()
         return
     }
     val priceValue = ui.productPrice.filter(Char::isDigit).toIntOrNull()
@@ -461,11 +463,13 @@ internal fun MainActivity.saveProductForm() {
     }
     if (ui.productError.isNotBlank()) {
         ui.invalidate()
+        productFormOverlay.syncAsyncState()
         Toast.makeText(this, ui.productError, Toast.LENGTH_SHORT).show()
         return
     }
     ui.productSaving = true
     ui.invalidate()
+    productFormOverlay.syncAsyncState()
     saveProduct(null)
 }
 
@@ -482,6 +486,7 @@ internal fun MainActivity.uploadProductImage(uri: android.net.Uri) {
     val self = this
     ui.productImageUploading = true
     ui.invalidate()
+    productFormOverlay.syncAsyncState()
     authScope.launch(kotlinx.coroutines.Dispatchers.IO) {
         try {
             val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -514,13 +519,15 @@ internal fun MainActivity.uploadProductImage(uri: android.net.Uri) {
                 ui.productImageUrl = publicUrl
                 ui.productImageUploading = false
                 ui.invalidate()
-                            Toast.makeText(self, "Gambar terunggah.", Toast.LENGTH_SHORT).show()
+                productFormOverlay.syncAsyncState()
+                Toast.makeText(self, "Gambar terunggah.", Toast.LENGTH_SHORT).show()
             }
         } catch (error: Throwable) {
             launch(kotlinx.coroutines.Dispatchers.Main) {
                 ui.productImageUploading = false
                 ui.invalidate()
-                            Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                productFormOverlay.syncAsyncState()
+                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -601,7 +608,10 @@ internal fun MainActivity.loadProductImage(url: String) {
         }.getOrNull()
         if (bitmap != null) {
             ProductImageCache.images[url] = bitmap
-            launch(Dispatchers.Main) { ui.invalidate() }
+            launch(Dispatchers.Main) {
+                ui.invalidate()
+                productFormOverlay.syncAsyncState()
+            }
         }
     }
 }
@@ -612,6 +622,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
         ui.productError = "Tunggu gambar selesai diunggah."
         ui.productSaving = false
         ui.invalidate()
+        productFormOverlay.syncAsyncState()
         return
     }
     val price = ui.productPrice.filter(Char::isDigit).toIntOrNull()
@@ -621,12 +632,14 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
         ui.productError = "Harga tidak valid."
         ui.productSaving = false
         ui.invalidate()
+        productFormOverlay.syncAsyncState()
         return
     }
     if (stock == null || stock !in 1..100) {
         ui.productError = "Stok wajib diisi antara 1 sampai 100 sebelum menjual produk."
         ui.productSaving = false
         ui.invalidate()
+        productFormOverlay.syncAsyncState()
         Toast.makeText(this, ui.productError, Toast.LENGTH_LONG).show()
         return
     }
@@ -637,6 +650,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
         ui.productError = "Menu khusus Pre-Order wajib memilih minimal 1 tanggal kalender PO (Senin–Jumat)."
         ui.productSaving = false
         ui.invalidate()
+        productFormOverlay.syncAsyncState()
         Toast.makeText(this, ui.productError, Toast.LENGTH_LONG).show()
         return
     }
@@ -691,6 +705,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
             ui.productSaving = false
             ui.productError = SupabaseRepository.errorMessage(error)
             ui.invalidate()
+            productFormOverlay.syncAsyncState()
             Toast.makeText(self, ui.productError, Toast.LENGTH_LONG).show()
         }
     }

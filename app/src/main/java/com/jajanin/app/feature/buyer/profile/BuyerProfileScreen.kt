@@ -7,8 +7,11 @@ import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.components.CleanProfileRow
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
-import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
+import com.jajanin.app.core.ui.components.drawProfileElevatedPromoCard
+import com.jajanin.app.core.ui.components.drawProfileHairlineRows
+import com.jajanin.app.core.ui.components.drawProfileSectionHeading
 import com.jajanin.app.core.ui.drawBitmapCenterCrop
 import com.jajanin.app.core.ui.drawBottomNav
 import com.jajanin.app.core.ui.drawIcon
@@ -19,7 +22,7 @@ import com.jajanin.app.feature.developer.inboxUnreadCount
 import com.jajanin.app.feature.seller.loadProductImage
 import com.jajanin.app.feature.seller.profile.drawSellerProfile
 
-private const val HEADER_H = 60f
+private const val STICKY_HEADER_H = 54f
 
 internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     if (isSellerProfile) {
@@ -28,43 +31,44 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     }
     c.drawColor(kit.bg)
     val off = -scroll
+    val showSticky = scroll > 28f
+    val topClip = if (showSticky) STICKY_HEADER_H else 0f
     val navClear = h - GLASS_TOP_OFFSET - 12f
-    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
+    fun visible(top: Float, bottom: Float) = bottom >= topClip && top <= navClear
 
     val bodySave = c.save()
-    c.clipRect(0f, HEADER_H, w, h)
+    c.clipRect(0f, topClip, w, h)
 
-    var y = 78f + off
+    var y = 26f + off
 
-    // 1. Open Editorial Identity Block (No outer card box; avatar tappable to change photo)
-    if (visible(y, y + 72f)) {
+    // 1. Big Editorial Title (Airbnb-inspired spacious top header)
+    if (visible(y, y + 38f)) {
+        kit.text(c, "Profil", 22f, y + 30f, 28f, kit.ink, true)
+    }
+    y += 52f
+
+    // 2. Clean Profile Identity Row (Circular avatar + Name + NIS/Class + chevron + hairline)
+    val idRowH = 74f
+    val idRect = RectF(16f, y, 374f, y + idRowH)
+    if (visible(y, y + idRowH + 8f)) {
+        press(c, "profileAvatar", RectF(14f, y, 376f, y + idRowH), 12f)
         val titleText = myDisplayName.takeIf { it.isNotBlank() }?.take(26) ?: "Pengguna Jajanin"
         val initial = (titleText.firstOrNull() ?: 'A').uppercaseChar().toString()
-        val avatar = RectF(20f, y, 72f, y + 52f)
+        val avatar = RectF(22f, y + 8f, 80f, y + 66f)
         val avatarUrl = myAvatarUrl.takeIf { it.startsWith("https://") }
         val avatarBmp = avatarUrl?.let { ProductImageCache.images[it] }
         if (avatarBmp != null) {
-            drawBitmapCenterCrop(c, avatarBmp, avatar, 12f)
-            kit.rounded(c, avatar, Color.TRANSPARENT, 12f, kit.border)
+            drawBitmapCenterCrop(c, avatarBmp, avatar, 29f)
+            kit.rounded(c, avatar, Color.TRANSPARENT, 29f, kit.border)
         } else {
-            kit.rounded(c, avatar, kit.tint, 12f)
-            kit.centerText(c, initial, avatar, 21f, kit.blue, true)
+            kit.rounded(c, avatar, kit.tint, 29f)
+            kit.centerText(c, initial, avatar, 22f, kit.blue, true)
             if (avatarUrl != null) activity()?.loadProductImage(avatarUrl)
         }
-        val camBadge = RectF(52f, y + 36f, 74f, y + 54f)
-        kit.rounded(c, camBadge, kit.blue, 9f, kit.bg)
-        kit.centerText(c, "Ubah", camBadge, 7.2f, Color.WHITE, true)
-        bounds.putVisible("profileAvatar", avatar, topLimit = HEADER_H, bottomLimit = navClear)
-        press(c, "profileAvatar", avatar, 12f)
-
-        val suspended = myAccountStatus == "suspended"
-        val statusText = if (suspended) "Ditangguhkan" else "Aktif"
-        val statusColor = if (suspended) kit.danger else kit.success
-        val statusBg = if (suspended) kit.dangerBorder else kit.successSoft
-        val statusW = kit.measure(statusText, 9.5f, true) + 16f
-        val statusPill = RectF(370f - statusW, y + 4f, 370f, y + 24f)
-        kit.rounded(c, statusPill, statusBg, 5f)
-        kit.centerText(c, statusText, statusPill, 9.5f, statusColor, true)
+        // Subtle circular edit icon badge on bottom-right of avatar
+        val editDot = RectF(61f, y + 47f, 81f, y + 67f)
+        kit.rounded(c, editDot, kit.blue, 10f, kit.bg)
+        drawIcon(c, "edit", editDot.centerX(), editDot.centerY(), 10f, Color.WHITE)
 
         val isDevUser = StoreVerifiedBadge.isDevIdentity(
             view = this,
@@ -77,249 +81,202 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
             c = c,
             storeName = titleText,
             isVerified = isDevUser,
-            x = 84f,
-            baselineY = y + 19f,
-            maxTotalWidth = (statusPill.left - 94f).coerceAtLeast(80f),
-            textSize = 16.5f,
+            x = 96f,
+            baselineY = y + 29f,
+            maxTotalWidth = 242f,
+            textSize = 17f,
             textColor = kit.ink,
             bold = true,
             isDev = isDevUser,
             nis = myNis,
             stallId = myStallId.orEmpty(),
         )
-        val nisText = buildString {
-            append(if (myNis.isNotBlank()) "NIS: $myNis" else "NIS: Belum diisi")
-            append("  ·  ")
-            append(if (myClass.isNotBlank()) "Kelas: $myClass" else "Kelas: Belum diisi")
+        val suspended = myAccountStatus == "suspended"
+        val subLine1 = when {
+            suspended -> "Akun ditangguhkan"
+            myNis.isNotBlank() && myClass.isNotBlank() -> "NIS $myNis · Kelas $myClass"
+            myNis.isNotBlank() -> "NIS $myNis"
+            !SupabaseRepository.hasSession() -> "Belum masuk"
+            else -> "Ubah foto profil"
         }
-        val nisColor = if (myNis.isNotBlank() && myClass.isNotBlank()) kit.blue else kit.danger
-        kit.textEllipsized(c, nisText, 84f, y + 36f, 280f, 12f, nisColor, true)
+        kit.textEllipsized(
+            c,
+            subLine1,
+            96f,
+            y + 47f,
+            242f,
+            12.5f,
+            if (suspended) kit.danger else kit.muted,
+            suspended,
+        )
         val visibleEmail = mySellerVerifiedEmail
             .trim()
             .takeIf { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) }
             ?: SupabaseRepository.currentVisibleEmail()
-        if (visibleEmail != null) {
-            kit.textEllipsized(
-                c,
-                visibleEmail,
-                84f,
-                y + 53f,
-                280f,
-                11.5f,
-                kit.muted
-            )
-        } else if (!SupabaseRepository.hasSession()) {
-            kit.textEllipsized(c, "Belum masuk", 84f, y + 53f, 280f, 11.5f, kit.muted)
-        }
-    }
-    val hasSubLine = !SupabaseRepository.hasSession() ||
-        mySellerVerifiedEmail.trim().let { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) } ||
-        SupabaseRepository.currentVisibleEmail() != null
-    y += if (hasSubLine) 76f else 66f
+        val subLine2 = visibleEmail?.let { "$it · Ubah foto" } ?: "Ketuk untuk ubah foto profil"
+        kit.textEllipsized(c, subLine2, 96f, y + 63f, 242f, 11f, kit.blue)
 
-    // 1b. Dual-Mode Switcher / Aktivasi Penjual (1 Akun: Pembeli <-> Penjual via Email OTP)
-    val sellerCard = RectF(20f, y, 370f, y + 60f)
-    if (visible(sellerCard.top, sellerCard.bottom)) {
-        kit.rounded(c, sellerCard, kit.tint, 10f, kit.blue)
-        kit.rect(c, 20f, y + 10f, 24f, y + 50f, kit.blue)
-        if (myIsSellerVerified) {
-            kit.textEllipsized(c, "Beralih ke Mode Penjual", 36f, y + 25f, 240f, 13.5f, kit.blue, true)
-            val stallSub = myStallName.takeIf { it.isNotBlank() } ?: "Kelola produk, stok & pesanan warungmu"
-            kit.textEllipsized(c, stallSub, 36f, y + 44f, 240f, 11f, kit.muted)
-            drawTrailingActionWithArrow(c, "Buka", 356f, y + 34f, 12f, kit.blue)
-            bounds.putVisible("switchToSeller", sellerCard, topLimit = HEADER_H, bottomLimit = navClear)
-            press(c, "switchToSeller", sellerCard, 10f)
-        } else {
-            kit.textEllipsized(c, "Mulai Berjualan di Jajanin", 36f, y + 25f, 236f, 13.5f, kit.blue, true)
-            kit.textEllipsized(c, "Aktifkan Mode Penjual via Email OTP 6 digit", 36f, y + 44f, 242f, 10.5f, kit.muted)
-            drawTrailingActionWithArrow(c, "Aktifkan", 356f, y + 34f, 11.5f, kit.blue)
-            bounds.putVisible("activateSeller", sellerCard, topLimit = HEADER_H, bottomLimit = navClear)
-            press(c, "activateSeller", sellerCard, 10f)
-        }
+        drawIcon(c, "chevronRight", 360f, y + idRowH / 2f, 15f, kit.ink)
+        kit.line(c, 22f, y + idRowH + 6f, 368f, y + idRowH + 6f, kit.divider)
     }
-    y += 74f
+    bounds.putVisible("profileAvatar", idRect, topLimit = topClip, bottomLimit = navClear)
+    y += idRowH + 24f
 
-    // 2. Section: AKUN (Identitas siswa dikunci sesuai data sekolah & tampil di header atas)
-    if (visible(y, y + 20f)) {
-        kit.text(c, "AKUN", 20f, y + 12f, 10.5f, kit.muted, true)
+    // 3. Elevated Feature Promo Card (Airbnb "Airbnb your place" style -> Seller Mode / Buka Warung)
+    val promoHeadline = if (myIsSellerVerified) "Mode Penjual" else "Buka Warung di Jajanin"
+    val promoSubtitle = if (myIsSellerVerified) {
+        val stall = myStallName.takeIf { it.isNotBlank() }
+        if (stall != null) "Kelola etalase $stall, stok, dan pesanan masuk." else "Kelola produk, stok, dan pesanan warungmu."
+    } else {
+        "Mulai berjualan di sekolah dengan mudah dan terima pesanan."
     }
-    y += 20f
+    y = drawProfileElevatedPromoCard(
+        c = c,
+        top = y,
+        headline = promoHeadline,
+        subtitle = promoSubtitle,
+        key = if (myIsSellerVerified) "switchToSeller" else "activateSeller",
+        isSellerIllustration = true,
+        visible = ::visible,
+        topLimit = topClip,
+        bottomLimit = navClear,
+    )
+    y += 26f
 
+    // 4. Section: Pengaturan (Clean borderless icon + label + value + chevron rows)
+    y = drawProfileSectionHeading(c, "Pengaturan", y, ::visible)
     val unread = inboxUnreadCount()
-    val accountRows = buildList {
+    val hasAvatar = myAvatarUrl.startsWith("https://")
+    val settingsRows = buildList {
         if (myIsSellerVerified) {
             add(
-                ProfileRowSpec(
+                CleanProfileRow(
+                    icon = "store",
                     title = "Menu Dagangan",
-                    subtitle = if (sellerProducts.isNotEmpty()) {
-                        "${sellerProducts.count { it.available }} aktif dari ${sellerProducts.size} dagangan warungmu"
-                    } else {
-                        "Lihat, tambah & kelola dagangan warungmu"
-                    },
-                    trailing = if (sellerProducts.isNotEmpty()) "${sellerProducts.size} menu" else "Buka",
-                    trailingColor = kit.blue,
-                    key = "openSellerMenu"
+                    value = if (sellerProducts.isNotEmpty()) "${sellerProducts.size} menu" else "Buka",
+                    valueColor = kit.blue,
+                    key = "openSellerMenu",
                 )
             )
         }
         add(
-            ProfileRowSpec(
+            CleanProfileRow(
+                icon = "image",
                 title = "Foto Profil",
-                subtitle = if (myAvatarUrl.startsWith("https://")) "Foto profil terpasang · ketuk untuk ganti" else "Tambahkan foto profil dari galeri",
-                trailing = if (myAvatarUrl.startsWith("https://")) "Ubah" else "Upload",
-                trailingColor = kit.blue,
-                key = "profileAvatar"
+                value = if (hasAvatar) "Terpasang" else "Tambah",
+                valueColor = kit.blue,
+                key = "profileAvatar",
+                useAppIcon = true,
             )
         )
         add(
-            ProfileRowSpec(
+            CleanProfileRow(
+                icon = "phone",
                 title = "Nomor HP",
-                subtitle = myPhone.takeIf { it.isNotBlank() } ?: "Belum diisi · wajib sebelum memesan",
-                trailing = if (myPhone.isBlank()) "Isi" else "Ubah",
-                trailingColor = if (myPhone.isBlank()) kit.danger else kit.blue,
-                key = "profilePhone"
+                value = myPhone.takeIf { it.isNotBlank() }?.let { displayLocalPhone(it) } ?: "Belum diisi",
+                valueColor = if (myPhone.isBlank()) kit.danger else kit.muted,
+                key = "profilePhone",
             )
         )
         add(
-            ProfileRowSpec(
+            CleanProfileRow(
+                icon = "bell",
                 title = "Notifikasi & Pesan",
-                subtitle = if (unread > 0) "$unread pesan belum dibaca" else "Tidak ada pesan baru",
-                trailing = if (unread > 0) "$unread baru" else null,
-                trailingColor = kit.danger,
-                key = "inbox"
+                value = if (unread > 0) "$unread baru" else null,
+                valueColor = kit.danger,
+                key = "inbox",
+            )
+        )
+        add(
+            CleanProfileRow(
+                icon = "theme",
+                title = "Tema Aplikasi",
+                value = themeLabel,
+                valueColor = kit.blue,
+                key = "theme",
+                useAppIcon = true,
             )
         )
     }
-    y = drawCleanProfileGroup(c, y, accountRows, ::visible, navClear)
-    y += 22f
+    y = drawProfileHairlineRows(c, y, settingsRows, ::visible, topClip, navClear)
+    y += 24f
 
-    // 4. Section: PREFERENSI & INFORMASI
-    if (visible(y, y + 20f)) {
-        kit.text(c, "PREFERENSI & INFORMASI", 20f, y + 12f, 10.5f, kit.muted, true)
-    }
-    y += 20f
-
-    val appRows = listOf(
-        ProfileRowSpec(
-            title = "Tema Aplikasi",
-            subtitle = "Terang, gelap, atau ikuti sistem",
-            trailing = themeLabel,
-            trailingColor = kit.blue,
-            key = "theme"
-        ),
-        ProfileRowSpec(
+    // 5. Section: Dukungan & Informasi
+    y = drawProfileSectionHeading(c, "Dukungan", y, ::visible)
+    val supportRows = listOf(
+        CleanProfileRow(
+            icon = "chat",
             title = "Bantuan",
-            subtitle = "Panduan cara memesan di Jajanin",
-            key = "help"
+            key = "help",
         ),
-        ProfileRowSpec(
-            title = "Tentang Jajanin",
-            subtitle = "Informasi aplikasi & versi",
-            key = "about"
-        ),
-        ProfileRowSpec(
+        CleanProfileRow(
+            icon = "shield",
             title = "Informasi Penting",
-            subtitle = "Aturan pemesanan & jam operasional",
-            key = "infoPage"
+            key = "infoPage",
         ),
-        ProfileRowSpec(
+        CleanProfileRow(
+            icon = "box",
+            title = "Tentang Jajanin",
+            key = "about",
+        ),
+        CleanProfileRow(
+            icon = "refresh",
             title = "Cek Update (OTA)",
-            subtitle = if (otaUpdateAvailable) {
-                otaLatestChangelog?.replace('\n', ' ') ?: "Pembaruan siap dipasang langsung dari aplikasi"
-            } else {
-                "Periksa versi terbaru tanpa install ulang"
-            },
-            trailing = if (otaUpdateAvailable && !otaLatestVersion.isNullOrBlank()) {
+            value = if (otaUpdateAvailable && !otaLatestVersion.isNullOrBlank()) {
                 "Update $otaLatestVersion"
             } else {
                 "v${BuildConfig.VERSION_NAME}"
             },
-            trailingColor = if (otaUpdateAvailable) kit.blue else kit.muted,
-            key = "checkOta"
-        )
+            valueColor = if (otaUpdateAvailable) kit.blue else kit.muted,
+            key = "checkOta",
+        ),
     )
-    y = drawCleanProfileGroup(c, y, appRows, ::visible, navClear)
-    y += 24f
+    y = drawProfileHairlineRows(c, y, supportRows, ::visible, topClip, navClear)
+    y += 26f
 
-    // 5. Minimal Logout & Delete Account Rows (Radius 8f)
-    val logoutRow = RectF(20f, y, 370f, y + 48f)
+    // 6. Quiet Bottom Account Actions
+    val logoutRow = RectF(20f, y, 370f, y + 46f)
     if (visible(logoutRow.top, logoutRow.bottom)) {
-        kit.rounded(c, logoutRow, kit.card, 8f, kit.dangerBorder)
+        kit.rounded(c, logoutRow, kit.card, 12f, kit.border)
         kit.centerText(c, "Keluar dari akun", logoutRow, 13.5f, kit.danger, true)
-        press(c, "logout", logoutRow, 8f)
+        press(c, "logout", logoutRow, 12f)
     }
-    bounds.putVisible("logout", logoutRow, topLimit = HEADER_H, bottomLimit = navClear)
+    bounds.putVisible("logout", logoutRow, topLimit = topClip, bottomLimit = navClear)
 
-    val deleteRow = RectF(20f, logoutRow.bottom + 10f, 370f, logoutRow.bottom + 54f)
+    val deleteRow = RectF(20f, logoutRow.bottom + 10f, 370f, logoutRow.bottom + 48f)
     if (visible(deleteRow.top, deleteRow.bottom)) {
-        kit.rounded(c, deleteRow, kit.bg, 8f, kit.dangerBorder)
         val deleteLabel = if (myIsSellerVerified) "Hapus Akun Pembeli / Penjual" else "Hapus Akun Permanen"
-        kit.centerText(c, deleteLabel, deleteRow, 12.5f, kit.danger, true)
-        press(c, "deleteAccount", deleteRow, 8f)
+        kit.centerText(c, deleteLabel, deleteRow, 12.5f, kit.danger, false)
+        press(c, "deleteAccount", deleteRow, 10f)
     }
-    bounds.putVisible("deleteAccount", deleteRow, topLimit = HEADER_H, bottomLimit = navClear)
+    bounds.putVisible("deleteAccount", deleteRow, topLimit = topClip, bottomLimit = navClear)
+
+    val verY = deleteRow.bottom + 14f
+    if (visible(verY - 12f, verY + 8f)) {
+        kit.centerText(
+            c,
+            "Jajanin v${BuildConfig.VERSION_NAME}",
+            RectF(20f, verY - 10f, 370f, verY + 8f),
+            10.5f,
+            kit.muted,
+        )
+    }
 
     c.restoreToCount(bodySave)
 
-    // Flat Top Header
-    c.save()
-    c.translate(-slideX, 0f)
-    kit.rect(c, -100f, 0f, 490f, HEADER_H, kit.bg)
-    drawIcon(c, "chevronLeft", 28f, 32f, 18f, kit.ink)
-    kit.text(c, "Profil", 50f, 37f, 18f, kit.ink, true)
-    kit.line(c, 20f, HEADER_H, 370f, HEADER_H, kit.divider)
-    c.restore()
-    bounds["headerBack"] = RectF(12f, 10f, 56f, HEADER_H)
+    // Minimal sticky top bar only after scrolling past the big editorial title
+    if (showSticky) {
+        c.save()
+        c.translate(-slideX, 0f)
+        kit.rect(c, -100f, 0f, 490f, STICKY_HEADER_H, kit.bg)
+        kit.text(c, "Profil", 22f, 35f, 18f, kit.ink, true)
+        kit.line(c, 20f, STICKY_HEADER_H, 370f, STICKY_HEADER_H, kit.divider)
+        c.restore()
+    }
 
-    contentHeight = deleteRow.bottom - off + GLASS_TOP_OFFSET + 24f
+    contentHeight = (verY + 12f) - off + GLASS_TOP_OFFSET + 20f
     drawBottomNav(c, w, h, "Profile")
 }
 
-private data class ProfileRowSpec(
-    val title: String,
-    val subtitle: String,
-    val trailing: String? = null,
-    val trailingColor: Int? = null,
-    val key: String
-)
-
-private fun JajaninView.drawCleanProfileGroup(
-    c: Canvas,
-    startY: Float,
-    rows: List<ProfileRowSpec>,
-    visible: (Float, Float) -> Boolean,
-    navClear: Float
-): Float {
-    val rowH = 56f
-    val groupBottom = startY + rows.size * rowH
-    if (visible(startY, groupBottom)) {
-        kit.rounded(c, RectF(20f, startY, 370f, groupBottom), kit.card, 8f, kit.border)
-    }
-    rows.forEachIndexed { idx, row ->
-        val top = startY + idx * rowH
-        val rect = RectF(20f, top, 370f, top + rowH)
-        if (visible(top, top + rowH)) {
-            kit.textEllipsized(c, row.title, 34f, top + 24f, 210f, 13.5f, kit.ink, true)
-            kit.textEllipsized(c, row.subtitle, 34f, top + 42f, 224f, 11f, kit.muted)
-            if (!row.trailing.isNullOrBlank()) {
-                kit.textRight(
-                    c,
-                    row.trailing,
-                    338f,
-                    top + 32f,
-                    90f,
-                    11.5f,
-                    row.trailingColor ?: kit.muted,
-                    true
-                )
-            }
-            drawIcon(c, "chevronRight", 352f, top + rowH / 2f, 14f, kit.muted)
-            press(c, row.key, rect, 8f)
-            if (idx < rows.size - 1) {
-                kit.line(c, 34f, top + rowH, 356f, top + rowH, kit.divider)
-            }
-        }
-        bounds.putVisible(row.key, rect, topLimit = HEADER_H, bottomLimit = navClear)
-    }
-    return groupBottom
-}
+private fun displayLocalPhone(raw: String): String =
+    if (raw.startsWith("+62")) "0" + raw.removePrefix("+62") else raw

@@ -5,84 +5,78 @@ import android.graphics.RectF
 import com.jajanin.app.BuildConfig
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.GLASS_TOP_OFFSET
+import com.jajanin.app.core.ui.components.CleanProfileRow
 import com.jajanin.app.core.ui.components.StoreAvatar
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
-import com.jajanin.app.core.ui.components.drawTrailingActionWithArrow
+import com.jajanin.app.core.ui.components.drawProfileElevatedPromoCard
+import com.jajanin.app.core.ui.components.drawProfileHairlineRows
+import com.jajanin.app.core.ui.components.drawProfileSectionHeading
+import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.developer.inboxUnreadCount
-import com.jajanin.app.feature.seller.SellerSettingRow
 import com.jajanin.app.feature.seller.SellerTokens
 import com.jajanin.app.feature.seller.dashboard.drawAdminNav
-import com.jajanin.app.feature.seller.sellerHeader
 import com.jajanin.app.feature.seller.sellerPill
-import com.jajanin.app.feature.seller.sellerSection
-import com.jajanin.app.feature.seller.sellerSettingsGroup
 import com.jajanin.app.feature.seller.sellerSurface
 
-private const val HEADER_H = 60f
+private const val STICKY_HEADER_H = 54f
 
 internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
     c.drawColor(kit.bg)
     val off = -scroll
+    val showSticky = scroll > 28f
+    val topClip = if (showSticky) STICKY_HEADER_H else 0f
     val navClear = h - GLASS_TOP_OFFSET - 8f
-    fun visible(top: Float, bottom: Float) = bottom >= HEADER_H && top <= navClear
-    val isVisible: (Float, Float) -> Boolean = { top, bottom -> visible(top, bottom) }
+    fun visible(top: Float, bottom: Float) = bottom >= topClip && top <= navClear
 
     val bodySave = c.save()
-    c.clipRect(0f, HEADER_H, w, h)
+    c.clipRect(0f, topClip, w, h)
 
-    var y = 78f + off
+    var y = 26f + off
 
-    // 1. Open Editorial Store & Owner Real Name Identity Header
-    if (visible(y, y + 70f)) {
-        val stall = myStallName.takeIf { it.isNotBlank() } ?: "Warung Saya"
-        val ownerName = myDisplayName.takeIf { it.isNotBlank() } ?: "Pemilik Warung"
-        val avatar = RectF(20f, y, 72f, y + 52f)
-        StoreAvatar.draw(this, c, stall, myStallLogoUrl, avatar, cornerRadius = 10f)
-
+    // 1. Big Editorial Title (Airbnb-inspired)
+    if (visible(y, y + 38f)) {
+        kit.text(c, "Profil Warung", 22f, y + 30f, 27f, kit.ink, true)
         val suspended = myAccountStatus == "suspended"
         val statusText = when {
             suspended -> "Ditangguhkan"
             myStallIsOpen -> "Buka"
             else -> "Tutup"
         }
-        val statusBg = when {
-            suspended || !myStallIsOpen -> kit.dangerBorder
-            else -> kit.successSoft
-        }
-        val statusFg = when {
-            suspended || !myStallIsOpen -> kit.danger
-            else -> kit.success
-        }
-        val statusRect = sellerPill(
-            c,
-            statusText,
-            370f,
-            y + 14f,
-            statusBg,
-            statusFg,
-            height = 20f,
-            size = 9.5f,
-        )
+        val statusBg = if (suspended || !myStallIsOpen) kit.dangerBorder else kit.successSoft
+        val statusFg = if (suspended || !myStallIsOpen) kit.danger else kit.success
+        sellerPill(c, statusText, 368f, y + 21f, statusBg, statusFg, height = 22f, size = 10f)
+    }
+    y += 52f
+
+    // 2. Clean Store Identity Row (Circular store logo + Store Name + Owner + chevron + hairline)
+    val idRowH = 74f
+    val idRect = RectF(16f, y, 374f, y + idRowH)
+    if (visible(y, y + idRowH + 8f)) {
+        press(c, "profileStorePublic", RectF(14f, y, 376f, y + idRowH), 12f)
+        val stall = myStallName.takeIf { it.isNotBlank() } ?: "Warung Saya"
+        val ownerName = myDisplayName.takeIf { it.isNotBlank() } ?: "Pemilik Warung"
+        val avatar = RectF(22f, y + 8f, 80f, y + 66f)
+        StoreAvatar.draw(this, c, stall, myStallLogoUrl, avatar, cornerRadius = 29f)
+
         val isDevSeller = StoreVerifiedBadge.isDevIdentity(
             view = this,
             name = stall,
             nis = myNis,
             stallId = myStallId.orEmpty(),
         )
-        val nameWidth = (statusRect.left - 84f - 10f).coerceAtLeast(90f)
         StoreVerifiedBadge.drawInlineWithStoreName(
             view = this,
             c = c,
             storeName = stall,
             isVerified = myStallIsVerified || isDevSeller,
-            x = 84f,
-            baselineY = y + 19f,
-            maxTotalWidth = nameWidth,
-            textSize = 16.5f,
+            x = 96f,
+            baselineY = y + 28f,
+            maxTotalWidth = 242f,
+            textSize = 17f,
             textColor = kit.ink,
             bold = true,
             isDev = isDevSeller,
@@ -90,76 +84,63 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
             stallId = myStallId.orEmpty(),
         )
         val ownerWithNis = buildString {
-            append("Pemilik: $ownerName")
-            if (myNis.isNotBlank()) append("  ·  NIS: $myNis")
-            if (myClass.isNotBlank()) append("  ·  $myClass")
+            append(ownerName)
+            if (myNis.isNotBlank()) append(" · NIS $myNis")
+            if (myClass.isNotBlank()) append(" · $myClass")
         }
-        kit.textEllipsized(
-            c,
-            ownerWithNis,
-            84f,
-            y + 37f,
-            280f,
-            12f,
-            kit.blue,
-            true,
-        )
-        val visibleEmail = mySellerVerifiedEmail
-            .trim()
-            .takeIf { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) }
-            ?: SupabaseRepository.currentVisibleEmail()
-        val emailAndPhone = buildList {
-            if (visibleEmail != null) add(visibleEmail)
-            else if (!SupabaseRepository.hasSession()) add("Belum masuk")
-            if (myPhone.isNotBlank()) add(displayLocalPhone(myPhone))
-        }.joinToString("  ·  ")
-        if (emailAndPhone.isNotBlank()) {
-            kit.textEllipsized(c, emailAndPhone, 84f, y + 54f, 284f, 11f, kit.muted)
-        }
+        kit.textEllipsized(c, ownerWithNis, 96f, y + 46f, 242f, 12f, kit.muted)
+        kit.textEllipsized(c, "Lihat profil publik warung", 96f, y + 62f, 242f, 11f, kit.blue)
+        drawIcon(c, "chevronRight", 360f, y + idRowH / 2f, 15f, kit.ink)
+        kit.line(c, 22f, y + idRowH + 6f, 368f, y + idRowH + 6f, kit.divider)
     }
-    y += 72f
+    bounds.putVisible("profileStorePublic", idRect, topLimit = topClip, bottomLimit = navClear)
+    bounds.putVisible("profileStoreLogo", RectF(20f, y + 6f, 84f, y + 68f), topLimit = topClip, bottomLimit = navClear)
+    y += idRowH + 22f
 
-    // 2. Compact Store Stats Strip
-    val statsStrip = RectF(20f, y, 370f, y + 52f)
+    // 3. Elevated Feature Promo Card -> Beralih ke Mode Pembeli
+    y = drawProfileElevatedPromoCard(
+        c = c,
+        top = y,
+        headline = "Mode Pembeli",
+        subtitle = "Kembali ke beranda untuk belanja dan pesan menu warung lain.",
+        key = "switchToBuyer",
+        isSellerIllustration = false,
+        visible = ::visible,
+        topLimit = topClip,
+        bottomLimit = navClear,
+    )
+    y += 18f
+
+    // 4. Compact Store Metrics Strip
+    val statsStrip = RectF(20f, y, 370f, y + 54f)
     if (visible(statsStrip.top, statsStrip.bottom)) {
         sellerSurface(c, statsStrip)
         val colW = SellerTokens.WIDTH / 3f
         val activeMenus = sellerProducts.count { it.available }
-
         val cols = listOf(
             Triple("$activeMenus/${sellerProducts.size}", "Menu Aktif", kit.ink),
             Triple(adminOrders.size.toString(), "Order Hari Ini", kit.blue),
-            Triple(formatRupiah(sellerLedgerAvailable), "Saldo Midtrans", kit.blue)
+            Triple(formatRupiah(sellerLedgerAvailable), "Saldo Midtrans", kit.blue),
         )
         cols.forEachIndexed { idx, (valText, label, colColor) ->
             val left = 20f + idx * colW
-            if (idx > 0) kit.line(c, left, y + 8f, left, y + 44f, kit.divider)
-            kit.textEllipsized(c, valText, left + 12f, y + 23f, colW - 20f, 13.5f, colColor, true)
-            kit.text(c, label, left + 12f, y + 40f, 10f, kit.muted)
+            if (idx > 0) kit.line(c, left, y + 10f, left, y + 44f, kit.divider)
+            kit.textEllipsized(c, valText, left + 12f, y + 24f, colW - 20f, 13.5f, colColor, true)
+            kit.text(c, label, left + 12f, y + 41f, 10f, kit.muted)
         }
-        bounds.putVisible(
-            "openSellerMenu",
-            RectF(20f, y, 20f + colW, y + 52f),
-            topLimit = HEADER_H,
-            bottomLimit = navClear,
-        )
-        bounds.putVisible(
-            "profileMidtrans",
-            RectF(20f + 2f * colW, y, 370f, y + 52f),
-            topLimit = HEADER_H,
-            bottomLimit = navClear,
-        )
+        bounds.putVisible("openSellerMenu", RectF(20f, y, 20f + colW, y + 54f), topLimit = topClip, bottomLimit = navClear)
+        bounds.putVisible("profileMidtrans", RectF(20f + 2f * colW, y, 370f, y + 54f), topLimit = topClip, bottomLimit = navClear)
     }
-    y += 62f
+    y += 64f
 
-    // 2a. Automatic Store Verification Progress Card (Server-managed 20+ completed orders or Official Dev)
+    // 4b. Store Verification Progress Strip
     val isDevSellerBadge = StoreVerifiedBadge.isDevIdentity(
         view = this,
         name = myStallName,
         nis = myNis,
         stallId = myStallId.orEmpty(),
     )
-    val verifCard = RectF(20f, y, 370f, y + 56f)
+    val verifCard = RectF(20f, y, 370f, y + 54f)
     if (visible(verifCard.top, verifCard.bottom)) {
         sellerSurface(c, verifCard)
         if (myStallIsVerified || isDevSellerBadge) {
@@ -167,7 +148,7 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
                 view = this,
                 c = c,
                 left = 32f,
-                top = y + 10f,
+                top = y + 9f,
                 label = "Terverifikasi Jajanin",
                 height = 20f,
                 textSize = 9.5f,
@@ -177,229 +158,199 @@ internal fun JajaninView.drawSellerProfile(c: Canvas, w: Float, h: Float) {
                 c,
                 "$myStallCompletedOrders pesanan selesai · Lencana tampil di profil & menu",
                 32f,
-                y + 45f,
+                y + 44f,
                 326f,
                 10.5f,
                 kit.muted,
             )
         } else {
             val done = myStallCompletedOrders.coerceIn(0, 20)
-            kit.text(c, "Progres Verifikasi Toko Otomatis", 32f, y + 22f, 12f, kit.ink, true)
-            kit.textRight(c, "$done/20 selesai", 358f, y + 22f, 96f, 11f, kit.blue, true)
-            val track = RectF(32f, y + 32f, 358f, y + 37f)
+            kit.text(c, "Verifikasi Toko Otomatis", 32f, y + 21f, 12f, kit.ink, true)
+            kit.textRight(c, "$done/20 selesai", 358f, y + 21f, 96f, 11f, kit.blue, true)
+            val track = RectF(32f, y + 31f, 358f, y + 36f)
             kit.rounded(c, track, kit.divider, 2.5f)
             if (done > 0) {
                 val fillW = track.width() * (done / 20f)
                 kit.rounded(c, RectF(track.left, track.top, track.left + fillW, track.bottom), kit.blue, 2.5f)
             }
-            kit.text(c, "Otomatis aktif saat warung menyelesaikan 20 pesanan.", 32f, y + 49f, 9.5f, kit.muted)
+            kit.text(c, "Aktif otomatis setelah 20 pesanan selesai.", 32f, y + 48f, 9.5f, kit.muted)
         }
     }
-    y += 68f
+    y += 74f
 
-    // 2b. Switch back to Buyer Mode (1 Akun Dual-Mode)
-    val buyerModeCard = RectF(20f, y, 370f, y + 54f)
-    if (visible(buyerModeCard.top, buyerModeCard.bottom)) {
-        kit.rounded(c, buyerModeCard, kit.tint, 10f, kit.blue)
-        kit.rect(c, 20f, y + 10f, 24f, y + 44f, kit.blue)
-        kit.textEllipsized(c, "Beralih ke Mode Pembeli", 36f, y + 23f, 240f, 13.5f, kit.blue, true)
-        kit.textEllipsized(c, "Belanja & pesan menu dari warung lain", 36f, y + 40f, 240f, 10.5f, kit.muted)
-        drawTrailingActionWithArrow(c, "Belanja", 356f, y + 31f, 11.5f, kit.blue)
-        bounds.putVisible("switchToBuyer", buyerModeCard, topLimit = HEADER_H, bottomLimit = navClear)
-        press(c, "switchToBuyer", buyerModeCard, 10f)
-    }
-    y += 68f
-
-    // 3. Pengaturan Warung (Identitas siswa dikunci sesuai data sekolah & tampil di header atas)
-    if (visible(y, y + 20f)) {
-        sellerSection(c, "Pengaturan Warung", y + 12f)
-    }
-    y += 20f
-    val activeMenuCount = sellerProducts.count { it.available }
-    y = sellerSettingsGroup(
-        c, y,
-        listOf(
-            SellerSettingRow(
-                title = "Lihat Profil Publik Warung",
-                key = "profileStorePublic",
-                subtitle = "Tampilan etalase publik warungmu seperti yang dilihat pembeli",
-                chevron = true,
-            ),
-            SellerSettingRow(
-                title = "Status Operasional Warung",
-                key = "profileStoreOpenToggle",
-                subtitle = if (myStallIsOpen) "Menerima pesanan pembeli saat ini" else "Warung sedang tutup sementara",
-                badge = if (myStallIsOpen) "Buka" else "Tutup",
-                badgeColor = if (myStallIsOpen) kit.success else kit.danger,
-                chevron = true,
-            ),
-            SellerSettingRow(
-                title = "Menu Dagangan",
-                key = "openSellerMenu",
-                subtitle = if (sellerProducts.isEmpty()) {
-                    "Tambah & kelola daftar dagangan warungmu"
-                } else {
-                    "$activeMenuCount aktif dari ${sellerProducts.size} dagangan · Kelola stok & PO"
-                },
-                badge = "${sellerProducts.size} menu",
-                badgeColor = kit.blue,
-                chevron = true,
-            ),
-            SellerSettingRow(
-                title = "Nama Toko / Warung",
-                key = "profileStallName",
-                subtitle = myStallName.takeIf { it.isNotBlank() } ?: "Wajib diisi",
-                value = "Ubah",
-                valueColor = kit.blue,
-                chevron = false,
-            ),
-            SellerSettingRow(
-                title = "Kategori Warung",
-                key = "profileStoreCategory",
-                subtitle = myStallCategory,
-                value = "Pilih",
-                valueColor = kit.blue,
-                chevron = true,
-            ),
-            SellerSettingRow(
-                title = "Ambil di Kelas / Ruangan (Default)",
-                key = "profileStallRoom",
-                subtitle = myStallRoom.takeIf { it.isNotBlank() } ?: "Atur kelas / ruangan tempat pembeli ambil pesanan",
-                value = if (myStallRoom.isBlank()) "Atur" else "Ubah",
-                valueColor = kit.blue,
-                chevron = false,
-            ),
-            SellerSettingRow(
-                title = "Deskripsi Publik Warung",
-                key = "profileStoreBio",
-                subtitle = myStallBio.takeIf { it.isNotBlank() } ?: "Tambahkan deskripsi singkat tentang warungmu",
-                value = if (myStallBio.isBlank()) "Isi" else "Ubah",
-                valueColor = kit.blue,
-                chevron = false,
-            ),
-            SellerSettingRow(
-                title = "Logo / Foto Profil Warung",
-                key = "profileStoreLogo",
-                subtitle = if (myStallLogoUrl.isBlank()) "Menggunakan inisial default warung" else "Foto profil warung terpasang",
-                badge = if (myStallLogoUrl.isBlank()) "Default" else "Terpasang",
-                badgeColor = if (myStallLogoUrl.isBlank()) kit.muted else kit.success,
-                chevron = true,
-            ),
-            SellerSettingRow(
-                title = "Sampul / Banner Warung",
-                key = "profileStoreBanner",
-                subtitle = if (myStallBannerUrl.isBlank()) "Menggunakan sampul standar Jajanin" else "Foto sampul warung terpasang",
-                badge = if (myStallBannerUrl.isBlank()) "Default" else "Terpasang",
-                badgeColor = if (myStallBannerUrl.isBlank()) kit.muted else kit.success,
-                chevron = true,
-            ),
-            SellerSettingRow(
-                title = "Nomor Telepon Penjual (Wajib)",
-                key = "profilePhone",
-                subtitle = myPhone.takeIf { it.isNotBlank() }?.let { "${displayLocalPhone(it)} · Tampil di pesanan pembeli" }
-                    ?: "Belum diisi · wajib untuk koordinasi ambil pesanan",
-                value = if (myPhone.isBlank()) "Isi" else "Ubah",
-                valueColor = if (myPhone.isBlank()) kit.danger else kit.blue,
-                chevron = false,
-            ),
-            SellerSettingRow(
-                title = "Pembayaran Midtrans",
-                key = "profileMidtrans",
-                subtitle = "Otomatis lunas & masuk saldo · $sellerLedgerTxCount transaksi",
-                badge = "Aktif",
-                badgeColor = kit.success,
-                chevron = true,
-            ),
+    // 5. Section: Pengaturan Warung (Clean borderless Airbnb rows)
+    y = drawProfileSectionHeading(c, "Pengaturan Warung", y, ::visible)
+    val storeRows = listOf(
+        CleanProfileRow(
+            icon = "store",
+            title = "Profil Publik Warung",
+            value = "Pratinjau",
+            valueColor = kit.blue,
+            key = "profileStorePublic",
         ),
-        isVisible,
-        navClear,
+        CleanProfileRow(
+            icon = "checkCircle",
+            title = "Status Operasional",
+            value = if (myStallIsOpen) "Buka" else "Tutup",
+            valueColor = if (myStallIsOpen) kit.success else kit.danger,
+            key = "profileStoreOpenToggle",
+        ),
+        CleanProfileRow(
+            icon = "grid",
+            title = "Menu Dagangan",
+            value = "${sellerProducts.size} menu",
+            valueColor = kit.blue,
+            key = "openSellerMenu",
+        ),
+        CleanProfileRow(
+            icon = "edit",
+            title = "Nama Warung",
+            value = myStallName.takeIf { it.isNotBlank() } ?: "Wajib diisi",
+            valueColor = if (myStallName.isBlank()) kit.danger else kit.muted,
+            key = "profileStallName",
+        ),
+        CleanProfileRow(
+            icon = "box",
+            title = "Kategori Warung",
+            value = myStallCategory,
+            valueColor = kit.muted,
+            key = "profileStoreCategory",
+        ),
+        CleanProfileRow(
+            icon = "location",
+            title = "Kelas / Ruangan Ambil",
+            value = myStallRoom.takeIf { it.isNotBlank() } ?: "Atur",
+            valueColor = if (myStallRoom.isBlank()) kit.blue else kit.muted,
+            key = "profileStallRoom",
+            useAppIcon = true,
+        ),
+        CleanProfileRow(
+            icon = "receipt",
+            title = "Deskripsi Warung",
+            value = if (myStallBio.isBlank()) "Isi" else "Ubah",
+            valueColor = kit.blue,
+            key = "profileStoreBio",
+        ),
+        CleanProfileRow(
+            icon = "image",
+            title = "Logo Warung",
+            value = if (myStallLogoUrl.isBlank()) "Default" else "Terpasang",
+            valueColor = if (myStallLogoUrl.isBlank()) kit.muted else kit.success,
+            key = "profileStoreLogo",
+            useAppIcon = true,
+        ),
+        CleanProfileRow(
+            icon = "image",
+            title = "Sampul / Banner",
+            value = if (myStallBannerUrl.isBlank()) "Default" else "Terpasang",
+            valueColor = if (myStallBannerUrl.isBlank()) kit.muted else kit.success,
+            key = "profileStoreBanner",
+            useAppIcon = true,
+        ),
+        CleanProfileRow(
+            icon = "phone",
+            title = "Nomor HP Penjual",
+            value = myPhone.takeIf { it.isNotBlank() }?.let { displayLocalPhone(it) } ?: "Wajib diisi",
+            valueColor = if (myPhone.isBlank()) kit.danger else kit.muted,
+            key = "profilePhone",
+        ),
+        CleanProfileRow(
+            icon = "zap",
+            title = "Pembayaran Midtrans",
+            value = "Aktif",
+            valueColor = kit.success,
+            key = "profileMidtrans",
+        ),
     )
-    y += SellerTokens.SECTION_GAP
+    y = drawProfileHairlineRows(c, y, storeRows, ::visible, topClip, navClear)
+    y += 24f
 
-    // 4. Akun & Aplikasi
-    if (visible(y, y + 20f)) {
-        sellerSection(c, "Akun & Aplikasi", y + 12f)
-    }
-    y += 20f
+    // 6. Section: Akun & Aplikasi
+    y = drawProfileSectionHeading(c, "Akun & Aplikasi", y, ::visible)
     val unread = inboxUnreadCount()
-    y = sellerSettingsGroup(
-        c, y,
-        listOf(
-            SellerSettingRow(
-                title = "Notifikasi",
-                key = "inbox",
-                subtitle = if (unread > 0) "$unread pesan belum dibaca" else "Tidak ada pesan baru",
-                badge = if (unread > 0) if (unread > 9) "9+" else unread.toString() else null,
-                badgeColor = if (unread > 0) kit.danger else null,
-                chevron = true,
-            ),
-            SellerSettingRow(
-                title = "Tema Aplikasi",
-                key = "theme",
-                subtitle = "Terang, gelap, atau ikuti sistem",
-                value = themeLabel,
-                valueColor = kit.blue,
-                chevron = true,
-            ),
+    val appRows = listOf(
+        CleanProfileRow(
+            icon = "bell",
+            title = "Notifikasi",
+            value = if (unread > 0) "$unread baru" else null,
+            valueColor = kit.danger,
+            key = "inbox",
         ),
-        isVisible,
-        navClear,
-    )
-    y += SellerTokens.SECTION_GAP
-
-    // 5. Bantuan & Informasi
-    if (visible(y, y + 20f)) {
-        sellerSection(c, "Bantuan & Informasi", y + 12f)
-    }
-    y += 20f
-    y = sellerSettingsGroup(
-        c, y,
-        listOf(
-            SellerSettingRow("Bantuan", "help", subtitle = "Cara berjualan di Jajanin"),
-            SellerSettingRow("Tentang Jajanin", "about", subtitle = "Versi dan informasi aplikasi"),
-            SellerSettingRow("Informasi Penting", "infoPage", subtitle = "Ketentuan dan panduan mitra"),
-            SellerSettingRow(
-                title = "Cek Update (OTA)",
-                key = "checkOta",
-                subtitle = if (otaUpdateAvailable) {
-                    otaLatestChangelog?.replace('\n', ' ') ?: "Pembaruan siap dipasang langsung dari HP"
-                } else {
-                    "Periksa pembaruan langsung tanpa hapus aplikasi"
-                },
-                value = if (otaUpdateAvailable && !otaLatestVersion.isNullOrBlank()) {
-                    "Update $otaLatestVersion"
-                } else {
-                    "v${BuildConfig.VERSION_NAME}"
-                },
-                valueColor = if (otaUpdateAvailable) kit.blue else kit.muted,
-                chevron = true,
-            ),
+        CleanProfileRow(
+            icon = "theme",
+            title = "Tema Aplikasi",
+            value = themeLabel,
+            valueColor = kit.blue,
+            key = "theme",
+            useAppIcon = true,
         ),
-        isVisible,
-        navClear,
     )
-    y += SellerTokens.SECTION_GAP
+    y = drawProfileHairlineRows(c, y, appRows, ::visible, topClip, navClear)
+    y += 24f
 
-    val logout = RectF(SellerTokens.PAD, y, SellerTokens.RIGHT, y + 48f)
+    // 7. Section: Dukungan
+    y = drawProfileSectionHeading(c, "Dukungan", y, ::visible)
+    val supportRows = listOf(
+        CleanProfileRow(icon = "chat", title = "Bantuan", key = "help"),
+        CleanProfileRow(icon = "shield", title = "Informasi Penting", key = "infoPage"),
+        CleanProfileRow(icon = "box", title = "Tentang Jajanin", key = "about"),
+        CleanProfileRow(
+            icon = "refresh",
+            title = "Cek Update (OTA)",
+            value = if (otaUpdateAvailable && !otaLatestVersion.isNullOrBlank()) {
+                "Update $otaLatestVersion"
+            } else {
+                "v${BuildConfig.VERSION_NAME}"
+            },
+            valueColor = if (otaUpdateAvailable) kit.blue else kit.muted,
+            key = "checkOta",
+        ),
+    )
+    y = drawProfileHairlineRows(c, y, supportRows, ::visible, topClip, navClear)
+    y += 26f
+
+    // 8. Quiet Bottom Account Actions
+    val logout = RectF(20f, y, 370f, y + 46f)
     if (visible(logout.top, logout.bottom)) {
-        kit.rounded(c, logout, kit.card, SellerTokens.RADIUS_SURFACE, kit.dangerBorder)
+        kit.rounded(c, logout, kit.card, 12f, kit.border)
         kit.centerText(c, "Keluar dari akun", logout, 13.5f, kit.danger, true)
-        press(c, "logout", logout, SellerTokens.RADIUS_SURFACE)
+        press(c, "logout", logout, 12f)
     }
-    bounds.putVisible("logout", logout, topLimit = HEADER_H, bottomLimit = navClear)
+    bounds.putVisible("logout", logout, topLimit = topClip, bottomLimit = navClear)
 
-    val deleteRow = RectF(SellerTokens.PAD, logout.bottom + 10f, SellerTokens.RIGHT, logout.bottom + 54f)
+    val deleteRow = RectF(20f, logout.bottom + 10f, 370f, logout.bottom + 48f)
     if (visible(deleteRow.top, deleteRow.bottom)) {
-        kit.rounded(c, deleteRow, kit.bg, SellerTokens.RADIUS_SURFACE, kit.dangerBorder)
-        kit.centerText(c, "Hapus Akun Penjual / Akun", deleteRow, 12.5f, kit.danger, true)
-        press(c, "deleteSellerAccount", deleteRow, SellerTokens.RADIUS_SURFACE)
+        kit.centerText(c, "Hapus Akun Penjual / Akun", deleteRow, 12.5f, kit.danger, false)
+        press(c, "deleteSellerAccount", deleteRow, 10f)
     }
-    bounds.putVisible("deleteSellerAccount", deleteRow, topLimit = HEADER_H, bottomLimit = navClear)
+    bounds.putVisible("deleteSellerAccount", deleteRow, topLimit = topClip, bottomLimit = navClear)
+
+    val verY = deleteRow.bottom + 14f
+    if (visible(verY - 12f, verY + 8f)) {
+        val visibleEmail = mySellerVerifiedEmail
+            .trim()
+            .takeIf { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) }
+            ?: SupabaseRepository.currentVisibleEmail()
+        val footerText = if (visibleEmail != null) {
+            "$visibleEmail · v${BuildConfig.VERSION_NAME}"
+        } else {
+            "Jajanin v${BuildConfig.VERSION_NAME}"
+        }
+        kit.centerText(c, footerText, RectF(20f, verY - 10f, 370f, verY + 8f), 10.5f, kit.muted)
+    }
 
     c.restoreToCount(bodySave)
-    contentHeight = deleteRow.bottom - off + GLASS_TOP_OFFSET + 20f
 
-    sellerHeader(c, "Profil Warung")
+    if (showSticky) {
+        c.save()
+        c.translate(-slideX, 0f)
+        kit.rect(c, -100f, 0f, 490f, STICKY_HEADER_H, kit.bg)
+        kit.text(c, "Profil Warung", 22f, 35f, 18f, kit.ink, true)
+        kit.line(c, 20f, STICKY_HEADER_H, 370f, STICKY_HEADER_H, kit.divider)
+        c.restore()
+    }
+
+    contentHeight = (verY + 12f) - off + GLASS_TOP_OFFSET + 20f
     drawAdminNav(c, w, h, "Profil")
 }
 
