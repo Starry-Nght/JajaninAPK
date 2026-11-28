@@ -27,6 +27,8 @@ import android.widget.TextView
 import android.widget.Toast
 import com.jajanin.app.MainActivity
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.ResponsiveLayout
+import com.jajanin.app.core.ui.adaptiveHorizontalPaddingPx
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
@@ -58,7 +60,10 @@ internal class NativeProductFormOverlay(
 
     private var darkMode = true
     private var suppressWatchers = false
+    private var baseLeftInset = 0
     private var baseTopInset = 0
+    private var baseRightInset = 0
+    private var baseBottomInset = 0
     private var baseImeBottom = 0
 
     // Palette
@@ -858,28 +863,66 @@ internal class NativeProductFormOverlay(
 
         parent.addView(rootContainer)
 
-        // Edge-to-Edge WindowInsets (status bar + IME keyboard)
+        // Edge-to-Edge WindowInsets (status bar + nav bar + display cutout + IME keyboard)
         rootContainer.setOnApplyWindowInsetsListener { _, insets ->
-            if (Build.VERSION.SDK_INT >= 30) {
-                val sys = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                val ime = insets.getInsets(WindowInsets.Type.ime())
-                baseTopInset = sys.top
-                baseImeBottom = maxOf(0, ime.bottom - parent.paddingBottom)
-            } else {
-                @Suppress("DEPRECATION")
-                baseTopInset = insets.systemWindowInsetTop
-                baseImeBottom = 0
-            }
+            val safe = ResponsiveLayout.extractSafeInsets(insets)
+            baseLeftInset = safe.left
+            baseTopInset = safe.top
+            baseRightInset = safe.right
+            baseBottomInset = safe.bottom
+            baseImeBottom = safe.imeBottom
             applyInsetPadding()
             insets
+        }
+        rootContainer.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
+            if ((r - l) != (or - ol)) {
+                rootContainer.post { applyInsetPadding() }
+            }
         }
 
         applyTheme(activity.ui.darkMode)
     }
 
     private fun applyInsetPadding() {
-        topBar.setPadding(dp(12), dp(8) + baseTopInset, dp(16), dp(8))
-        bottomBar.setPadding(dp(20), dp(10), dp(20), dp(12) + baseImeBottom)
+        val availW = (rootContainer.width - baseLeftInset - baseRightInset)
+            .takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+        val curDensity = activity.resources.displayMetrics.density
+        val sidePad = adaptiveHorizontalPaddingPx(
+            availableWidthPx = availW,
+            density = curDensity,
+            basePadDp = 18f,
+            maxContentWidthDp = 560f,
+        )
+        val topSidePad = adaptiveHorizontalPaddingPx(
+            availableWidthPx = availW,
+            density = curDensity,
+            basePadDp = 12f,
+            maxContentWidthDp = 580f,
+        )
+        val effectiveBottom = maxOf(baseBottomInset, baseImeBottom)
+        topBar.setPadding(
+            baseLeftInset + topSidePad,
+            dp(8) + baseTopInset,
+            baseRightInset + topSidePad,
+            dp(8),
+        )
+        contentCol.setPadding(
+            baseLeftInset + sidePad,
+            dp(14),
+            baseRightInset + sidePad,
+            dp(24),
+        )
+        bottomBar.setPadding(
+            baseLeftInset + sidePad,
+            dp(10),
+            baseRightInset + sidePad,
+            dp(12) + effectiveBottom,
+        )
+    }
+
+    fun onConfigChanged() {
+        rootContainer.requestApplyInsets()
+        rootContainer.post { applyInsetPadding() }
     }
 
     fun setVisible(visible: Boolean) {

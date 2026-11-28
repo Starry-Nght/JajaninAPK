@@ -34,6 +34,8 @@ import com.jajanin.app.core.constants.STATUS_READY
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.LiquidGlassNavHost
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.ResponsiveLayout
+import com.jajanin.app.core.ui.adaptiveDialogWidthPx
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.components.InlineSearchOverlay
 import com.jajanin.app.core.ui.isTerminalStatus
@@ -89,6 +91,12 @@ class MainActivity : Activity() {
     internal var inlineSearch: InlineSearchOverlay? = null
     internal lateinit var loginOverlay: NativeLoginOverlay
     internal lateinit var productFormOverlay: NativeProductFormOverlay
+    private var rootFrame: FrameLayout? = null
+    private var outerSafeBox: FrameLayout? = null
+    private var safeCanvasFrame: FrameLayout? = null
+    private var safeInsets = ResponsiveLayout.SafeInsetsPx(0, 0, 0, 0, 0)
+    private var viewportCentered = false
+    private val sideBorderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
     internal var pendingPasswordRecovery = false
     internal var adminObserver: OrderObserver? = null
     internal var adminRefreshJob: Job? = null
@@ -397,50 +405,118 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setFlags(1024, 1024)
         AppIcon.init(this)
         ui = JajaninView(this)
         loadFavorites()
         ui.setDarkMode(resolveTheme())
         ui.themeLabel = themeModeLabel()
-        // Kanvas tetap menjadi konten utama; dock Liquid Glass asli hidup
-        // sebagai sibling di atasnya agar bisa merefraksi halaman di belakang.
-        val root = FrameLayout(this)
-        root.addView(
+        ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
+
+        // Root edge-to-edge dengan warna latar tema agar area status bar, notch/cutout,
+        // navigation bar, dan margin tablet selalu menyatu mulus tanpa bar hitam/putih.
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(ui.kit.bg)
+            clipChildren = false
+            clipToPadding = false
+        }
+        rootFrame = root
+
+        // Lapisan safe-area untuk kanvas utama + LiquidGlassNavHost + InlineSearchOverlay:
+        // menyerap inset status bar, gesture/3-button nav (bawah & samping landscape),
+        // serta display cutout (notch / punch-hole) agar konten tidak pernah tertutup.
+        val safeOuter = object : FrameLayout(this) {
+            override fun dispatchDraw(canvas: android.graphics.Canvas) {
+                super.dispatchDraw(canvas)
+                val inner = safeCanvasFrame
+                if (viewportCentered && inner != null && inner.width > 0) {
+                    sideBorderPaint.color = ui.kit.divider
+                    sideBorderPaint.strokeWidth = (1f * resources.displayMetrics.density).coerceAtLeast(1f)
+                    val topY = paddingTop.toFloat()
+                    val botY = (height - paddingBottom).toFloat()
+                    canvas.drawLine(inner.left.toFloat(), topY, inner.left.toFloat(), botY, sideBorderPaint)
+                    canvas.drawLine(inner.right.toFloat(), topY, inner.right.toFloat(), botY, sideBorderPaint)
+                }
+            }
+        }.apply {
+            setBackgroundColor(ui.kit.bg)
+            clipChildren = false
+            clipToPadding = false
+        }
+        outerSafeBox = safeOuter
+
+        val canvasFrame = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
+        safeCanvasFrame = canvasFrame
+        canvasFrame.addView(
             ui,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        LiquidGlassNavHost(this, root, ui)
-        val searchOverlay = InlineSearchOverlay(this, root)
+        // Kanvas tetap menjadi konten utama; dock Liquid Glass asli hidup
+        // sebagai sibling di atasnya agar bisa merefraksi halaman di belakang.
+        LiquidGlassNavHost(this, canvasFrame, ui)
+        val searchOverlay = InlineSearchOverlay(this, canvasFrame)
         inlineSearch = searchOverlay
         searchOverlay.applyTheme()
         ui.inlineSearchBoundsListener = { rect, scale, textSize ->
             inlineSearch?.syncCanvasBounds(rect, scale, textSize)
         }
+
+        safeOuter.addView(
+            canvasFrame,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                android.view.Gravity.CENTER_HORIZONTAL,
+            ),
+        )
+        root.addView(
+            safeOuter,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
+        safeOuter.setOnApplyWindowInsetsListener { _, insets ->
+            safeInsets = ResponsiveLayout.extractSafeInsets(insets)
+            applyAdaptiveCanvasLayout()
+            ResponsiveLayout.consumeSystemInsets(insets)
+        }
+        safeOuter.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
+            if ((r - l) != (or - ol) || (b - t) != (ob - ot)) {
+                safeOuter.post { applyAdaptiveCanvasLayout() }
+            }
+        }
+
+        // Overlay native full-screen menerima WindowInsets mentah (termasuk IME keyboard)
+        // langsung dari root tanpa double-padding.
         loginOverlay = NativeLoginOverlay(this, root)
         productFormOverlay = NativeProductFormOverlay(this, root)
         ui.screenChangedListener = { screen ->
             inlineSearch?.dismiss()
             val isLogin = screen == Screen.LOGIN
             val isProductForm = screen == Screen.PRODUCT_FORM
-            if (isLogin || isProductForm) {
-                window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            } else {
-                window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            }
             loginOverlay.setVisible(isLogin)
             productFormOverlay.setVisible(isProductForm)
+            ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
         }
         ui.loginThemeListener = { dark ->
+            root.setBackgroundColor(ui.kit.bg)
+            safeOuter.setBackgroundColor(ui.kit.bg)
+            ResponsiveLayout.configureSystemBars(window, dark, ui.kit.bg)
             loginOverlay.applyTheme(dark)
             productFormOverlay.applyTheme(dark)
+            safeOuter.invalidate()
         }
         @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
+        root.requestApplyInsets()
         NotificationHelper.ensureChannel(this)
         requestNotificationPermission()
         startProductUpdates()
@@ -451,6 +527,37 @@ class MainActivity : Activity() {
         handleAuthLink(intent)
         restoreSessionIfNeeded()
         handleOrderNotification(intent)
+    }
+
+    /** Menyesuaikan padding safe-area & lebar kanvas adaptif untuk ponsel, tablet, dan landscape. */
+    private fun applyAdaptiveCanvasLayout() {
+        val outer = outerSafeBox ?: return
+        val inner = safeCanvasFrame ?: return
+        if (outer.paddingLeft != safeInsets.left ||
+            outer.paddingTop != safeInsets.top ||
+            outer.paddingRight != safeInsets.right ||
+            outer.paddingBottom != safeInsets.bottom
+        ) {
+            outer.setPadding(safeInsets.left, safeInsets.top, safeInsets.right, safeInsets.bottom)
+        }
+        val availW = (outer.width - safeInsets.left - safeInsets.right).coerceAtLeast(0)
+        val availH = (outer.height - safeInsets.top - safeInsets.bottom).coerceAtLeast(0)
+        if (availW <= 0 || availH <= 0) return
+
+        val vp = ResponsiveLayout.computeAdaptiveViewport(
+            safeWidthPx = availW,
+            safeHeightPx = availH,
+            density = resources.displayMetrics.density,
+        )
+        viewportCentered = vp.isCenteredColumn
+        val lp = inner.layoutParams as FrameLayout.LayoutParams
+        val targetW = if (vp.isCenteredColumn) vp.hostWidthPx else FrameLayout.LayoutParams.MATCH_PARENT
+        if (lp.width != targetW || lp.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
+            lp.width = targetW
+            lp.gravity = android.view.Gravity.CENTER_HORIZONTAL
+            inner.layoutParams = lp
+        }
+        outer.invalidate()
     }
 
     /** Izin notifikasi runtime (Android 13+); diamkan bila ditolak — pipeline order tidak terganggu. */
@@ -587,6 +694,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
         NotificationHelper.attachActivity(this)
         NotificationHelper.isAppInForeground = true
         resumePendingOtaIfPermitted()
@@ -1082,6 +1190,12 @@ class MainActivity : Activity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         if (themeMode() == "system") ui.setDarkMode(systemInDark())
+        ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
+        ui.onResponsiveConfigChanged()
+        rootFrame?.requestApplyInsets()
+        outerSafeBox?.post { applyAdaptiveCanvasLayout() }
+        if (::loginOverlay.isInitialized) loginOverlay.onConfigChanged()
+        if (::productFormOverlay.isInitialized) productFormOverlay.onConfigChanged()
     }
 
     /** Dialog pilih tema bertema (Terang/Gelap/Sistem); tersimpan permanen. */
@@ -1149,7 +1263,7 @@ class MainActivity : Activity() {
         }
 
         dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setLayout(adaptiveDialogWidthPx(0.92f), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     /** Keluar: selalu minta konfirmasi agar tidak tersentuh tanpa sengaja. */

@@ -18,6 +18,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.jajanin.app.MainActivity
+import com.jajanin.app.core.ui.adaptiveDialogWidthPx
 import com.jajanin.app.data.repository.PhoneRepository
 import com.jajanin.app.data.repository.SupabaseRepository
 import com.jajanin.app.feature.buyer.refreshMyOrders
@@ -354,7 +355,7 @@ internal fun MainActivity.showSellerOtpActivationDialog() {
 
     dialog.show()
     dialog.window?.setLayout(
-        (resources.displayMetrics.widthPixels * 0.92f).toInt(),
+        adaptiveDialogWidthPx(0.92f),
         ViewGroup.LayoutParams.WRAP_CONTENT,
     )
     @Suppress("DEPRECATION")

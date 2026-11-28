@@ -785,10 +785,9 @@ internal class JajaninView(context: Context) : View(context) {
         navSpec = null
         navBadgeIndex = -1
         navBadgeCount = 0
-        // Aksesibilitas: hanya layar penjual yang mengikuti fontScale sistem.
-        // Pengali dibatasi agar layout berbasis kanvas tetap stabil di semua
-        // ukuran layar; buyer/developer tidak tersentuh.
-        kit.textScale = if (isSellerScreen()) sellerTextScale() else 1f
+        // Aksesibilitas: seluruh layar (Buyer, Seller, Developer) menghormati
+        // fontScale dari pengaturan Android secara konsisten dengan batas aman.
+        kit.textScale = com.jajanin.app.core.ui.ResponsiveLayout.adaptiveTextScale(resources.configuration.fontScale)
         when (screen) {
             // --- Fondasi: splash, onboarding, autentikasi ---
             Screen.SPLASH -> drawSplash(canvas, 390f, height / s)
@@ -928,6 +927,11 @@ internal class JajaninView(context: Context) : View(context) {
         return (1f + (fontScale - 1f) * 0.5f).coerceIn(1f, 1.18f)
     }
 
+    internal fun onResponsiveConfigChanged() {
+        kit.clearTextCaches()
+        invalidate()
+    }
+
     /**
      * Toolbar kaca melayang halaman dalam: terlepas dari tepi layar, tombol
      * kembali + judul putih di atas kaca navy. Konten tiap layar mulai di
@@ -942,9 +946,9 @@ internal class JajaninView(context: Context) : View(context) {
         val back = RectF(28f, 22f, 64f, 58f)
         kit.rounded(c, back, kit.tint, 18f)
         drawIcon(c, "chevronLeft", back.centerX(), back.centerY(), 19f, kit.blue)
-        kit.text(c, title, 78f, 46f, 18f, android.graphics.Color.WHITE, true)
+        kit.textEllipsized(c, title, 78f, 46f, 282f, 18f, android.graphics.Color.WHITE, true)
         c.restore()
-        bounds["headerBack"] = RectF(20f, 14f, 84f, 64f)
+        bounds["headerBack"] = RectF(16f, 12f, 76f, 68f)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

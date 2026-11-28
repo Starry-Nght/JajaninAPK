@@ -29,6 +29,8 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import com.jajanin.app.MainActivity
+import com.jajanin.app.core.ui.ResponsiveLayout
+import com.jajanin.app.core.ui.adaptiveHorizontalPaddingPx
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.data.repository.PhoneRepository
 import com.jajanin.app.data.repository.SupabaseRepository
@@ -123,7 +125,9 @@ internal class NativeLoginOverlay(
     private var lastMatches: List<SupabaseRepository.StudentNisLookupResult> = emptyList()
     private var searchJob: Job? = null
 
+    private var baseLeftInset = 0
     private var baseTopInset = 0
+    private var baseRightInset = 0
     private var baseBottomInset = 0
 
     // Palette helpers
@@ -638,23 +642,20 @@ internal class NativeLoginOverlay(
         rootContainer.addView(scrollView)
         parent.addView(rootContainer)
 
-        // WindowInsets for Android 15/16 Edge-to-Edge (status bar + nav bar + keyboard IME)
+        // WindowInsets for Android 15/16 Edge-to-Edge (status bar + nav bar + display cutout + keyboard IME)
         rootContainer.setOnApplyWindowInsetsListener { _, insets ->
-            if (Build.VERSION.SDK_INT >= 30) {
-                val sys = insets.getInsets(
-                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
-                )
-                val ime = insets.getInsets(WindowInsets.Type.ime())
-                baseTopInset = sys.top
-                baseBottomInset = maxOf(sys.bottom, ime.bottom)
-            } else {
-                @Suppress("DEPRECATION")
-                baseTopInset = insets.systemWindowInsetTop
-                @Suppress("DEPRECATION")
-                baseBottomInset = insets.systemWindowInsetBottom
-            }
+            val safe = ResponsiveLayout.extractSafeInsets(insets)
+            baseLeftInset = safe.left
+            baseTopInset = safe.top
+            baseRightInset = safe.right
+            baseBottomInset = maxOf(safe.bottom, safe.imeBottom)
             applyContentPadding()
             insets
+        }
+        rootContainer.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
+            if ((r - l) != (or - ol)) {
+                rootContainer.post { applyContentPadding() }
+            }
         }
 
         // Input Listeners
@@ -681,9 +682,23 @@ internal class NativeLoginOverlay(
     }
 
     private fun applyContentPadding() {
-        val topPad = maxOf(baseTopInset, dp(24)) + dp(14)
+        val availW = (rootContainer.width - baseLeftInset - baseRightInset)
+            .takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+        val curDensity = activity.resources.displayMetrics.density
+        val sidePad = adaptiveHorizontalPaddingPx(
+            availableWidthPx = availW,
+            density = curDensity,
+            basePadDp = 22f,
+            maxContentWidthDp = 500f,
+        )
+        val topPad = maxOf(baseTopInset, dp(20)) + dp(12)
         val bottomPad = baseBottomInset + dp(28)
-        contentCol.setPadding(dp(22), topPad, dp(22), bottomPad)
+        contentCol.setPadding(baseLeftInset + sidePad, topPad, baseRightInset + sidePad, bottomPad)
+    }
+
+    fun onConfigChanged() {
+        rootContainer.requestApplyInsets()
+        rootContainer.post { applyContentPadding() }
     }
 
     fun applyTheme(dark: Boolean) {

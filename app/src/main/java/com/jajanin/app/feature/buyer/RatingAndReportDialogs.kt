@@ -20,6 +20,8 @@ import android.widget.TextView
 import android.widget.Toast
 import com.jajanin.app.MainActivity
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.adaptiveDialogMaxHeightPx
+import com.jajanin.app.core.ui.adaptiveDialogWidthPx
 import com.jajanin.app.data.repository.AdminOrder
 import com.jajanin.app.data.repository.FeedbackRepository
 import com.jajanin.app.data.repository.SupabaseRepository
@@ -441,8 +443,8 @@ internal fun MainActivity.showOrderRatingDialog(order: AdminOrder) {
     root.addView(actions)
 
     dialog.setContentView(root)
-    val maxH = (resources.displayMetrics.heightPixels * 0.84f).toInt()
-    val width = (resources.displayMetrics.widthPixels * 0.92f).toInt()
+    val maxH = adaptiveDialogMaxHeightPx(0.84f)
+    val width = adaptiveDialogWidthPx(0.92f)
     dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
     root.post {
         if (root.height > maxH) {
@@ -818,8 +820,8 @@ internal fun MainActivity.showReportSellerDialog(
     root.addView(actions)
 
     dialog.setContentView(root)
-    val maxH = (resources.displayMetrics.heightPixels * 0.88f).toInt()
-    val width = (resources.displayMetrics.widthPixels * 0.92f).toInt()
+    val maxH = adaptiveDialogMaxHeightPx(0.88f)
+    val width = adaptiveDialogWidthPx(0.92f)
     dialog.window?.setLayout(width, maxH)
     dialog.show()
 }

@@ -21,6 +21,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.jajanin.app.BuildConfig
 import com.jajanin.app.MainActivity
+import com.jajanin.app.core.ui.adaptiveDialogWidthPx
 import com.jajanin.app.data.repository.SupabaseRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -258,7 +259,7 @@ internal fun MainActivity.showOtaAvailableDialog(release: OtaRelease) {
     dialog.setCanceledOnTouchOutside(!release.mandatory)
     dialog.setContentView(root)
     dialog.window?.setLayout(
-        (resources.displayMetrics.widthPixels * 0.88f).toInt(),
+        adaptiveDialogWidthPx(0.88f),
         ViewGroup.LayoutParams.WRAP_CONTENT,
     )
     dialog.show()
@@ -301,7 +302,7 @@ private fun MainActivity.ensureInstallPermissionAndStart(release: OtaRelease) {
         root.addView(buttons)
         dialog.setContentView(root)
         dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.88f).toInt(),
+            adaptiveDialogWidthPx(0.88f),
             ViewGroup.LayoutParams.WRAP_CONTENT,
         )
         dialog.show()
@@ -354,7 +355,7 @@ internal fun MainActivity.startOtaDownloadAndInstall(release: OtaRelease) {
     dialog.setCanceledOnTouchOutside(false)
     dialog.setContentView(root)
     dialog.window?.setLayout(
-        (resources.displayMetrics.widthPixels * 0.86f).toInt(),
+        adaptiveDialogWidthPx(0.86f),
         ViewGroup.LayoutParams.WRAP_CONTENT,
     )
     dialog.show()
@@ -585,7 +586,7 @@ internal fun MainActivity.showDevOtaPublishForm() {
     root.addView(buttons)
     dialog.setContentView(root)
     dialog.window?.setLayout(
-        (resources.displayMetrics.widthPixels * 0.90f).toInt(),
+        adaptiveDialogWidthPx(0.90f),
         ViewGroup.LayoutParams.WRAP_CONTENT,
     )
     dialog.show()

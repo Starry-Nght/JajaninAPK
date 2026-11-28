@@ -85,12 +85,17 @@ internal class HitBounds {
         entries.add(key to rect)
     }
 
-    fun hitTest(x: Float, y: Float): String? {
-        for (i in entries.lastIndex downTo 0) {
-            val (key, rect) = entries[i]
-            if (rect.contains(x, y)) return key
-        }
-        return null
+    /**
+     * Two-pass accessible hit-testing:
+     * 1) Exact visual hit (back-to-front so topmost overlays win and adjacent controls never collide).
+     * 2) 48dp minimum touch target expansion (Android accessibility guideline) — when a user taps
+     *    slightly outside a compact icon/chip (< 48dp), expands eligible bounds symmetrically around
+     *    their center to at least [minTargetSize] and selects the nearest target center.
+     */
+    fun hitTest(x: Float, y: Float, minTargetSize: Float = ResponsiveLayout.MIN_TOUCH_TARGET_DP): String? {
+        if (entries.isEmpty()) return null
+        val boxes = entries.map { (k, r) -> ResponsiveLayout.HitBox(k, r.left, r.top, r.right, r.bottom) }
+        return ResponsiveLayout.resolveAccessibleHit(x, y, boxes, minTargetSize)
     }
 }
 
@@ -106,8 +111,10 @@ internal fun HitBounds.putVisible(
 }
 
 internal fun JajaninView.summaryRow(c: Canvas, a: String, b: String, y: Float, strong: Boolean = false) {
-    kit.text(c, a, 24f, y, 13f, if (strong) kit.ink else kit.muted, strong)
-    kit.text(c, b, 368f - kit.measure(b, 13f, true), y, 13f, kit.ink, true)
+    val rightW = kit.measure(b, 13f, true)
+    val labelMaxW = (368f - rightW - 34f).coerceAtLeast(100f)
+    kit.textEllipsized(c, a, 24f, y, labelMaxW, 13f, if (strong) kit.ink else kit.muted, strong)
+    kit.text(c, b, 368f - rightW, y, 13f, kit.ink, true)
 }
 
 internal fun JajaninView.drawQr(c: Canvas, r: RectF) {

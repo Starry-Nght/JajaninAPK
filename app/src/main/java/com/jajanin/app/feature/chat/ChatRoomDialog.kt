@@ -30,6 +30,8 @@ import android.widget.Toast
 import com.jajanin.app.MainActivity
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.ResponsiveLayout
+import com.jajanin.app.core.ui.adaptiveHorizontalPaddingPx
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
 import com.jajanin.app.core.util.formatRupiah
@@ -138,10 +140,7 @@ internal class ChatRoomDialog(
         dialog.window?.apply {
             setBackgroundDrawable(ColorDrawable(kit.bg))
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            @Suppress("DEPRECATION")
-            statusBarColor = kit.card
-            @Suppress("DEPRECATION")
-            navigationBarColor = kit.card
+            ResponsiveLayout.configureSystemBars(this, activity.ui.darkMode, kit.card)
             @Suppress("DEPRECATION")
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
         }
@@ -216,7 +215,9 @@ internal class ChatRoomDialog(
             scaleType = ImageView.ScaleType.CENTER
             contentDescription = AppIcon.contentDescription("arrowLeft")
             setImageDrawable(AppIcon.drawable(activity, "arrowLeft", 20f, kit.blue))
-            setPadding(dp(8), dp(6), dp(10), dp(6))
+            minimumWidth = dp(48)
+            minimumHeight = dp(48)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
             setOnClickListener { dismiss() }
         }
         header.addView(backBtn)
@@ -636,40 +637,35 @@ internal class ChatRoomDialog(
             if (resId > 0) activity.resources.getDimensionPixelSize(resId) else dp(48)
         }.getOrDefault(dp(48))
 
-        header.setPadding(dp(12), fallbackStatusTop + dp(10), dp(14), dp(12))
-        composerWrap.setPadding(dp(12), dp(8), dp(12), fallbackNavBottom + dp(10))
-
+        var lastSafe = ResponsiveLayout.SafeInsetsPx(0, fallbackStatusTop, 0, fallbackNavBottom, 0)
         var lastImeBottom = 0
-        root.setOnApplyWindowInsetsListener { _, insets ->
-            val topInset: Int
-            val navBottom: Int
-            val imeBottom: Int
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                val sysBars = insets.getInsets(
-                    android.view.WindowInsets.Type.statusBars() or
-                        android.view.WindowInsets.Type.displayCutout()
-                )
-                val navBars = insets.getInsets(android.view.WindowInsets.Type.navigationBars())
-                val ime = insets.getInsets(android.view.WindowInsets.Type.ime())
-                topInset = maxOf(sysBars.top, fallbackStatusTop)
-                navBottom = navBars.bottom
-                imeBottom = ime.bottom
-            } else {
-                @Suppress("DEPRECATION")
-                topInset = maxOf(insets.systemWindowInsetTop, fallbackStatusTop)
-                @Suppress("DEPRECATION")
-                navBottom = insets.systemWindowInsetBottom
-                imeBottom = 0
-            }
-            val effectiveBottom = maxOf(navBottom, imeBottom)
-            header.setPadding(dp(12), topInset + dp(10), dp(14), dp(12))
-            composerWrap.setPadding(dp(12), dp(8), dp(12), effectiveBottom + dp(10))
 
-            if (imeBottom > lastImeBottom && messagesById.isNotEmpty()) {
+        fun updateAdaptivePadding() {
+            val curDensity = activity.resources.displayMetrics.density
+            val availW = (root.width - lastSafe.left - lastSafe.right)
+                .takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+            val sidePad = adaptiveHorizontalPaddingPx(availW, curDensity, 12f, 680f)
+            val topInset = maxOf(lastSafe.top, fallbackStatusTop)
+            val effectiveBottom = maxOf(lastSafe.bottom, lastSafe.imeBottom)
+            header.setPadding(lastSafe.left + sidePad, topInset + dp(10), lastSafe.right + sidePad, dp(12))
+            scrollView.setPadding(lastSafe.left + sidePad, 0, lastSafe.right + sidePad, 0)
+            composerWrap.setPadding(lastSafe.left + sidePad, dp(8), lastSafe.right + sidePad, effectiveBottom + dp(10))
+        }
+
+        updateAdaptivePadding()
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            lastSafe = ResponsiveLayout.extractSafeInsets(insets)
+            updateAdaptivePadding()
+            if (lastSafe.imeBottom > lastImeBottom && messagesById.isNotEmpty()) {
                 scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
             }
-            lastImeBottom = imeBottom
+            lastImeBottom = lastSafe.imeBottom
             insets
+        }
+        root.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
+            if ((r - l) != (or - ol)) {
+                root.post { updateAdaptivePadding() }
+            }
         }
         root.post { root.requestApplyInsets() }
     }
@@ -1537,8 +1533,8 @@ internal class ChatRoomDialog(
      * "Chat Penjual" on their Order page or "Tanya Penjual" on a Product page.
      */
     private fun buildProductCardBubble(msg: ChatMessage, card: ProductCardPayload, isMine: Boolean): View {
-        val screenW = activity.resources.displayMetrics.widthPixels
-        val cardW = (screenW * 0.80f).toInt().coerceAtLeast(dp(250))
+        val screenW = minOf(activity.resources.displayMetrics.widthPixels, dp(680))
+        val cardW = (screenW * 0.80f).toInt().coerceIn(dp(236), dp(360))
 
         val rowWrap = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -1853,7 +1849,11 @@ internal class ChatRoomDialog(
                 text = msg.body
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                 setTextColor(bubbleTextColor)
-                maxWidth = (activity.resources.displayMetrics.widthPixels * 0.72f).toInt()
+                val maxBubbleW = minOf(
+                    (activity.resources.displayMetrics.widthPixels * 0.72f).toInt(),
+                    dp(420),
+                )
+                maxWidth = maxBubbleW
             }
             bubble.addView(bodyTv)
 

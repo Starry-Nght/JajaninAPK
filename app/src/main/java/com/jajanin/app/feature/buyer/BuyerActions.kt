@@ -34,6 +34,7 @@ import com.jajanin.app.core.constants.STATUS_PREPARING
 import com.jajanin.app.core.constants.STATUS_READY
 import com.jajanin.app.core.navigation.Screen
 import com.jajanin.app.core.ui.ProductImageCache
+import com.jajanin.app.core.ui.adaptiveDialogWidthPx
 import com.jajanin.app.core.ui.isTerminalStatus
 import com.jajanin.app.core.ui.showThemedInfo
 import com.jajanin.app.core.ui.showThemedOptions
@@ -938,7 +939,10 @@ internal fun MainActivity.showBuyerVariantPickerDialog(product: ProductRow, init
     dlg.setContentView(root)
     dlg.window?.apply {
         setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-        setLayout((resources.displayMetrics.widthPixels * 0.90f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        setLayout(
+            adaptiveDialogWidthPx(0.90f),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
     }
     dlg.show()
 }

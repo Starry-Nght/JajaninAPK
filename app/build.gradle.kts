@@ -14,8 +14,8 @@ val supabaseUrl = providers.gradleProperty("SUPABASE_URL")
     .orElse("https://yezxyhpczfnkcndfpuht.supabase.co").get()
 val supabasePublishableKey = providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY")
     .orElse("sb_publishable_vj7akRru3TvuUmkugtyRBg_0oRAQck6").get()
-val otaVersionCode = providers.gradleProperty("VERSION_CODE").map(String::toInt).orElse(60).get()
-val otaVersionName = providers.gradleProperty("VERSION_NAME").orElse("2.39").get()
+val otaVersionCode = providers.gradleProperty("VERSION_CODE").map(String::toInt).orElse(61).get()
+val otaVersionName = providers.gradleProperty("VERSION_NAME").orElse("2.40").get()
 
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -47,6 +47,7 @@ dependencies {
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("com.github.QWEA0:liquidglass:v2.0.11")
+    testImplementation("junit:junit:4.13.2")
 }
 
 configurations.configureEach {

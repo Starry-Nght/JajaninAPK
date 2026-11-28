@@ -83,7 +83,7 @@ private fun MainActivity.dialogBody(title: String, severity: String? = null): Di
         gravity = Gravity.END
     }
     dialog.setContentView(root)
-    dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+    dialog.window?.setLayout(adaptiveDialogWidthPx(0.92f), ViewGroup.LayoutParams.WRAP_CONTENT)
     return DialogParts(dialog, root, buttons)
 }
 
@@ -94,6 +94,9 @@ private fun MainActivity.dialogButton(label: String, color: Int, onClick: (() ->
         textSize = 14f
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         val d = resources.displayMetrics.density
+        gravity = Gravity.CENTER
+        minWidth = (48 * d).toInt()
+        minHeight = (48 * d).toInt()
         setPadding((14 * d).toInt(), (12 * d).toInt(), (14 * d).toInt(), (12 * d).toInt())
         isClickable = true
         isFocusable = true
@@ -156,6 +159,8 @@ internal fun MainActivity.showThemedOptions(
             setTextColor(if (selected) dialogBlue() else dialogInk())
             textSize = 15f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = (48 * d).toInt()
             setPadding((4 * d).toInt(), (13 * d).toInt(), (4 * d).toInt(), (13 * d).toInt())
             val radioIcon = AppIcon.drawable(
                 this@showThemedOptions,

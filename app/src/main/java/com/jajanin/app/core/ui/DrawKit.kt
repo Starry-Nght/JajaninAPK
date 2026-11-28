@@ -112,6 +112,12 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
     private val ellipsizeCache = HashMap<String, String>()
     private val wrapCache = HashMap<String, List<String>>()
 
+    fun clearTextCaches() {
+        measureCache.clear()
+        ellipsizeCache.clear()
+        wrapCache.clear()
+    }
+
     // Dipakai ulang tiap frame; Path baru per gambar per frame menimbulkan churn GC.
     private val clipPath = Path()
 
