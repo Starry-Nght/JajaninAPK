@@ -12,8 +12,55 @@ import com.jajanin.app.JajaninView
 import com.jajanin.app.data.model.ProductRow
 
 private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+private val imageBgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 private val imageClipPath = Path()
 private val srcRect = Rect()
+private val fitDstRect = RectF()
+
+/**
+ * Menggambar seluruh bitmap secara utuh tanpa cropping (ContentScale.Fit / object-fit: contain),
+ * mempertahankan aspect ratio asli untuk foto portrait, landscape, maupun square.
+ * Ruang kosong di sekitar foto diisi dengan [backgroundColor] netral sesuai tema.
+ */
+internal fun drawBitmapFit(
+    c: Canvas,
+    bitmap: Bitmap,
+    rect: RectF,
+    radius: Float = 0f,
+    backgroundColor: Int? = null,
+    inset: Float = 0f,
+) {
+    val bw = bitmap.width
+    val bh = bitmap.height
+    val rw = rect.width()
+    val rh = rect.height()
+    if (bw <= 0 || bh <= 0 || rw <= 0f || rh <= 0f) return
+
+    val availW = (rw - inset * 2f).coerceAtLeast(1f)
+    val availH = (rh - inset * 2f).coerceAtLeast(1f)
+    val scale = minOf(availW / bw.toFloat(), availH / bh.toFloat())
+    val dstW = bw * scale
+    val dstH = bh * scale
+    val dstLeft = rect.centerX() - dstW * 0.5f
+    val dstTop = rect.centerY() - dstH * 0.5f
+    fitDstRect.set(dstLeft, dstTop, dstLeft + dstW, dstTop + dstH)
+
+    val save = c.save()
+    if (radius > 0f) {
+        imageClipPath.reset()
+        imageClipPath.addRoundRect(rect, radius, radius, Path.Direction.CW)
+        c.clipPath(imageClipPath)
+    } else {
+        c.clipRect(rect)
+    }
+    if (backgroundColor != null) {
+        imageBgPaint.style = Paint.Style.FILL
+        imageBgPaint.color = backgroundColor
+        c.drawRect(rect, imageBgPaint)
+    }
+    c.drawBitmap(bitmap, null, fitDstRect, imagePaint)
+    c.restoreToCount(save)
+}
 
 /**
  * Menggambar bitmap dengan proporsi asli (Center-Crop / ContentScale.Crop)

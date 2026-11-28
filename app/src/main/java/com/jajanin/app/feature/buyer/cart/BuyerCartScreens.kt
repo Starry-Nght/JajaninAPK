@@ -585,32 +585,44 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
         ?: topSellingStats[product.name.trim().lowercase()]?.totalQty
         ?: 0
     val isFav = favoriteIds.contains(product.id)
-    val heroH = minOf(h * 0.36f, 290f)
+    val photos = product.allImageUrls
+    val safePhotoIdx = detailPhotoIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
+    val activePhotoUrl = photos.getOrNull(safePhotoIdx)
+    val galleryBg = if (darkMode) Color.rgb(18, 23, 35) else Color.rgb(238, 241, 247)
+
+    // Tinggi gallery utama menyesuaikan aspect ratio asli foto secara proporsional
+    // (portrait, landscape, maupun square) tanpa memaksakan persegi atau memotong gambar.
+    val activeBmp = activePhotoUrl?.takeIf { it.startsWith("https://") }?.let { ProductImageCache.images[it] }
+    val minHeroH = 220f
+    val maxHeroH = minOf(h * 0.50f, 410f).coerceAtLeast(260f)
+    val defaultHeroH = minOf(h * 0.42f, 340f)
+    val heroH = if (activeBmp != null && activeBmp.width > 0 && activeBmp.height > 0) {
+        (w * (activeBmp.height.toFloat() / activeBmp.width.toFloat())).coerceIn(minHeroH, maxHeroH)
+    } else {
+        defaultHeroH
+    }
     val showSolidTopBar = scroll > heroH - 76f
     val bodyHitTop = if (showSolidTopBar) 60f else 0f
 
     val bodySave = c.save()
     c.clipRect(0f, 0f, w, bodyBottom)
 
-    val photos = product.allImageUrls
-    val safePhotoIdx = detailPhotoIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
-    val activePhotoUrl = photos.getOrNull(safePhotoIdx)
-
-    // 1. Full-bleed edge-to-edge Hero Photo (Shopee-style multi-photo gallery)
+    // 1. Full Image Display Hero Gallery (object-fit: contain / ContentScale.Fit, tanpa cropping)
     val heroRect = RectF(0f, off, w, heroH + off)
-    drawDetailPhotoUrl(c, product, activePhotoUrl, heroRect, 0f)
+    drawDetailPhotoUrl(c, product, activePhotoUrl, heroRect, 0f, galleryBg)
+    kit.line(c, 0f, heroRect.bottom, w, heroRect.bottom, kit.divider)
     val topScrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         shader = LinearGradient(
             0f,
             heroRect.top,
             0f,
-            heroRect.top + 68f,
-            Color.argb(120, 0, 0, 0),
+            heroRect.top + 64f,
+            Color.argb(80, 0, 0, 0),
             Color.TRANSPARENT,
             Shader.TileMode.CLAMP,
         )
     }
-    c.drawRect(0f, heroRect.top, w, heroRect.top + 68f, topScrimPaint)
+    c.drawRect(0f, heroRect.top, w, heroRect.top + 64f, topScrimPaint)
 
     if (photos.size > 1) {
         val navY = heroRect.centerY()
@@ -640,7 +652,7 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
 
     var curY = heroRect.bottom
 
-    // 1b. Multi-Photo Thumbnail Strip (up to 5 photos, right under hero just like Shopee!)
+    // 1b. Multi-Photo Thumbnail Strip (seluruh gambar tampil penuh konsisten dengan gallery utama)
     if (photos.size > 1) {
         curY += 10f
         kit.text(c, "${photos.size} Foto Produk", 18f, curY + 11f, 11f, kit.muted, true)
@@ -651,7 +663,7 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
             val left = 18f + idx * (thumbSize + thumbGap)
             if (left + thumbSize <= w - 10f) {
                 val r = RectF(left, curY, left + thumbSize, curY + thumbSize)
-                drawDetailPhotoUrl(c, product, url, r, 8f)
+                drawDetailPhotoUrl(c, product, url, r, 8f, galleryBg, inset = 1.5f)
                 val selected = idx == safePhotoIdx
                 kit.rounded(c, r, Color.TRANSPARENT, 8f, if (selected) kit.blue else kit.border)
                 if (selected) {
@@ -1193,13 +1205,25 @@ private fun JajaninView.drawDetailPhotoUrl(
     url: String?,
     rect: RectF,
     radius: Float,
+    galleryBg: Int = if (darkMode) Color.rgb(18, 23, 35) else Color.rgb(238, 241, 247),
+    inset: Float = 0f,
 ) {
     val cleanUrl = url?.takeIf { it.startsWith("https://") }
+        ?: product.imageUrl?.takeIf { it.startsWith("https://") }
     val bmp = cleanUrl?.let { ProductImageCache.images[it] }
     if (bmp != null) {
-        com.jajanin.app.core.ui.drawBitmapCenterCrop(c, bmp, rect, radius)
+        com.jajanin.app.core.ui.drawBitmapFit(
+            c = c,
+            bitmap = bmp,
+            rect = rect,
+            radius = radius,
+            backgroundColor = galleryBg,
+            inset = inset,
+        )
     } else {
-        drawProductImage(c, product, rect, radius)
+        kit.rounded(c, rect, galleryBg, radius)
+        val iconSize = if (rect.width() < 80f) 16f else 28f
+        kit.centerText(c, "J", rect, iconSize, kit.blue, true)
         if (cleanUrl != null) activity()?.loadProductImage(cleanUrl)
     }
 }

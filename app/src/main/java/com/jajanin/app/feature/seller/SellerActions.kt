@@ -628,25 +628,33 @@ internal fun MainActivity.applyExifOrientation(raw: ByteArray, bmp: android.grap
 }
 
 internal fun MainActivity.loadProductImage(url: String) {
-    if (ProductImageCache.images.containsKey(url)) return
+    if (ProductImageCache.images.containsKey(url) || !ProductImageCache.inFlight.add(url)) return
     authScope.launch(Dispatchers.IO) {
-        val bitmap = runCatching {
-            val connection = java.net.URL(url).openConnection().apply { connectTimeout = 6000; readTimeout = 6000 }
-            val raw = connection.getInputStream().use { it.readBytes() }
-            // Ubin menu kecil: decode secukupnya (maks 800px) agar hemat RAM.
-            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
-            var sample = 1
-            while (bounds.outWidth / sample > 800 || bounds.outHeight / sample > 800) sample *= 2
-            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
-        }.getOrNull()
-        if (bitmap != null) {
-            ProductImageCache.images[url] = bitmap
-            launch(Dispatchers.Main) {
-                ui.invalidate()
-                productFormOverlay.syncAsyncState()
+        try {
+            val bitmap = runCatching {
+                val connection = java.net.URL(url).openConnection().apply { connectTimeout = 6000; readTimeout = 6000 }
+                val raw = connection.getInputStream().use { it.readBytes() }
+                // Decode tanpa mengubah rasio asli hingga 1280px agar galeri penuh Detail Produk tetap tajam.
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+                var sample = 1
+                while (bounds.outWidth / sample > 1280 || bounds.outHeight / sample > 1280) sample *= 2
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                val decoded = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts)
+                    ?: return@runCatching null
+                val oriented = applyExifOrientation(raw, decoded)
+                if (oriented != decoded) decoded.recycle()
+                oriented
+            }.getOrNull()
+            if (bitmap != null) {
+                ProductImageCache.images[url] = bitmap
+                launch(Dispatchers.Main) {
+                    ui.invalidate()
+                    productFormOverlay.syncAsyncState()
+                }
             }
+        } finally {
+            ProductImageCache.inFlight.remove(url)
         }
     }
 }

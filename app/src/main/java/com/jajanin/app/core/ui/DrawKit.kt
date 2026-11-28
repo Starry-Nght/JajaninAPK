@@ -401,4 +401,5 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
 
 internal object ProductImageCache {
     val images = java.util.concurrent.ConcurrentHashMap<String, Bitmap>()
+    val inFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 }
