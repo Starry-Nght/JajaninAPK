@@ -30,6 +30,7 @@ import com.jajanin.app.core.ui.ProductImageCache
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.util.formatRupiah
 import com.jajanin.app.data.model.DEFAULT_PICKUP_SESSIONS
+import com.jajanin.app.data.model.MAX_PRODUCT_IMAGES
 import com.jajanin.app.data.model.ProductVariantSection
 import com.jajanin.app.data.repository.OrderRepository
 import com.jajanin.app.data.repository.formatCalendarShortChip
@@ -160,20 +161,15 @@ internal class NativeProductFormOverlay(
     private val stockInput: EditText
     private val stockHintTv: TextView
 
-    // Section 6: Photo
+    // Section 6: Multi-Photo Gallery (max 5 photos)
     private val secPhotoTitle: TextView
+    private val photoCountTv: TextView
+    private val photoHintTv: TextView
     private val photoCard: LinearLayout
-    private val photoPreviewBox: FrameLayout
-    private val photoImageView: ImageView
-    private val photoPlaceholderCol: LinearLayout
-    private val photoPlaceholderIcon: ImageView
-    private val photoPlaceholderTag: TextView
-    private val photoTitleTv: TextView
-    private val photoStatusTv: TextView
-    private val photoSubTv: TextView
-    private val photoActionRow: LinearLayout
+    private val photoGridWrap: FlowWrapLayout
+    private val photoFooterRow: LinearLayout
     private val photoProgress: ProgressBar
-    private val photoActionTv: TextView
+    private val photoStatusTv: TextView
 
     // Section 7: Visibility
     private val secVisTitle: TextView
@@ -681,80 +677,47 @@ internal class NativeProductFormOverlay(
         priceStockRow.addView(stockCol)
         contentCol.addView(priceStockRow)
 
-        // 6. FOTO PRODUK
-        secPhotoTitle = makeSectionHeader("FOTO PRODUK", topMarginDp = 20)
-        contentCol.addView(secPhotoTitle)
-
-        photoCard = LinearLayout(activity).apply {
+        // 6. FOTO PRODUK (Multi-foto maks. 5)
+        val photoHeaderRow = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(20)
+            }
+        }
+        secPhotoTitle = makeSectionHeader("FOTO PRODUK", topMarginDp = 0)
+        photoCountTv = TextView(activity).apply {
+            text = "0/$MAX_PRODUCT_IMAGES foto"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        photoHeaderRow.addView(secPhotoTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        photoHeaderRow.addView(photoCountTv)
+        contentCol.addView(photoHeaderRow)
+
+        photoHintTv = TextView(activity).apply {
+            text = "Upload hingga $MAX_PRODUCT_IMAGES foto makanan (JPG/PNG maks 5MB). Foto pertama jadi sampul utama; ketuk foto lain untuk jadikan utama."
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(2)
+            }
+        }
+        contentCol.addView(photoHintTv)
+
+        photoCard = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(12))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(8)
             }
-            setOnClickListener {
-                hideKeyboard()
-                activity.pickProductImage()
-            }
         }
-        photoPreviewBox = FrameLayout(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(82), dp(82)).apply {
-                rightMargin = dp(14)
-            }
-            clipToOutline = true
+        photoGridWrap = FlowWrapLayout(activity, dp(8), dp(8)).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-        photoImageView = ImageView(activity).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        }
-        photoPlaceholderCol = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        }
-        photoPlaceholderIcon = ImageView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
-        }
-        photoPlaceholderTag = TextView(activity).apply {
-            text = "1:1"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(4)
-            }
-        }
-        photoPlaceholderCol.addView(photoPlaceholderIcon)
-        photoPlaceholderCol.addView(photoPlaceholderTag)
-        photoPreviewBox.addView(photoPlaceholderCol)
-        photoPreviewBox.addView(photoImageView)
-
-        val photoInfoCol = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        photoTitleTv = TextView(activity).apply {
-            text = "Foto produk"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
-            typeface = Typeface.DEFAULT_BOLD
-        }
-        photoStatusTv = TextView(activity).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(2)
-            }
-        }
-        photoSubTv = TextView(activity).apply {
-            text = "JPG/PNG · maks 5MB"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(2)
-            }
-        }
-        photoActionRow = LinearLayout(activity).apply {
+        photoFooterRow = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(8)
             }
         }
@@ -762,18 +725,14 @@ internal class NativeProductFormOverlay(
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply { rightMargin = dp(6) }
         }
-        photoActionTv = TextView(activity).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Typeface.DEFAULT_BOLD
+        photoStatusTv = TextView(activity).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        photoActionRow.addView(photoProgress)
-        photoActionRow.addView(photoActionTv)
-        photoInfoCol.addView(photoTitleTv)
-        photoInfoCol.addView(photoStatusTv)
-        photoInfoCol.addView(photoSubTv)
-        photoInfoCol.addView(photoActionRow)
-        photoCard.addView(photoPreviewBox)
-        photoCard.addView(photoInfoCol)
+        photoFooterRow.addView(photoProgress)
+        photoFooterRow.addView(photoStatusTv)
+        photoCard.addView(photoGridWrap)
+        photoCard.addView(photoFooterRow)
         contentCol.addView(photoCard)
 
         // 7. VISIBILITAS
@@ -976,11 +935,8 @@ internal class NativeProductFormOverlay(
         poQrisSwitch.applyPalette(blueColor, borderColor)
 
         photoCard.background = rounded(cardColor, 12f, borderColor)
-        photoPreviewBox.background = rounded(tintColor, 9f)
-        photoPlaceholderIcon.setImageDrawable(AppIcon.drawable(activity, "box", 22f, blueColor))
-        photoPlaceholderTag.setTextColor(blueColor)
-        photoTitleTv.setTextColor(inkColor)
-        photoSubTv.setTextColor(mutedColor)
+        photoCountTv.setTextColor(blueColor)
+        photoHintTv.setTextColor(mutedColor)
 
         visCard.background = rounded(cardColor, 12f, borderColor)
         visTitleTv.setTextColor(inkColor)
@@ -1639,41 +1595,167 @@ internal class NativeProductFormOverlay(
         }
     }
 
-    // --- Photo preview ---
+    // --- Multi-Photo Gallery Preview (up to 5 photos) ---
 
     private fun refreshPhotoUi() {
         val ui = activity.ui
-        val url = ui.productImageUrl.takeIf { it.startsWith("https://") }
-        val bmp = url?.let { ProductImageCache.images[it] }
-        if (bmp != null) {
-            photoImageView.setImageBitmap(bmp)
-            photoImageView.visibility = View.VISIBLE
-            photoPlaceholderCol.visibility = View.GONE
-        } else {
-            photoImageView.visibility = View.GONE
-            photoPlaceholderCol.visibility = View.VISIBLE
-            if (url != null) activity.loadProductImage(url)
+        val urls = ui.productImageUrls.filter { it.startsWith("https://") }.take(MAX_PRODUCT_IMAGES)
+        photoCountTv.text = "${urls.size}/$MAX_PRODUCT_IMAGES foto"
+        photoCountTv.setTextColor(if (urls.size >= MAX_PRODUCT_IMAGES) successColor else blueColor)
+
+        photoGridWrap.removeAllViews()
+        val tilePx = dp(78)
+
+        urls.forEachIndexed { idx, url ->
+            val tile = FrameLayout(activity).apply {
+                layoutParams = ViewGroup.LayoutParams(tilePx, tilePx)
+                background = rounded(tintColor, 10f, if (idx == 0) blueColor else borderColor, if (idx == 0) 1.5f else 1f)
+                clipToOutline = true
+                setOnClickListener {
+                    if (idx > 0 && idx in ui.productImageUrls.indices) {
+                        val picked = ui.productImageUrls.removeAt(idx)
+                        ui.productImageUrls.add(0, picked)
+                        ui.productImageUrl = picked
+                        Toast.makeText(activity, "Dijadikan foto utama.", Toast.LENGTH_SHORT).show()
+                        refreshPhotoUi()
+                    }
+                }
+            }
+            val bmp = ProductImageCache.images[url]
+            if (bmp != null) {
+                val iv = ImageView(activity).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    setImageBitmap(bmp)
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                }
+                tile.addView(iv)
+            } else {
+                val ph = ImageView(activity).apply {
+                    scaleType = ImageView.ScaleType.CENTER
+                    setImageDrawable(AppIcon.drawable(activity, "image", 22f, blueColor))
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                }
+                tile.addView(ph)
+                activity.loadProductImage(url)
+            }
+
+            // Cover tag on photo #1
+            if (idx == 0) {
+                val coverTag = TextView(activity).apply {
+                    text = "Utama"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.WHITE)
+                    background = rounded(blueColor, 5f)
+                    setPadding(dp(5), dp(2), dp(5), dp(2))
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        Gravity.BOTTOM or Gravity.START,
+                    ).apply {
+                        leftMargin = dp(4)
+                        bottomMargin = dp(4)
+                    }
+                }
+                tile.addView(coverTag)
+            }
+
+            // Remove button (top-right)
+            val removeBtn = ImageView(activity).apply {
+                scaleType = ImageView.ScaleType.CENTER
+                setImageDrawable(AppIcon.drawable(activity, "close", 11f, Color.WHITE))
+                background = rounded(Color.argb(195, 16, 22, 36), 11f)
+                layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.TOP or Gravity.END).apply {
+                    topMargin = dp(4)
+                    rightMargin = dp(4)
+                }
+                setOnClickListener {
+                    if (!ui.productImageUploading && idx in ui.productImageUrls.indices) {
+                        ui.productImageUrls.removeAt(idx)
+                        ui.productImageUrl = ui.productImageUrls.firstOrNull().orEmpty()
+                        refreshPhotoUi()
+                    }
+                }
+            }
+            tile.addView(removeBtn)
+            photoGridWrap.addView(tile)
         }
 
+        // "+ Tambah" tile while under 5 photos
+        if (urls.size < MAX_PRODUCT_IMAGES) {
+            val addTile = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = ViewGroup.LayoutParams(tilePx, tilePx)
+                background = rounded(tintColor, 10f, blueColor)
+                setOnClickListener {
+                    if (!ui.productImageUploading) {
+                        hideKeyboard()
+                        activity.pickProductImage()
+                    }
+                }
+            }
+            if (ui.productImageUploading) {
+                addTile.addView(
+                    ProgressBar(activity, null, android.R.attr.progressBarStyleSmall),
+                    LinearLayout.LayoutParams(dp(22), dp(22)),
+                )
+                addTile.addView(
+                    TextView(activity).apply {
+                        text = "Unggah..."
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(blueColor)
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dp(4) }
+                    },
+                )
+            } else {
+                addTile.addView(
+                    ImageView(activity).apply {
+                        setImageDrawable(AppIcon.drawable(activity, "plus", 20f, blueColor))
+                    },
+                    LinearLayout.LayoutParams(dp(22), dp(22)),
+                )
+                addTile.addView(
+                    TextView(activity).apply {
+                        text = if (urls.isEmpty()) "Tambah\nFoto" else "+ Tambah"
+                        gravity = Gravity.CENTER
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(blueColor)
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = dp(3) }
+                    },
+                )
+            }
+            photoGridWrap.addView(addTile)
+        }
+
+        photoProgress.visibility = if (ui.productImageUploading) View.VISIBLE else View.GONE
         photoStatusTv.text = when {
-            ui.productImageUploading -> "Mengunggah..."
-            url == null -> "Belum ada foto"
-            else -> "Foto terpasang"
+            ui.productImageUploading -> "Mengunggah foto produk..."
+            urls.isEmpty() -> "Belum ada foto · bisa pilih sekaligus hingga $MAX_PRODUCT_IMAGES foto"
+            urls.size >= MAX_PRODUCT_IMAGES -> "Batas maksimal $MAX_PRODUCT_IMAGES foto tercapai"
+            else -> "${urls.size} foto terpasang · sisa ${MAX_PRODUCT_IMAGES - urls.size} slot foto lagi"
         }
         photoStatusTv.setTextColor(
             when {
                 ui.productImageUploading -> blueColor
-                url == null -> mutedColor
+                urls.isEmpty() -> mutedColor
                 else -> successColor
             },
         )
-        photoProgress.visibility = if (ui.productImageUploading) View.VISIBLE else View.GONE
-        photoActionTv.text = when {
-            ui.productImageUploading -> "Memproses..."
-            url == null -> "+ Pilih foto"
-            else -> "+ Ganti foto"
-        }
-        photoActionTv.setTextColor(if (ui.productImageUploading) mutedColor else blueColor)
     }
 
     // --- Visibility & Save CTA ---

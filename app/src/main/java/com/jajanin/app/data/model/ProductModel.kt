@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 
 internal val DEFAULT_PICKUP_SESSIONS = listOf("Istirahat 1", "Istirahat 2", "Pulang")
 internal const val CART_VARIANT_SEP = "||"
+internal const val MAX_PRODUCT_IMAGES = 5
 
 internal fun cartKeyOf(productId: String, variantLabel: String = ""): String {
     val cleanVar = variantLabel.trim()
@@ -48,6 +49,7 @@ internal data class ProductRow(
     val category: String,
     @SerialName("price_idr") val priceIdr: Int,
     @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("image_urls") val imageUrls: List<String> = emptyList(),
     @SerialName("is_available") val available: Boolean = true,
     @SerialName("stock") val stock: Int? = null,
     @SerialName("stall_id") val stallId: String,
@@ -61,6 +63,17 @@ internal data class ProductRow(
     @SerialName("po_allow_weekend") val poAllowWeekend: Boolean = false,
     @SerialName("variant_sections") val variantSections: List<ProductVariantSection> = emptyList(),
 ) {
+    /** Semua URL foto produk (maks 5, fallback ke imageUrl tunggal untuk data lama). */
+    val allImageUrls: List<String>
+        get() = buildList {
+            imageUrls.forEach { raw ->
+                val u = raw.trim()
+                if (u.startsWith("https://") && u !in this) add(u)
+            }
+            val single = imageUrl?.trim().orEmpty()
+            if (single.startsWith("https://") && single !in this) add(0, single)
+        }.take(MAX_PRODUCT_IMAGES)
+
     /** Daftar section varian aktif yang memiliki minimal 1 pilihan. */
     val activeVariantSections: List<ProductVariantSection>
         get() = variantSections.mapNotNull { sec ->

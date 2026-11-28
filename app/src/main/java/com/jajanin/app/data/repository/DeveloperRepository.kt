@@ -332,7 +332,7 @@ internal object DeveloperRepository {
     /** Stall lookup for the seller inspector (Seller -> Stall -> Menu -> Orders). */
     suspend fun fetchStallMenu(stallId: String): List<ProductRow> = runCatching {
         client.postgrest.from("menu_items")
-            .select(Columns.raw("id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,variant_sections")) {
+            .select(Columns.raw("id,name,description,category,price_idr,image_url,image_urls,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,variant_sections")) {
                 filter { eq("stall_id", stallId) }; order("created_at", Order.DESCENDING)
             }.decodeList<ProductRow>()
     }.getOrDefault(emptyList())

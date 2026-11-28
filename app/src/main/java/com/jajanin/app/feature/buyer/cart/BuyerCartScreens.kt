@@ -593,9 +593,13 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     val bodySave = c.save()
     c.clipRect(0f, 0f, w, bodyBottom)
 
-    // 1. Full-bleed edge-to-edge Hero Photo (Shopee-style)
+    val photos = product.allImageUrls
+    val safePhotoIdx = detailPhotoIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))
+    val activePhotoUrl = photos.getOrNull(safePhotoIdx)
+
+    // 1. Full-bleed edge-to-edge Hero Photo (Shopee-style multi-photo gallery)
     val heroRect = RectF(0f, off, w, heroH + off)
-    drawProductImage(c, product, heroRect, 0f)
+    drawDetailPhotoUrl(c, product, activePhotoUrl, heroRect, 0f)
     val topScrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         shader = LinearGradient(
             0f,
@@ -609,19 +613,58 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     }
     c.drawRect(0f, heroRect.top, w, heroRect.top + 68f, topScrimPaint)
 
-    // Bottom-right translucent stock/category badge on hero
+    if (photos.size > 1) {
+        val navY = heroRect.centerY()
+        val prevBtn = RectF(12f, navY - 17f, 46f, navY + 17f)
+        val nextBtn = RectF(w - 46f, navY - 17f, w - 12f, navY + 17f)
+        kit.rounded(c, prevBtn, Color.argb(125, 12, 18, 30), 17f)
+        drawIcon(c, "chevronLeft", prevBtn.centerX() - 1f, prevBtn.centerY(), 16f, Color.WHITE)
+        kit.rounded(c, nextBtn, Color.argb(125, 12, 18, 30), 17f)
+        drawIcon(c, "chevronRight", nextBtn.centerX() + 1f, nextBtn.centerY(), 16f, Color.WHITE)
+        bounds.putVisible("detailPhotoPrev", prevBtn, topLimit = bodyHitTop, bottomLimit = bodyBottom)
+        bounds.putVisible("detailPhotoNext", nextBtn, topLimit = bodyHitTop, bottomLimit = bodyBottom)
+    }
+
+    // Bottom-right translucent badge on hero ("1/5" when multi-photo, else category · stock)
     val catText = if (normalizeCategory(product.category) == "Food") "Makanan" else "Minuman"
-    val heroTagText = if (available) {
+    val heroTagText = if (photos.size > 1) {
+        "${safePhotoIdx + 1}/${photos.size}"
+    } else if (available) {
         if (product.stock != null) "$catText · Stok ${product.stock}" else "$catText · Tersedia"
     } else {
         "Stok Habis"
     }
-    val heroTagW = kit.measure(heroTagText, 10f, true) + 18f
+    val heroTagW = (kit.measure(heroTagText, 10.5f, true) + 20f).coerceAtLeast(42f)
     val heroTagRect = RectF(w - heroTagW - 14f, heroRect.bottom - 34f, w - 14f, heroRect.bottom - 12f)
     kit.rounded(c, heroTagRect, Color.argb(175, 14, 19, 32), 11f)
-    kit.centerText(c, heroTagText, heroTagRect, 10f, Color.WHITE, true)
+    kit.centerText(c, heroTagText, heroTagRect, 10.5f, Color.WHITE, true)
 
     var curY = heroRect.bottom
+
+    // 1b. Multi-Photo Thumbnail Strip (up to 5 photos, right under hero just like Shopee!)
+    if (photos.size > 1) {
+        curY += 10f
+        kit.text(c, "${photos.size} Foto Produk", 18f, curY + 11f, 11f, kit.muted, true)
+        curY += 18f
+        val thumbSize = 54f
+        val thumbGap = 8f
+        photos.forEachIndexed { idx, url ->
+            val left = 18f + idx * (thumbSize + thumbGap)
+            if (left + thumbSize <= w - 10f) {
+                val r = RectF(left, curY, left + thumbSize, curY + thumbSize)
+                drawDetailPhotoUrl(c, product, url, r, 8f)
+                val selected = idx == safePhotoIdx
+                kit.rounded(c, r, Color.TRANSPARENT, 8f, if (selected) kit.blue else kit.border)
+                if (selected) {
+                    val innerRing = RectF(r.left + 1.2f, r.top + 1.2f, r.right - 1.2f, r.bottom - 1.2f)
+                    kit.rounded(c, innerRing, Color.TRANSPARENT, 7f, kit.blue)
+                }
+                bounds.putVisible("detailPhoto:$idx", r, topLimit = bodyHitTop, bottomLimit = bodyBottom)
+            }
+        }
+        curY += thumbSize + 10f
+        kit.line(c, 0f, curY, w, curY, kit.divider)
+    }
 
     // 2. Variant Preview Strip right beneath hero (just like "3 Variasi Tersedia")
     if (variantSections.isNotEmpty()) {
@@ -1093,7 +1136,8 @@ private fun JajaninView.drawProductVariantBottomSheet(
 
     // 3. Sheet Header (Product thumbnail + Price + Schedule pill + Stock + Selected summary + Close X)
     val thumbRect = RectF(18f, sheetTop + 16f, 102f, sheetTop + 100f)
-    drawProductImage(c, product, thumbRect, 10f)
+    val activeThumbUrl = product.allImageUrls.getOrNull(detailPhotoIndex.coerceAtLeast(0))
+    drawDetailPhotoUrl(c, product, activeThumbUrl, thumbRect, 10f)
     kit.rounded(c, thumbRect, Color.TRANSPARENT, 10f, kit.border)
 
     kit.text(c, formatRupiah(product.priceIdr), 114f, sheetTop + 37f, 20f, kit.blue, true)
@@ -1199,4 +1243,21 @@ private fun JajaninView.drawProductVariantBottomSheet(
     kit.centerText(c, ctaLabel, ctaRect, 14f, Color.WHITE, true)
     press(c, "detailSheetConfirm:$mode", ctaRect, 12f)
     bounds["detailSheetConfirm:$mode"] = ctaRect
+}
+
+private fun JajaninView.drawDetailPhotoUrl(
+    c: Canvas,
+    product: com.jajanin.app.data.model.ProductRow,
+    url: String?,
+    rect: RectF,
+    radius: Float,
+) {
+    val cleanUrl = url?.takeIf { it.startsWith("https://") }
+    val bmp = cleanUrl?.let { ProductImageCache.images[it] }
+    if (bmp != null) {
+        com.jajanin.app.core.ui.drawBitmapCenterCrop(c, bmp, rect, radius)
+    } else {
+        drawProductImage(c, product, rect, radius)
+        if (cleanUrl != null) activity()?.loadProductImage(cleanUrl)
+    }
 }

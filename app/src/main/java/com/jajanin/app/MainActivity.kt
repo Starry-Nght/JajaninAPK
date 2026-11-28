@@ -595,13 +595,25 @@ class MainActivity : Activity() {
         if (resultCode != RESULT_OK) return
         when (requestCode) {
             REQUEST_PRODUCT_IMAGE -> {
-                val uri = data?.data ?: return
-                runCatching {
-                    contentResolver.takePersistableUriPermission(
-                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
+                val uris = buildList {
+                    val clip = data?.clipData
+                    if (clip != null && clip.itemCount > 0) {
+                        for (i in 0 until clip.itemCount) {
+                            clip.getItemAt(i)?.uri?.let { add(it) }
+                        }
+                    } else {
+                        data?.data?.let { add(it) }
+                    }
                 }
-                uploadProductImage(uri)
+                if (uris.isEmpty()) return
+                uris.forEach { uri ->
+                    runCatching {
+                        contentResolver.takePersistableUriPermission(
+                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    }
+                }
+                uploadProductImages(uris)
             }
             REQUEST_OTA_APK -> {
                 val uri = data?.data ?: return

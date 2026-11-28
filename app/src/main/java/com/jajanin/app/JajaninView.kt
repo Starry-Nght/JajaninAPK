@@ -146,6 +146,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var productPrice = ""
     internal var productName = ""
     internal var productImageUrl = ""
+    internal var productImageUrls: MutableList<String> = mutableListOf()
     internal var productImageUploading = false
     internal var productStock = ""
     internal var productIngredients = ""
@@ -164,6 +165,7 @@ internal class JajaninView(context: Context) : View(context) {
     internal var detailSheetScroll: Float = 0f
     internal var detailSheetMaxScroll: Float = 0f
     internal var detailSheetTopY: Float = 0f
+    internal var detailPhotoIndex: Int = 0
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
     internal var productSaving = false
@@ -1150,6 +1152,7 @@ internal class JajaninView(context: Context) : View(context) {
                         quantity = 1
                         detailSheetMode = null
                         detailSheetScroll = 0f
+                        detailPhotoIndex = 0
                         detailSelectedVariants.clear()
                         selectedProduct?.activeVariantSections?.forEachIndexed { idx, sec ->
                             sec.options.firstOrNull()?.let { firstOpt ->
@@ -1159,6 +1162,28 @@ internal class JajaninView(context: Context) : View(context) {
                         if (selectedProduct != null) go(Screen.DETAIL)
                     }
                     hit == "detailSheetNoop" -> Unit
+                    hit.startsWith("detailPhoto:") -> {
+                        val idx = hit.substringAfter(':').toIntOrNull()
+                        val count = selectedProduct?.allImageUrls?.size ?: 0
+                        if (idx != null && count > 0) {
+                            detailPhotoIndex = idx.coerceIn(0, count - 1)
+                            invalidate()
+                        }
+                    }
+                    hit == "detailPhotoPrev" -> {
+                        val count = selectedProduct?.allImageUrls?.size ?: 0
+                        if (count > 1) {
+                            detailPhotoIndex = (detailPhotoIndex - 1 + count) % count
+                            invalidate()
+                        }
+                    }
+                    hit == "detailPhotoNext" -> {
+                        val count = selectedProduct?.allImageUrls?.size ?: 0
+                        if (count > 1) {
+                            detailPhotoIndex = (detailPhotoIndex + 1) % count
+                            invalidate()
+                        }
+                    }
                     hit == "detailSheetClose" -> {
                         detailSheetMode = null
                         detailSheetScroll = 0f

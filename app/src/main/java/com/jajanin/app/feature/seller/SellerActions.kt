@@ -207,7 +207,8 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productCategory = normalizeCategory(existing.category)
         ui.productPrice = existing.priceIdr.toString()
         ui.productStock = existing.stock?.toString().orEmpty()
-        ui.productImageUrl = existing.imageUrl.orEmpty()
+        ui.productImageUrls = existing.allImageUrls.toMutableList()
+        ui.productImageUrl = ui.productImageUrls.firstOrNull().orEmpty()
         ui.productIngredients = existing.cleanIngredients
         ui.productRoom = existing.pickupRoom.ifBlank { fallbackRoom }
         ui.productAvailable = existing.available
@@ -228,6 +229,7 @@ internal fun MainActivity.openProductForm(existing: ProductRow?) {
         ui.productCategory = "Food"
         ui.productPrice = ""
         ui.productStock = ""
+        ui.productImageUrls = mutableListOf()
         ui.productImageUrl = ""
         ui.productIngredients = ""
         ui.productRoom = fallbackRoom
@@ -474,60 +476,106 @@ internal fun MainActivity.saveProductForm() {
 }
 
 internal fun MainActivity.pickProductImage() {
+    val maxPhotos = com.jajanin.app.data.model.MAX_PRODUCT_IMAGES
+    if (ui.productImageUrls.size >= maxPhotos) {
+        Toast.makeText(this, "Maksimal $maxPhotos foto per produk.", Toast.LENGTH_SHORT).show()
+        return
+    }
     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
         addCategory(Intent.CATEGORY_OPENABLE)
         type = "image/*"
+        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
     }
     startActivityForResult(intent, REQUEST_PRODUCT_IMAGE)
 }
 
-/** Upload gambar produk pilihan ke Storage publik lalu simpan URL-nya. */
-internal fun MainActivity.uploadProductImage(uri: android.net.Uri) {
+/** Upload satu atau beberapa foto produk (maks 5 total) ke Storage publik lalu simpan URL-nya. */
+internal fun MainActivity.uploadProductImage(uri: android.net.Uri) = uploadProductImages(listOf(uri))
+
+internal fun MainActivity.uploadProductImages(uris: List<android.net.Uri>) {
     val self = this
+    val maxPhotos = com.jajanin.app.data.model.MAX_PRODUCT_IMAGES
+    val remaining = (maxPhotos - ui.productImageUrls.size).coerceAtLeast(0)
+    if (remaining <= 0) {
+        Toast.makeText(this, "Maksimal $maxPhotos foto per produk.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val batch = uris.take(remaining)
+    if (uris.size > remaining) {
+        Toast.makeText(
+            this,
+            "Maksimal $maxPhotos foto per produk. Hanya $remaining foto pertama yang diunggah.",
+            Toast.LENGTH_LONG,
+        ).show()
+    }
     ui.productImageUploading = true
     ui.invalidate()
     productFormOverlay.syncAsyncState()
     authScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        var uploadedCount = 0
+        var lastError: Throwable? = null
         try {
-            val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: error("Gambar tidak bisa dibaca.")
-            // Kecilkan dulu di HP (maks 1280px, JPEG q82): upload 10-50x
-            // lebih ringan daripada foto mentah, jarang gagal/timeout.
-            val bytes = compressForUpload(raw)
-            require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
             val token = SupabaseRepository.currentAccessToken()
                 ?: error("Sesi habis, masuk ulang.")
             val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
-            val path = "$uid/${java.util.UUID.randomUUID()}.jpg"
-            val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/product-images/$path")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                requestMethod = "PUT"
-                doOutput = true
-                setFixedLengthStreamingMode(bytes.size)
-                setRequestProperty("apikey", SupabaseRepository.publishableKey)
-                setRequestProperty("Authorization", "Bearer $token")
-                setRequestProperty("Content-Type", "image/jpeg")
-                setRequestProperty("x-upsert", "true")
-                connectTimeout = 15000
-                readTimeout = 15000
+            for (uri in batch) {
+                try {
+                    val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: error("Gambar tidak bisa dibaca.")
+                    // Kecilkan dulu di HP (maks 1280px, JPEG q82): upload 10-50x
+                    // lebih ringan daripada foto mentah, jarang gagal/timeout.
+                    val bytes = compressForUpload(raw)
+                    require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
+                    val path = "$uid/${java.util.UUID.randomUUID()}.jpg"
+                    val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/product-images/$path")
+                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                        requestMethod = "PUT"
+                        doOutput = true
+                        setFixedLengthStreamingMode(bytes.size)
+                        setRequestProperty("apikey", SupabaseRepository.publishableKey)
+                        setRequestProperty("Authorization", "Bearer $token")
+                        setRequestProperty("Content-Type", "image/jpeg")
+                        setRequestProperty("x-upsert", "true")
+                        connectTimeout = 15000
+                        readTimeout = 15000
+                    }
+                    conn.outputStream.use { it.write(bytes) }
+                    val code = conn.responseCode
+                    if (code !in 200..299) error("Unggah gagal (HTTP $code).")
+                    val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/product-images/$path"
+                    uploadedCount++
+                    launch(kotlinx.coroutines.Dispatchers.Main) {
+                        if (ui.productImageUrls.size < maxPhotos && publicUrl !in ui.productImageUrls) {
+                            ui.productImageUrls.add(publicUrl)
+                        }
+                        ui.productImageUrl = ui.productImageUrls.firstOrNull().orEmpty()
+                        ui.invalidate()
+                        productFormOverlay.syncAsyncState()
+                    }
+                } catch (e: Throwable) {
+                    lastError = e
+                }
             }
-            conn.outputStream.use { it.write(bytes) }
-            val code = conn.responseCode
-            if (code !in 200..299) error("Unggah gagal (HTTP $code).")
-            val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/product-images/$path"
+        } catch (e: Throwable) {
+            lastError = e
+        } finally {
             launch(kotlinx.coroutines.Dispatchers.Main) {
-                ui.productImageUrl = publicUrl
                 ui.productImageUploading = false
+                ui.productImageUrl = ui.productImageUrls.firstOrNull().orEmpty()
                 ui.invalidate()
                 productFormOverlay.syncAsyncState()
-                Toast.makeText(self, "Gambar terunggah.", Toast.LENGTH_SHORT).show()
-            }
-        } catch (error: Throwable) {
-            launch(kotlinx.coroutines.Dispatchers.Main) {
-                ui.productImageUploading = false
-                ui.invalidate()
-                productFormOverlay.syncAsyncState()
-                Toast.makeText(self, SupabaseRepository.errorMessage(error), Toast.LENGTH_LONG).show()
+                when {
+                    uploadedCount > 0 && lastError == null -> {
+                        val msg = if (uploadedCount == 1) "Foto terunggah." else "$uploadedCount foto terunggah."
+                        Toast.makeText(self, msg, Toast.LENGTH_SHORT).show()
+                    }
+                    uploadedCount > 0 && lastError != null -> {
+                        Toast.makeText(self, "$uploadedCount foto terunggah, sebagian gagal.", Toast.LENGTH_LONG).show()
+                    }
+                    lastError != null -> {
+                        Toast.makeText(self, SupabaseRepository.errorMessage(lastError!!), Toast.LENGTH_LONG).show()
+                    }
+                }
             }
         }
     }
@@ -656,7 +704,15 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
     }
     authScope.launch {
         try {
-            val imageUrl = ui.productImageUrl.takeIf { it.startsWith("https://") }
+            val cleanUrls = buildList {
+                ui.productImageUrls.forEach { raw ->
+                    val u = raw.trim()
+                    if (u.startsWith("https://") && u !in this) add(u)
+                }
+                val single = ui.productImageUrl.trim()
+                if (single.startsWith("https://") && single !in this) add(0, single)
+            }.take(com.jajanin.app.data.model.MAX_PRODUCT_IMAGES)
+            val imageUrl = cleanUrls.firstOrNull()
             val cleanRoom = ui.productRoom.trim()
             val packedIngredients = com.jajanin.app.data.model.packRoomAndIngredients(cleanRoom, ui.productIngredients)
             val draft = ProductDraft(
@@ -665,6 +721,7 @@ internal fun MainActivity.saveProduct(dialog: Dialog? = null) {
                 category = ui.productCategory,
                 priceIdr = price,
                 imageUrl = imageUrl,
+                imageUrls = cleanUrls,
                 stock = stock,
                 ingredients = packedIngredients,
                 available = ui.productAvailable,

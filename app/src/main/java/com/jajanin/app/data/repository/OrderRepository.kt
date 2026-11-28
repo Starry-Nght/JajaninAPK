@@ -292,6 +292,7 @@ internal data class ProductDraft(
     val category: String,
     val priceIdr: Int,
     val imageUrl: String?,
+    val imageUrls: List<String> = emptyList(),
     val stock: Int?,
     val ingredients: String = "",
     val available: Boolean = true,
@@ -392,7 +393,7 @@ internal object OrderRepository {
     )
 
     private val productColumns = Columns.raw(
-        "id,name,description,category,price_idr,image_url,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,po_dates,po_cutoff_hour,po_daily_quota,po_require_qris,po_allow_weekend,variant_sections"
+        "id,name,description,category,price_idr,image_url,image_urls,is_available,stock,stall_id,ingredients,order_schedule,pickup_sessions,po_dates,po_cutoff_hour,po_daily_quota,po_require_qris,po_allow_weekend,variant_sections"
     )
 
     private val realtimeJson = Json {
@@ -476,6 +477,23 @@ internal object OrderRepository {
         return kotlinx.serialization.json.JsonArray(cleaned)
     }
 
+    private fun normalizeProductImages(
+        urls: List<String>,
+        fallbackSingle: String?,
+    ): Pair<String?, kotlinx.serialization.json.JsonArray> {
+        val clean = buildList {
+            urls.forEach { raw ->
+                val u = raw.trim()
+                if (u.startsWith("https://") && u !in this) add(u)
+            }
+            val single = fallbackSingle?.trim().orEmpty()
+            if (single.startsWith("https://") && single !in this) add(0, single)
+        }.take(com.jajanin.app.data.model.MAX_PRODUCT_IMAGES)
+        return clean.firstOrNull() to kotlinx.serialization.json.JsonArray(
+            clean.map { kotlinx.serialization.json.JsonPrimitive(it) }
+        )
+    }
+
     suspend fun createProduct(draft: ProductDraft): ProductRow {
         val stockVal = draft.stock
         require(stockVal != null && stockVal in 1..100) {
@@ -483,13 +501,15 @@ internal object OrderRepository {
         }
         val uid = SupabaseRepository.currentUid() ?: error("Silakan masuk untuk menyimpan produk.")
         val stallId = resolveSellerStall(uid)
+        val (primaryImg, imgArray) = normalizeProductImages(draft.imageUrls, draft.imageUrl)
         val payload = buildJsonObject {
             put("stall_id", stallId)
             put("name", draft.name)
             put("description", draft.description)
             put("category", draft.category)
             put("price_idr", draft.priceIdr)
-            put("image_url", draft.imageUrl)
+            put("image_url", primaryImg)
+            put("image_urls", imgArray)
             put("is_available", draft.available)
             put("ingredients", draft.ingredients)
             put("order_schedule", draft.orderSchedule)
@@ -512,12 +532,14 @@ internal object OrderRepository {
         require(stockVal != null && stockVal in 1..100) {
             "Stok wajib diisi antara 1 sampai 100 sebelum menjual produk."
         }
+        val (primaryImg, imgArray) = normalizeProductImages(draft.imageUrls, draft.imageUrl)
         val patch = buildJsonObject {
             put("name", draft.name)
             put("description", draft.description)
             put("category", draft.category)
             put("price_idr", draft.priceIdr)
-            put("image_url", draft.imageUrl)
+            put("image_url", primaryImg)
+            put("image_urls", imgArray)
             put("is_available", draft.available)
             put("ingredients", draft.ingredients)
             put("order_schedule", draft.orderSchedule)
