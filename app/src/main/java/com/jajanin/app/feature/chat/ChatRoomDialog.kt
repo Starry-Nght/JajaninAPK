@@ -137,20 +137,22 @@ internal class ChatRoomDialog(
         NotificationHelper.cancelChatNotification(activity, conversationId)
 
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        val root = buildContentView()
+        dialog.setContentView(root)
         dialog.window?.apply {
             setBackgroundDrawable(ColorDrawable(kit.bg))
             setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            ResponsiveLayout.configureSystemBars(this, activity.ui.darkMode, kit.card)
             @Suppress("DEPRECATION")
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
+            ResponsiveLayout.configureSystemBars(this, activity.ui.darkMode, kit.card)
         }
-
-        val root = buildContentView()
-        dialog.setContentView(root)
         dialog.setOnDismissListener {
             onDialogClosed()
         }
         dialog.show()
+        root.post {
+            dialog.window?.let { ResponsiveLayout.configureSystemBars(it, activity.ui.darkMode, kit.card) }
+        }
 
         startRoomRealtime()
         loadInitialMessages()

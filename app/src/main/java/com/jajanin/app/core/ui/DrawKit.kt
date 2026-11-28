@@ -366,7 +366,8 @@ internal class DrawKit(private val res: Resources, private val canvasScale: () -
 
     fun image(c: Canvas, resId: Int, r: RectF, radius: Float = 0f) {
         val bmp = bitmap(resId) ?: return
-        val round = radius * res.displayMetrics.density / canvasScale()
+        val scaleFactor = canvasScale().takeIf { it.isFinite() && it > 0f } ?: 1f
+        val round = radius * res.displayMetrics.density / scaleFactor
         val save = c.save()
         clipPath.reset()
         clipPath.addRoundRect(r, round, round, Path.Direction.CW)

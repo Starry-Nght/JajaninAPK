@@ -697,8 +697,8 @@ internal class NativeLoginOverlay(
     }
 
     fun onConfigChanged() {
-        rootContainer.requestApplyInsets()
-        rootContainer.post { applyContentPadding() }
+        runCatching { rootContainer.requestApplyInsets() }
+        rootContainer.post { runCatching { applyContentPadding() } }
     }
 
     fun applyTheme(dark: Boolean) {

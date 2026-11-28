@@ -410,7 +410,6 @@ class MainActivity : Activity() {
         loadFavorites()
         ui.setDarkMode(resolveTheme())
         ui.themeLabel = themeModeLabel()
-        ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
 
         // Root edge-to-edge dengan warna latar tema agar area status bar, notch/cutout,
         // navigation bar, dan margin tablet selalu menyatu mulus tanpa bar hitam/putih.
@@ -425,6 +424,17 @@ class MainActivity : Activity() {
         // menyerap inset status bar, gesture/3-button nav (bawah & samping landscape),
         // serta display cutout (notch / punch-hole) agar konten tidak pernah tertutup.
         val safeOuter = object : FrameLayout(this) {
+            override fun dispatchApplyWindowInsets(insets: android.view.WindowInsets): android.view.WindowInsets {
+                runCatching {
+                    safeInsets = ResponsiveLayout.extractSafeInsets(insets)
+                    applyAdaptiveCanvasLayout()
+                }
+                // Jangan teruskan inset sistem ke canvasFrame agar LiquidGlassNavHost tidak double-pad,
+                // namun kembalikan insets mentah ke root agar sibling overlay (Login & Form Produk)
+                // tetap menerima WindowInsets penuh termasuk IME keyboard di API 24-35+.
+                return insets
+            }
+
             override fun dispatchDraw(canvas: android.graphics.Canvas) {
                 super.dispatchDraw(canvas)
                 val inner = safeCanvasFrame
@@ -482,11 +492,6 @@ class MainActivity : Activity() {
             ),
         )
 
-        safeOuter.setOnApplyWindowInsetsListener { _, insets ->
-            safeInsets = ResponsiveLayout.extractSafeInsets(insets)
-            applyAdaptiveCanvasLayout()
-            ResponsiveLayout.consumeSystemInsets(insets)
-        }
         safeOuter.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
             if ((r - l) != (or - ol) || (b - t) != (ob - ot)) {
                 safeOuter.post { applyAdaptiveCanvasLayout() }
@@ -516,7 +521,14 @@ class MainActivity : Activity() {
         @Suppress("DEPRECATION")
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
-        root.requestApplyInsets()
+        // Wajib setelah setContentView agar DecorView & WindowInsetsController sudah siap.
+        ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
+        root.post {
+            if (!isFinishing && !isDestroyed) {
+                ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
+                runCatching { root.requestApplyInsets() }
+            }
+        }
         NotificationHelper.ensureChannel(this)
         requestNotificationPermission()
         startProductUpdates()
@@ -531,41 +543,57 @@ class MainActivity : Activity() {
 
     /** Menyesuaikan padding safe-area & lebar kanvas adaptif untuk ponsel, tablet, dan landscape. */
     private fun applyAdaptiveCanvasLayout() {
-        val outer = outerSafeBox ?: return
-        val inner = safeCanvasFrame ?: return
-        if (outer.paddingLeft != safeInsets.left ||
-            outer.paddingTop != safeInsets.top ||
-            outer.paddingRight != safeInsets.right ||
-            outer.paddingBottom != safeInsets.bottom
-        ) {
-            outer.setPadding(safeInsets.left, safeInsets.top, safeInsets.right, safeInsets.bottom)
-        }
-        val availW = (outer.width - safeInsets.left - safeInsets.right).coerceAtLeast(0)
-        val availH = (outer.height - safeInsets.top - safeInsets.bottom).coerceAtLeast(0)
-        if (availW <= 0 || availH <= 0) return
+        runCatching {
+            val outer = outerSafeBox ?: return
+            val inner = safeCanvasFrame ?: return
+            if (outer.paddingLeft != safeInsets.left ||
+                outer.paddingTop != safeInsets.top ||
+                outer.paddingRight != safeInsets.right ||
+                outer.paddingBottom != safeInsets.bottom
+            ) {
+                outer.setPadding(safeInsets.left, safeInsets.top, safeInsets.right, safeInsets.bottom)
+            }
+            val availW = (outer.width - safeInsets.left - safeInsets.right).coerceAtLeast(0)
+            val availH = (outer.height - safeInsets.top - safeInsets.bottom).coerceAtLeast(0)
+            if (availW <= 0 || availH <= 0) return
 
-        val vp = ResponsiveLayout.computeAdaptiveViewport(
-            safeWidthPx = availW,
-            safeHeightPx = availH,
-            density = resources.displayMetrics.density,
-        )
-        viewportCentered = vp.isCenteredColumn
-        val lp = inner.layoutParams as FrameLayout.LayoutParams
-        val targetW = if (vp.isCenteredColumn) vp.hostWidthPx else FrameLayout.LayoutParams.MATCH_PARENT
-        if (lp.width != targetW || lp.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
-            lp.width = targetW
-            lp.gravity = android.view.Gravity.CENTER_HORIZONTAL
-            inner.layoutParams = lp
+            val vp = ResponsiveLayout.computeAdaptiveViewport(
+                safeWidthPx = availW,
+                safeHeightPx = availH,
+                density = resources.displayMetrics.density,
+            )
+            viewportCentered = vp.isCenteredColumn
+            val lp = inner.layoutParams as? FrameLayout.LayoutParams ?: return
+            val targetW = if (vp.isCenteredColumn) vp.hostWidthPx else FrameLayout.LayoutParams.MATCH_PARENT
+            if (lp.width != targetW || lp.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
+                val updateLp = {
+                    runCatching {
+                        val cur = inner.layoutParams as? FrameLayout.LayoutParams ?: return@runCatching
+                        if (cur.width != targetW || cur.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
+                            cur.width = targetW
+                            cur.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                            inner.layoutParams = cur
+                        }
+                    }
+                }
+                if (outer.isInLayout || inner.isInLayout) {
+                    outer.post { updateLp() }
+                } else {
+                    updateLp()
+                }
+            }
+            outer.invalidate()
         }
-        outer.invalidate()
     }
 
     /** Izin notifikasi runtime (Android 13+); diamkan bila ditolak — pipeline order tidak terganggu. */
     internal fun requestNotificationPermission() {
-        if (android.os.Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4411)
+        runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 4411)
+            }
         }
     }
 
@@ -694,7 +722,9 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
+        if (::ui.isInitialized) {
+            ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
+        }
         NotificationHelper.attachActivity(this)
         NotificationHelper.isAppInForeground = true
         resumePendingOtaIfPermitted()
@@ -1189,10 +1219,11 @@ class MainActivity : Activity() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        if (!::ui.isInitialized) return
         if (themeMode() == "system") ui.setDarkMode(systemInDark())
         ResponsiveLayout.configureSystemBars(window, ui.darkMode, ui.kit.bg)
         ui.onResponsiveConfigChanged()
-        rootFrame?.requestApplyInsets()
+        runCatching { rootFrame?.requestApplyInsets() }
         outerSafeBox?.post { applyAdaptiveCanvasLayout() }
         if (::loginOverlay.isInitialized) loginOverlay.onConfigChanged()
         if (::productFormOverlay.isInitialized) productFormOverlay.onConfigChanged()

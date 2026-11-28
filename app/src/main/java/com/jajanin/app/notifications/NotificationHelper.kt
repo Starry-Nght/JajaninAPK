@@ -85,43 +85,46 @@ internal object NotificationHelper {
     /** Membuat/memastikan seluruh 3 Notification Channel (Pesanan, Chat, Aktivitas Toko). */
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        runCatching {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                ?: return@runCatching
 
-        val channels = listOf(
-            NotificationChannel(
-                CHANNEL_ORDERS_ID,
-                CHANNEL_ORDERS_NAME,
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "Notifikasi pesanan masuk untuk penjual dan pembaruan status pesanan untuk pembeli"
-                enableVibration(true)
-                enableLights(true)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            },
-            NotificationChannel(
-                CHANNEL_CHAT_ID,
-                CHANNEL_CHAT_NAME,
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "Pesan chat langsung antara pembeli dan penjual"
-                enableVibration(true)
-                enableLights(true)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            },
-            NotificationChannel(
-                CHANNEL_STORE_ID,
-                CHANNEL_STORE_NAME,
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "Notifikasi penting terkait warung, verifikasi, peringatan, dan pengumuman"
-                enableVibration(true)
-                enableLights(true)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            },
-        )
-        channels.forEach { ch ->
-            // createNotificationChannel bersifat idempotent & memperbarui nama/deskripsi bila berubah.
-            manager.createNotificationChannel(ch)
+            val channels = listOf(
+                NotificationChannel(
+                    CHANNEL_ORDERS_ID,
+                    CHANNEL_ORDERS_NAME,
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "Notifikasi pesanan masuk untuk penjual dan pembaruan status pesanan untuk pembeli"
+                    enableVibration(true)
+                    enableLights(true)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                },
+                NotificationChannel(
+                    CHANNEL_CHAT_ID,
+                    CHANNEL_CHAT_NAME,
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "Pesan chat langsung antara pembeli dan penjual"
+                    enableVibration(true)
+                    enableLights(true)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                },
+                NotificationChannel(
+                    CHANNEL_STORE_ID,
+                    CHANNEL_STORE_NAME,
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "Notifikasi penting terkait warung, verifikasi, peringatan, dan pengumuman"
+                    enableVibration(true)
+                    enableLights(true)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                },
+            )
+            channels.forEach { ch ->
+                // createNotificationChannel bersifat idempotent & memperbarui nama/deskripsi bila berubah.
+                manager.createNotificationChannel(ch)
+            }
         }
     }
 
@@ -440,15 +443,13 @@ internal object NotificationHelper {
      * belum terpasang di build lokal; menyinkronkan cache token untuk login/logout).
      */
     suspend fun currentFcmToken(context: Context? = null): String? {
-        val appCtx = context?.applicationContext ?: activeActivityOrNull()?.applicationContext
+        val appCtx = context?.applicationContext ?: activeActivityOrNull()?.applicationContext ?: return null
         val firebaseReady = runCatching {
-            if (appCtx != null) FirebaseApp.getApps(appCtx).isNotEmpty() else FirebaseApp.getApps(
-                FirebaseApp.getInstance().applicationContext,
-            ).isNotEmpty()
+            FirebaseApp.getApps(appCtx).isNotEmpty()
         }.getOrDefault(false)
 
         if (!firebaseReady) {
-            return appCtx?.let { cachedFcmToken(it) }
+            return cachedFcmToken(appCtx)
         }
 
         val liveToken = runCatching {
@@ -459,9 +460,9 @@ internal object NotificationHelper {
             }
         }.getOrNull()?.takeIf { it.length >= 20 }
 
-        if (liveToken != null && appCtx != null) {
+        if (liveToken != null) {
             cacheFcmToken(appCtx, liveToken)
         }
-        return liveToken ?: appCtx?.let { cachedFcmToken(it) }
+        return liveToken ?: cachedFcmToken(appCtx)
     }
 }

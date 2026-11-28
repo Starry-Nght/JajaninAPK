@@ -180,113 +180,140 @@ internal object ResponsiveLayout {
      * Extracts safe area insets combining status bar, navigation bar (gesture or 3-button,
      * bottom or side in landscape), display cutout (notch / punch-hole), and soft keyboard IME.
      */
-    fun extractSafeInsets(insets: WindowInsets): SafeInsetsPx {
+    fun extractSafeInsets(insets: WindowInsets): SafeInsetsPx = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val sys = insets.getInsets(
                 WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout(),
             )
             val ime = insets.getInsets(WindowInsets.Type.ime())
-            return SafeInsetsPx(
+            SafeInsetsPx(
                 left = sys.left.coerceAtLeast(0),
                 top = sys.top.coerceAtLeast(0),
                 right = sys.right.coerceAtLeast(0),
                 bottom = sys.bottom.coerceAtLeast(0),
                 imeBottom = ime.bottom.coerceAtLeast(0),
             )
-        }
-        @Suppress("DEPRECATION")
-        var left = insets.systemWindowInsetLeft
-        @Suppress("DEPRECATION")
-        var top = insets.systemWindowInsetTop
-        @Suppress("DEPRECATION")
-        var right = insets.systemWindowInsetRight
-        @Suppress("DEPRECATION")
-        var bottom = insets.systemWindowInsetBottom
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            insets.displayCutout?.let { cutout ->
-                left = maxOf(left, cutout.safeInsetLeft)
-                top = maxOf(top, cutout.safeInsetTop)
-                right = maxOf(right, cutout.safeInsetRight)
-                bottom = maxOf(bottom, cutout.safeInsetBottom)
+        } else {
+            @Suppress("DEPRECATION")
+            var left = insets.systemWindowInsetLeft
+            @Suppress("DEPRECATION")
+            var top = insets.systemWindowInsetTop
+            @Suppress("DEPRECATION")
+            var right = insets.systemWindowInsetRight
+            @Suppress("DEPRECATION")
+            var bottom = insets.systemWindowInsetBottom
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                insets.displayCutout?.let { cutout ->
+                    left = maxOf(left, cutout.safeInsetLeft)
+                    top = maxOf(top, cutout.safeInsetTop)
+                    right = maxOf(right, cutout.safeInsetRight)
+                    bottom = maxOf(bottom, cutout.safeInsetBottom)
+                }
             }
+            SafeInsetsPx(
+                left = left.coerceAtLeast(0),
+                top = top.coerceAtLeast(0),
+                right = right.coerceAtLeast(0),
+                bottom = bottom.coerceAtLeast(0),
+                imeBottom = 0,
+            )
         }
-        return SafeInsetsPx(
-            left = left.coerceAtLeast(0),
-            top = top.coerceAtLeast(0),
-            right = right.coerceAtLeast(0),
-            bottom = bottom.coerceAtLeast(0),
-            imeBottom = 0,
-        )
-    }
+    }.getOrElse { SafeInsetsPx(0, 0, 0, 0, 0) }
 
     /**
      * Consumes system bar & cutout insets on API 24-35+ so child views that also install
      * WindowInsets listeners (e.g. LiquidGlassNavHost) never double-apply bottom padding.
      */
-    fun consumeSystemInsets(insets: WindowInsets): WindowInsets {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+    fun consumeSystemInsets(insets: WindowInsets): WindowInsets = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WindowInsets.CONSUMED
         } else {
             @Suppress("DEPRECATION")
             insets.consumeSystemWindowInsets()
         }
-    }
+    }.getOrDefault(insets)
 
     /**
      * Configures clean Edge-to-Edge system bar appearance (status bar, navigation bar,
      * notch/punch-hole display cutout, and light/dark system bar icons) without legacy
      * `FLAG_FULLSCREEN` clipping.
+     *
+     * Must be called AFTER `setContentView(...)`. Uses `LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS`
+     * on API 30+ (required by Android 15 / targetSdk 35 non-floating windows) and guards every
+     * Window/InsetsController call with `runCatching` for OEM ROM safety (ColorOS/HyperOS/OneUI).
      */
     fun configureSystemBars(window: Window, darkMode: Boolean, surfaceBgColor: Int) {
-        @Suppress("DEPRECATION")
-        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        runCatching {
+            @Suppress("DEPRECATION")
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val lp = window.attributes
-            if (lp.layoutInDisplayCutoutMode != WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES) {
-                lp.layoutInDisplayCutoutMode =
+            runCatching {
+                val desiredCutout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-                window.attributes = lp
+                }
+                val lp = window.attributes
+                if (lp != null && lp.layoutInDisplayCutoutMode != desiredCutout) {
+                    lp.layoutInDisplayCutoutMode = desiredCutout
+                    window.attributes = lp
+                }
             }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            @Suppress("DEPRECATION")
-            window.setDecorFitsSystemWindows(false)
-            @Suppress("DEPRECATION")
-            window.statusBarColor = Color.TRANSPARENT
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = Color.TRANSPARENT
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
+            runCatching {
                 @Suppress("DEPRECATION")
-                window.isStatusBarContrastEnforced = false
+                window.setDecorFitsSystemWindows(false)
             }
-            window.insetsController?.let { controller ->
-                val lightMask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-                    WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-                controller.setSystemBarsAppearance(if (darkMode) 0 else lightMask, lightMask)
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            window.statusBarColor = surfaceBgColor
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = surfaceBgColor
-            @Suppress("DEPRECATION")
-            var flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            if (!darkMode) {
-                @Suppress("DEPRECATION")
-                flags = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Android 15 (API 35+, targetSdk 35) already enforces transparent edge-to-edge bars
+            // natively; avoid touching deprecated bar colors/status contrast flags on API 35+.
+            if (Build.VERSION.SDK_INT < 35) {
+                runCatching {
                     @Suppress("DEPRECATION")
-                    flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                    window.statusBarColor = Color.TRANSPARENT
+                    @Suppress("DEPRECATION")
+                    window.navigationBarColor = Color.TRANSPARENT
+                    @Suppress("DEPRECATION")
+                    window.isStatusBarContrastEnforced = false
                 }
             }
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = flags
+            runCatching {
+                window.isNavigationBarContrastEnforced = false
+            }
+            runCatching {
+                val decor = window.peekDecorView() ?: return@runCatching
+                val controller = decor.windowInsetsController ?: window.insetsController
+                controller?.let {
+                    val lightMask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                        WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                    it.setSystemBarsAppearance(if (darkMode) 0 else lightMask, lightMask)
+                }
+            }
+        } else {
+            runCatching {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = surfaceBgColor
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = surfaceBgColor
+                @Suppress("DEPRECATION")
+                var flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                if (!darkMode) {
+                    @Suppress("DEPRECATION")
+                    flags = flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        @Suppress("DEPRECATION")
+                        flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                    }
+                }
+                @Suppress("DEPRECATION")
+                window.peekDecorView()?.systemUiVisibility = flags
+            }
         }
     }
 }

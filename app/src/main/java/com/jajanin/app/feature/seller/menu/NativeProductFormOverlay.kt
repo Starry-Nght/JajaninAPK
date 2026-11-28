@@ -921,8 +921,8 @@ internal class NativeProductFormOverlay(
     }
 
     fun onConfigChanged() {
-        rootContainer.requestApplyInsets()
-        rootContainer.post { applyInsetPadding() }
+        runCatching { rootContainer.requestApplyInsets() }
+        rootContainer.post { runCatching { applyInsetPadding() } }
     }
 
     fun setVisible(visible: Boolean) {

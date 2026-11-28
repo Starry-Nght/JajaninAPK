@@ -9,6 +9,10 @@ import kotlinx.coroutines.runBlocking
 class JajaninFcmService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
+        runCatching { handleMessage(message) }
+    }
+
+    private fun handleMessage(message: RemoteMessage) {
         val data = message.data
         val type = data["type"]?.trim()?.lowercase().orEmpty()
         val notifTitle = data["title"]?.takeIf { it.isNotBlank() }

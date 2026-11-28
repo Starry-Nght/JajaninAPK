@@ -756,7 +756,9 @@ internal class JajaninView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        if (width <= 0 || height <= 0) return
         val s = width / 390f
+        if (!s.isFinite() || s <= 0f) return
         canvas.save()
         canvas.scale(s, s)
         // Geser halaman interaktif dengan jari atau animasi decelerate (~240ms).
