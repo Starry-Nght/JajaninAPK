@@ -171,10 +171,9 @@ internal fun MainActivity.showOrderRatingDialog(order: AdminOrder) {
         Toast.makeText(this, "Pesanan dibatalkan tidak bisa diberi rating.", Toast.LENGTH_SHORT).show()
         return
     }
-    val canRate = order.paymentStatus.equals("paid", ignoreCase = true) ||
-        order.status.equals("completed", ignoreCase = true)
+    val canRate = order.status.equals("completed", ignoreCase = true)
     if (!canRate) {
-        Toast.makeText(this, "Selesaikan pembayaran terlebih dahulu sebelum memberi rating.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Rating hanya bisa diberikan setelah penjual menyelesaikan pesanan.", Toast.LENGTH_SHORT).show()
         return
     }
 

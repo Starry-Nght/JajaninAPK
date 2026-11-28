@@ -338,10 +338,8 @@ internal fun JajaninView.drawReady(c: Canvas, w: Float, h: Float) {
         endContentY = lockBox.bottom
     }
 
-    // 4. Rating Card (Toko, Durasi, Rasa 1-5) — tersedia setelah pembayaran lunas / pesanan selesai
-    val canRateOrder = targetOrderId != null &&
-        !status.equals(STATUS_CANCELLED, ignoreCase = true) &&
-        (payStatus.equals("paid", ignoreCase = true) || status.equals(STATUS_COMPLETED, ignoreCase = true))
+    // 4. Rating Card (Toko, Durasi, Rasa 1-5) — hanya muncul setelah penjual menyelesaikan pesanan
+    val canRateOrder = targetOrderId != null && status.equals(STATUS_COMPLETED, ignoreCase = true)
     if (canRateOrder && targetOrderId != null) {
         val existingRating = myOrderRatings[targetOrderId]
         val rateTop = endContentY + 12f
@@ -514,9 +512,8 @@ private fun JajaninView.drawBuyerOrderItem(
     val canCancel = active && com.jajanin.app.data.repository.buyerCanCancelOrder(order)
     val needsProof = order.paymentMethod == "qris" &&
         (order.paymentStatus == "unpaid" || order.paymentStatus == "rejected" || order.paymentStatus == "waiting_verification")
-    val canRate = !order.status.equals(STATUS_CANCELLED, ignoreCase = true) &&
-        (order.paymentStatus.equals("paid", ignoreCase = true) || order.status.equals(STATUS_COMPLETED, ignoreCase = true))
-    val hasActiveActionRow = active && (needsProof || canCancel || canRate)
+    val canRate = order.status.equals(STATUS_COMPLETED, ignoreCase = true)
+    val hasActiveActionRow = active && (needsProof || canCancel)
     val hasHistoryActionRow = !active
     val hasActionRow = hasActiveActionRow || hasHistoryActionRow
     val totalStr = formatRupiah(order.totalIdr)
@@ -679,25 +676,6 @@ private fun JajaninView.drawBuyerOrderItem(
                 true
             )
             bounds.putVisible("myOrderPaid:${order.id}", payBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
-        } else if (active && canRate) {
-            val existingRate = myOrderRatings[order.id]
-            val goldColor = Color.rgb(217, 119, 6)
-            val rateBtn = RectF(32f, top + 170f + rowOff, 224f, top + 200f + rowOff)
-            kit.rounded(c, rateBtn, if (existingRate != null) kit.card else kit.warnBox, 6f, goldColor)
-            val rateText = if (existingRate != null) {
-                "★ ${String.format(java.util.Locale.US, "%.1f", existingRate.ratingOverall)} · Ubah Rating"
-            } else {
-                "Beri Rating (1–5)"
-            }
-            kit.centerText(c, rateText, rateBtn, 10.5f, goldColor, true)
-            press(c, "rateOrder:${order.id}", rateBtn, 6f)
-            bounds.putVisible("rateOrder:${order.id}", rateBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
-
-            val repBtn = RectF(232f, top + 170f + rowOff, 358f, top + 200f + rowOff)
-            kit.rounded(c, repBtn, kit.card, 6f, kit.dangerBorder)
-            kit.centerText(c, "Laporkan Penjual", repBtn, 10.5f, kit.danger, true)
-            press(c, "reportOrder:${order.id}", repBtn, 6f)
-            bounds.putVisible("reportOrder:${order.id}", repBtn, topLimit = HEADER_H, bottomLimit = bottomClip)
         } else if (!active) {
             kit.line(c, 32f, top + 116f + rowOff, 358f, top + 116f + rowOff, kit.divider)
             val btnTop = top + 124f + rowOff

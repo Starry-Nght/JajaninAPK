@@ -116,6 +116,7 @@ class MainActivity : Activity() {
     internal var sellerOrdersSeeded = false
     internal val knownSellerOrderIds = HashSet<String>()
     internal val knownSellerPaymentStatuses = HashMap<String, String>()
+    internal val promptedCompletedRatingIds = HashSet<String>()
 
     private fun notifStatePrefs() = getSharedPreferences("jajanin_order_notif_state", MODE_PRIVATE)
 
@@ -142,6 +143,7 @@ class MainActivity : Activity() {
         sellerOrdersSeeded = false
         knownSellerOrderIds.clear()
         knownSellerPaymentStatuses.clear()
+        promptedCompletedRatingIds.clear()
     }
 
     internal fun detectAndNotifyBuyerOrderChanges(orders: List<AdminOrder>) {
@@ -168,6 +170,7 @@ class MainActivity : Activity() {
         buyerOrdersSeeded = true
         val editor = prefs.edit()
         var statusChangedCount = 0
+        var newlyCompletedForRating: AdminOrder? = null
         orders.forEach { order ->
             val newStatus = order.status.lowercase()
             val persistedStatus = if (uid.isNotBlank()) prefs.getString("buyer_status:$uid:${order.id}", null) else null
@@ -207,6 +210,13 @@ class MainActivity : Activity() {
                 if (newStatus == STATUS_CANCELLED) {
                     refreshOrderingStatus()
                 }
+                if (newStatus == STATUS_COMPLETED &&
+                    newlyCompletedForRating == null &&
+                    !ui.myOrderRatings.containsKey(order.id) &&
+                    promptedCompletedRatingIds.add(order.id)
+                ) {
+                    newlyCompletedForRating = order
+                }
                 NotificationHelper.showOrderUpdate(
                     context = this,
                     notificationKey = "${order.id}:status:$newStatus",
@@ -245,6 +255,20 @@ class MainActivity : Activity() {
         if (statusChangedCount > 0) {
             ui.unreadOrderNotifCount += statusChangedCount
             ui.invalidate()
+        }
+        val completedToRate = newlyCompletedForRating
+        if (completedToRate != null &&
+            ui.myRole == "buyer" &&
+            !isFinishing &&
+            !isDestroyed &&
+            ui.currentScreen != Screen.LOGIN &&
+            ui.currentScreen != Screen.PRODUCT_FORM
+        ) {
+            ui.post {
+                if (!isFinishing && !isDestroyed && !ui.myOrderRatings.containsKey(completedToRate.id)) {
+                    showOrderRatingDialog(completedToRate)
+                }
+            }
         }
     }
 
