@@ -578,7 +578,6 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
     val footerH = 64f
     val bodyBottom = h - footerH
     val available = product.available && (product.stock == null || product.stock > 0)
-    val variantSections = product.activeVariantSections
     val stallId = product.stallId?.takeIf { it.isNotBlank() }
     val storeSummary = stallId?.let { storeDirectoryById[it] }
     val storeDetail = storeProfileDetail?.takeIf { it.id == stallId }
@@ -666,64 +665,7 @@ internal fun JajaninView.drawProductDetail(c: Canvas, w: Float, h: Float) {
         kit.line(c, 0f, curY, w, curY, kit.divider)
     }
 
-    // 2. Variant Preview Strip right beneath hero (just like "3 Variasi Tersedia")
-    if (variantSections.isNotEmpty()) {
-        val totalOpts = variantSections.sumOf { it.options.size }
-        val sectionSummary = variantSections.joinToString(", ") { it.cleanName }
-        val stripTop = curY
-        curY += 12f
-        kit.textEllipsized(
-            c,
-            "$totalOpts Variasi Tersedia · $sectionSummary",
-            18f,
-            curY + 12f,
-            286f,
-            11.5f,
-            kit.muted,
-            true,
-        )
-        drawTrailingActionWithArrow(c, "Pilih", 372f, curY + 12f, 11.5f, kit.blue)
-        curY += 22f
-
-        // Horizontal compact preview chips (tapping strip opens Bottom Sheet)
-        val previewItems = buildList {
-            variantSections.forEachIndexed { secIdx, sec ->
-                val chosen = detailSelectedVariants[secIdx] ?: sec.options.firstOrNull().orEmpty()
-                sec.options.forEach { opt ->
-                    add(opt to (opt == chosen))
-                }
-            }
-        }
-        var px = 18f
-        val chipH = 28f
-        var shown = 0
-        for ((opt, isChosen) in previewItems) {
-            val cw = (kit.measure(opt, 11f, isChosen) + 20f).coerceIn(48f, 128f)
-            val remaining = previewItems.size - shown - 1
-            val reserveOverflow = if (remaining > 0) 44f else 0f
-            if (px + cw + reserveOverflow > 372f && shown > 0) break
-            val chipR = RectF(px, curY, px + cw, curY + chipH)
-            kit.rounded(c, chipR, if (isChosen) kit.tint else kit.card, 7f, if (isChosen) kit.blue else kit.border)
-            kit.centerText(c, opt, chipR, 11f, if (isChosen) kit.blue else kit.ink, isChosen)
-            px += cw + 7f
-            shown++
-        }
-        val extra = previewItems.size - shown
-        if (extra > 0) {
-            val moreR = RectF(px, curY, (px + 38f).coerceAtMost(372f), curY + chipH)
-            kit.rounded(c, moreR, kit.card, 7f, kit.border)
-            kit.centerText(c, "+$extra", moreR, 10.5f, kit.muted, true)
-        }
-        curY += chipH + 12f
-        kit.line(c, 0f, curY, w, curY, kit.divider)
-        val stripRect = RectF(0f, stripTop, w, curY)
-        if (available) {
-            press(c, "detailOpenSheet:cart", stripRect, 0f)
-            bounds.putVisible("detailOpenSheet:cart", stripRect, topLimit = bodyHitTop, bottomLimit = bodyBottom)
-        }
-    }
-
-    // 3. Price + Sold Count + Favorite + Product Title Block
+    // 2. Price + Sold Count + Favorite + Product Title Block
     curY += 14f
     kit.text(c, formatRupiah(product.priceIdr), 18f, curY + 21f, 23f, kit.blue, true)
 

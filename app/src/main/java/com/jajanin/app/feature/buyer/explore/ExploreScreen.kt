@@ -147,16 +147,13 @@ internal fun JajaninView.drawExplore(c: Canvas, w: Float, h: Float) {
                 baselineY = top + photoH + 36f,
                 maxTotalWidth = tileW - 6f,
                 textSize = 10.5f,
-                textColor = kit.blue,
-                bold = true,
+                textColor = kit.muted,
+                bold = false,
             )
         }
         val priceY = if (storeInfo != null) top + photoH + 60f else top + photoH + 45f
         kit.text(c, formatRupiah(product.priceIdr), left + 2f, priceY, 13f, kit.ink, true)
         bounds["item:${product.id}"] = RectF(left, top.coerceAtLeast(96f), left + tileW, (top + tileH).coerceAtMost(h - 82f))
-        if (storeInfo != null && top + photoH + 24f >= 96f && top + photoH + 42f <= h - 82f) {
-            bounds["openStore:${storeInfo.id}"] = RectF(left, top + photoH + 24f, left + tileW, top + photoH + 42f)
-        }
         if (available) {
             val inCartQty = com.jajanin.app.data.model.totalQtyForProductInCart(cart, product.id)
             val addLabel = when {

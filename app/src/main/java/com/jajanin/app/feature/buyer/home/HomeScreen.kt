@@ -299,7 +299,7 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                     )
                     bounds.putVisible("fav:${product.id}", favHit, topLimit = HEADER_H, bottomLimit = bottomClip)
 
-                    // Store Name + Verified Badge (tappable to open Public Store Profile)
+                    // Store Name + Verified Badge (display-only inside menu row so tapping row opens Detail Produk)
                     val storeSummary = product.stallId?.let { storeDirectoryById[it] }
                     if (storeSummary != null) {
                         StoreVerifiedBadge.drawInlineWithStoreName(
@@ -311,14 +311,8 @@ internal fun JajaninView.drawHome(c: Canvas, w: Float, h: Float) {
                             baselineY = rowTop + 42f,
                             maxTotalWidth = 226f,
                             textSize = 11f,
-                            textColor = kit.blue,
-                            bold = true,
-                        )
-                        bounds.putVisible(
-                            "openStore:${storeSummary.id}",
-                            RectF(108f, rowTop + 29f, 282f, rowTop + 47f),
-                            topLimit = HEADER_H,
-                            bottomLimit = bottomClip
+                            textColor = kit.muted,
+                            bold = false,
                         )
                     }
 
