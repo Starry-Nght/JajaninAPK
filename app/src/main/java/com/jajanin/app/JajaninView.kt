@@ -1633,6 +1633,8 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("devWarn:") -> activity()?.showWarningForm(hit.substringAfter(':'))
                     hit.startsWith("devActive:") -> activity()?.setDevUserStatus(hit.substringAfter(':'), "active")
                     hit.startsWith("devSuspend:") -> activity()?.setDevUserStatus(hit.substringAfter(':'), "suspended")
+                    hit.startsWith("devResetPwd:") -> activity()?.showDevResetPasswordDialog(hit.substringAfter(':'))
+                    hit == "devResetPwdByNis" -> activity()?.showDevResetPasswordDialog(null)
                     hit.startsWith("devStall:") -> {
                         val parts = hit.substringAfter(':').split(':')
                         if (parts.size == 2) activity()?.toggleDevStall(parts[0], parts[1].toBoolean())

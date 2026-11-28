@@ -16,9 +16,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
@@ -29,6 +31,7 @@ internal data class DevProfileRow(
     @SerialName("display_name") val displayName: String? = null,
     val email: String? = null,
     val role: String = "buyer",
+    val nis: String? = null,
     @SerialName("account_status") val accountStatus: String = "active",
     @SerialName("warning_count") val warningCount: Int = 0,
     @SerialName("created_at") val createdAt: String = "",
@@ -107,6 +110,7 @@ internal data class DevUser(
     val accountStatus: String,
     val warningCount: Int,
     val createdAt: String,
+    val nis: String = "",
     val orderCount: Int = 0,
     val stallName: String? = null,
     val stallOpen: Boolean? = null,
@@ -115,6 +119,14 @@ internal data class DevUser(
     val stallVerificationRevoked: Boolean = false,
     val stallCompletedOrders: Int = 0,
     val phone: String = "",
+)
+
+internal data class StudentPasswordResetResult(
+    val userId: String,
+    val nis: String,
+    val displayName: String,
+    val email: String,
+    val message: String,
 )
 
 internal data class DevStats(
@@ -214,7 +226,7 @@ internal object DeveloperRepository {
 
     suspend fun fetchUsers(): List<DevUser> {
         val profiles = client.postgrest.from("profiles")
-            .select(Columns.list("id", "display_name", "email", "role", "account_status", "warning_count", "created_at")) {
+            .select(Columns.list("id", "display_name", "email", "role", "nis", "account_status", "warning_count", "created_at")) {
                 order("created_at", Order.DESCENDING); limit(200)
             }.decodeList<DevProfileRow>()
         val stalls = runCatching {
@@ -267,6 +279,8 @@ internal object DeveloperRepository {
                 ?: (p.email?.substringBefore('@') ?: "Tanpa Nama")
             val resolvedPhone = phones[p.id]?.takeIf { it.isNotBlank() }
                 ?: stall?.sellerPhone.orEmpty()
+            val resolvedNis = p.nis?.trim()?.takeIf { it.isNotBlank() }
+                ?: SupabaseRepository.extractNis(resolvedRealName)
             DevUser(
                 id = p.id,
                 displayName = resolvedRealName,
@@ -275,6 +289,7 @@ internal object DeveloperRepository {
                 accountStatus = p.accountStatus,
                 warningCount = p.warningCount,
                 createdAt = p.createdAt,
+                nis = resolvedNis,
                 orderCount = orderCounts[p.id] ?: 0,
                 stallName = stall?.name,
                 stallOpen = stall?.isOpen,
@@ -432,6 +447,60 @@ internal object DeveloperRepository {
     /** Reset jatah pesanan harian (0/2) untuk seluruh pembeli sekaligus (developer only). */
     suspend fun resetAllBuyerQuotas(): Int {
         return client.postgrest.rpc("dev_reset_all_quotas").decodeAs<Int>()
+    }
+
+    private val edgeJson = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Reset kata sandi akun siswa (developer only) lewat Edge Function `dev-reset-password`.
+     * Server memverifikasi JWT & role developer di `public.profiles`, memperbarui sandi via
+     * Supabase Auth Admin API, lalu mencatat audit log di `public.password_reset_audit_logs`.
+     */
+    suspend fun resetStudentPassword(
+        targetUserId: String? = null,
+        targetNis: String? = null,
+        newPassword: String,
+        reason: String = "",
+    ): StudentPasswordResetResult {
+        val cleanUid = targetUserId?.trim().orEmpty()
+        val cleanNis = targetNis?.filter { it.isDigit() }.orEmpty()
+        require(cleanUid.isNotEmpty() || cleanNis.isNotEmpty()) {
+            "Pilih akun siswa atau masukkan NIS terlebih dahulu."
+        }
+        require(newPassword.trim().length >= 6) {
+            "Kata sandi baru minimal 6 karakter."
+        }
+        require(newPassword.length <= 72) {
+            "Kata sandi baru maksimal 72 karakter."
+        }
+
+        val (token, _) = SupabaseRepository.requireFreshSessionAuth()
+        val payload = buildJsonObject {
+            if (cleanUid.isNotEmpty()) put("target_user_id", cleanUid)
+            if (cleanNis.isNotEmpty()) put("target_nis", cleanNis)
+            put("new_password", newPassword)
+            if (reason.isNotBlank()) put("reason", reason.trim().take(240))
+        }.toString()
+
+        val (status, body) = SupabaseRepository.postEdgeFunction(
+            slug = "dev-reset-password",
+            jsonBody = payload,
+            bearerToken = token,
+        )
+        val parsed = runCatching { edgeJson.parseToJsonElement(body).jsonObject }.getOrNull()
+        if (status !in 200..299) {
+            val err = parsed?.get("error")?.jsonPrimitive?.contentOrNull
+                ?: "Gagal mereset kata sandi siswa ($status)."
+            throw IllegalStateException(err)
+        }
+        return StudentPasswordResetResult(
+            userId = parsed?.get("user_id")?.jsonPrimitive?.contentOrNull ?: cleanUid,
+            nis = parsed?.get("nis")?.jsonPrimitive?.contentOrNull ?: cleanNis,
+            displayName = parsed?.get("display_name")?.jsonPrimitive?.contentOrNull.orEmpty(),
+            email = parsed?.get("email")?.jsonPrimitive?.contentOrNull.orEmpty(),
+            message = parsed?.get("message")?.jsonPrimitive?.contentOrNull
+                ?: "Kata sandi akun siswa berhasil direset.",
+        )
     }
 
     // --- Buyer/seller inbox ---

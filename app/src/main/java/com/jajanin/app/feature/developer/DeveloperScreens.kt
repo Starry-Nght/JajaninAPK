@@ -287,6 +287,21 @@ private fun JajaninView.drawDevOverview(c: Canvas, w: Float, h: Float, off: Floa
         bounds.putVisible("devPublishOta", pubBtn, HEADER_H, navClear)
         press(c, "devPublishOta", pubBtn, 6f)
     }
+    y += 64f
+
+    // 3c. Student Password Reset Row (Direct reset by NIS from Overview)
+    val resetPwdRow = RectF(20f, y, 370f, y + 52f)
+    if (visible(resetPwdRow.top, resetPwdRow.bottom)) {
+        kit.rounded(c, resetPwdRow, kit.card, 8f, kit.border)
+        kit.text(c, "Reset Sandi Akun Siswa", 32f, y + 22f, 13f, kit.ink, true)
+        kit.textEllipsized(c, "Ganti sandi siswa lupa password pakai NIS", 32f, y + 39f, 240f, 10.5f, kit.muted)
+
+        val pwdBtn = RectF(286f, y + 12f, 358f, y + 40f)
+        kit.rounded(c, pwdBtn, kit.tint, 6f, kit.blue)
+        kit.centerText(c, "Reset", pwdBtn, 11f, kit.blue, true)
+        bounds.putVisible("devResetPwdByNis", pwdBtn, HEADER_H, navClear)
+        press(c, "devResetPwdByNis", pwdBtn, 6f)
+    }
     y += 72f
 
     // 4. Open Recent Orders List (Hairline-divided, no individual card boxes)
@@ -399,6 +414,7 @@ private fun JajaninView.drawDevUsers(
     val rows = rolePool.filter { u ->
         (devQuery.isBlank() ||
             u.displayName.contains(devQuery.trim(), true) ||
+            u.nis.contains(devQuery.trim(), true) ||
             u.stallName.orEmpty().contains(devQuery.trim(), true) ||
             u.email.contains(devQuery.trim(), true) ||
             u.phone.contains(devQuery.trim())) &&
@@ -428,15 +444,16 @@ private fun JajaninView.drawDevUsers(
         rows.forEach { u ->
             val isExpanded = u.id == devSelectedUserId
             val isOnline = u.id in onlineUserIds
-            val hasRow2 = u.stallId != null
+            val canResetPwd = u.role != "developer"
+            val hasStallToggle = u.stallId != null
             val hasVerifAction = u.stallId != null && (u.stallVerified || u.stallVerificationRevoked)
             val baseH = 66f
             val expandH = if (isExpanded) {
-                when {
-                    hasVerifAction -> 122f
-                    hasRow2 -> 86f
-                    else -> 50f
-                }
+                var hAcc = 8f + 32f + 10f
+                if (canResetPwd) hAcc += 38f
+                if (hasStallToggle) hAcc += 36f
+                if (hasVerifAction) hAcc += 36f
+                hAcc
             } else 0f
             val rowH = baseH + expandH
 
@@ -447,7 +464,7 @@ private fun JajaninView.drawDevUsers(
                 }
 
                 val cleanName = SupabaseRepository.extractCleanName(u.displayName).ifBlank { u.displayName }
-                val nis = SupabaseRepository.extractNis(u.displayName)
+                val nis = u.nis.ifBlank { SupabaseRepository.extractNis(u.displayName) }
                 val kelas = SupabaseRepository.extractClass(u.displayName)
                 val (_, roleFg) = roleBadgeColors(u.role)
 
@@ -563,18 +580,31 @@ private fun JajaninView.drawDevUsers(
                     bounds.putVisible(if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, HEADER_H, navClear)
                     press(c, if (isSuspended) "devActive:${u.id}" else "devSuspend:${u.id}", b2, 6f)
 
-                    // Row 2: Stall Toggle (for Seller only)
-                    if (u.stallId != null) {
-                        val b3 = RectF(28f, btnY + 38f, 362f, btnY + 68f)
+                    var nextBtnY = btnY + 38f
+
+                    // Row 2: Reset Sandi Siswa (untuk semua akun non-developer)
+                    if (canResetPwd) {
+                        val bPwd = RectF(28f, nextBtnY, 362f, nextBtnY + 32f)
+                        kit.rounded(c, bPwd, kit.tint, 6f, kit.blue)
+                        kit.centerText(c, "Reset Sandi Siswa", bPwd, 10.5f, kit.blue, true)
+                        bounds.putVisible("devResetPwd:${u.id}", bPwd, HEADER_H, navClear)
+                        press(c, "devResetPwd:${u.id}", bPwd, 6f)
+                        nextBtnY += 38f
+                    }
+
+                    // Row 3: Stall Toggle (for Seller only)
+                    if (hasStallToggle) {
+                        val b3 = RectF(28f, nextBtnY, 362f, nextBtnY + 30f)
                         val isOpen = u.stallOpen == true
                         kit.rounded(c, b3, kit.tint, 6f)
                         kit.centerText(c, if (isOpen) "Tutup Warung Sementara" else "Buka Kembali Warung", b3, 10.5f, kit.blue, true)
                         bounds.putVisible("devStall:${u.stallId}:${!isOpen}", b3, HEADER_H, navClear)
                         press(c, "devStall:${u.stallId}:${!isOpen}", b3, 6f)
+                        nextBtnY += 36f
 
-                        // Row 3: Audited Verification Revoke / Restore
+                        // Row 4: Audited Verification Revoke / Restore
                         if (hasVerifAction) {
-                            val b4 = RectF(28f, btnY + 74f, 362f, btnY + 104f)
+                            val b4 = RectF(28f, nextBtnY, 362f, nextBtnY + 30f)
                             val revoking = u.stallVerified
                             kit.rounded(c, b4, if (revoking) kit.dangerBorder else kit.successSoft, 6f)
                             kit.centerText(
