@@ -236,14 +236,12 @@ internal object StoreProfileComponents {
             y += rateCardH + 12f
         }
 
-        // Store Bio & Location Information Card
+        // Store Bio & Status Information Card
         val bioText = store.bio.trim()
-        val locText = store.location.trim()
-        if (bioText.isNotBlank() || locText.isNotBlank() || !store.isOpen) {
+        if (bioText.isNotBlank() || !store.isOpen) {
             val bioLines = if (bioText.isNotBlank()) 2 else 0
-            val locExtra = if (locText.isNotBlank()) 24f else 0f
             val closedExtra = if (!store.isOpen) 24f else 0f
-            val infoH = 30f + (if (bioLines > 0) 38f else 0f) + locExtra + closedExtra
+            val infoH = 30f + (if (bioLines > 0) 38f else 0f) + closedExtra
             val infoRect = RectF(20f, y, 370f, y + infoH)
             kit.rounded(c, infoRect, kit.card, 10f, kit.border)
 
@@ -252,11 +250,6 @@ internal object StoreProfileComponents {
             if (bioText.isNotBlank()) {
                 kit.textWrapped(c, bioText, 32f, iy, 326f, 12f, kit.ink, maxLines = 2, lineHeight = 17f)
                 iy += 36f
-            }
-            if (locText.isNotBlank()) {
-                AppIcon.draw(c, "location", 38f, iy - 4f, 13f, kit.blue)
-                kit.textEllipsized(c, "Info ambil: $locText", 50f, iy, 308f, 11f, kit.ink, true)
-                iy += 22f
             }
             if (!store.isOpen) {
                 AppIcon.draw(c, "warning", 38f, iy - 4f, 13f, kit.danger)
