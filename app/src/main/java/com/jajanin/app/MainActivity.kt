@@ -1200,6 +1200,10 @@ class MainActivity : Activity() {
             ui.invalidate()
             return
         }
+        if (ui.currentScreen == Screen.STORE_PROFILE && ui.storeRatingsSheetOpen) {
+            ui.animateStoreRatingsSheet(false)
+            return
+        }
         if (!ui.goBack()) super.onBackPressed()
     }
 }

@@ -166,6 +166,14 @@ internal class JajaninView(context: Context) : View(context) {
     internal var detailSheetMaxScroll: Float = 0f
     internal var detailSheetTopY: Float = 0f
     internal var detailPhotoIndex: Int = 0
+    // Animated Bottom Sheet detail penilaian pembeli di Profil Warung.
+    internal var storeRatingsSheetOpen: Boolean = false
+    internal var storeRatingsSheetProgress: Float = 0f
+    internal var storeRatingsSheetFrom: Float = 0f
+    internal var storeRatingsSheetAnimAt: Long = 0L
+    internal var storeRatingsSheetScroll: Float = 0f
+    internal var storeRatingsSheetMaxScroll: Float = 0f
+    internal var storeRatingsSheetTopY: Float = 0f
     internal var productEditId: String? = null
     // Status form produk (halaman): loading simpan + error inline.
     internal var productSaving = false
@@ -499,6 +507,38 @@ internal class JajaninView(context: Context) : View(context) {
 
     internal fun canGoBack(): Boolean = history.isNotEmpty()
 
+    internal fun animateStoreRatingsSheet(open: Boolean) {
+        val target = if (open) 1f else 0f
+        if (storeRatingsSheetOpen == open && storeRatingsSheetProgress == target) return
+        storeRatingsSheetFrom = currentStoreRatingsProgress()
+        storeRatingsSheetOpen = open
+        storeRatingsSheetAnimAt = SystemClock.uptimeMillis()
+        if (open) storeRatingsSheetScroll = 0f
+        if (!motionEnabled()) {
+            storeRatingsSheetProgress = target
+        }
+        invalidate()
+    }
+
+    internal fun currentStoreRatingsProgress(): Float {
+        val target = if (storeRatingsSheetOpen) 1f else 0f
+        if (!motionEnabled() || storeRatingsSheetAnimAt == 0L) {
+            storeRatingsSheetProgress = target
+            return target
+        }
+        val elapsed = (SystemClock.uptimeMillis() - storeRatingsSheetAnimAt).coerceAtLeast(0L)
+        val rawT = (elapsed / 240f).coerceIn(0f, 1f)
+        val eased = 1f - (1f - rawT) * (1f - rawT) * (1f - rawT)
+        val value = storeRatingsSheetFrom + (target - storeRatingsSheetFrom) * eased
+        storeRatingsSheetProgress = value
+        if (rawT < 1f) {
+            postInvalidateOnAnimation()
+        } else {
+            storeRatingsSheetProgress = target
+        }
+        return value
+    }
+
     internal fun go(next: Screen) {
         if (screen == next) return
         // Panel notifikasi hanya hidup di dashboard; kalau tidak dibersihkan,
@@ -506,6 +546,9 @@ internal class JajaninView(context: Context) : View(context) {
         if (next != Screen.ADMIN) adminNotifOpen = false
         detailSheetMode = null
         detailSheetScroll = 0f
+        storeRatingsSheetOpen = false
+        storeRatingsSheetProgress = 0f
+        storeRatingsSheetScroll = 0f
         history.addLast(screen)
         screen = next
         scroll = 0f
@@ -520,6 +563,9 @@ internal class JajaninView(context: Context) : View(context) {
         if (target != Screen.ADMIN) adminNotifOpen = false
         detailSheetMode = null
         detailSheetScroll = 0f
+        storeRatingsSheetOpen = false
+        storeRatingsSheetProgress = 0f
+        storeRatingsSheetScroll = 0f
         screen = target
         scroll = 0f
         beginSlide(-1f)
@@ -941,17 +987,19 @@ internal class JajaninView(context: Context) : View(context) {
                     screen == Screen.PRODUCT_FORM || screen == Screen.SELLER_MENU || screen == Screen.DEV ||
                     screen == Screen.CHECKOUT || screen == Screen.NOTIF || screen == Screen.EXP_HISTORY ||
                     screen == Screen.PROFILE || screen == Screen.CHAT_LIST
-                val sheetOpen = screen == Screen.DETAIL && detailSheetMode != null
-                val maxScroll = if (sheetOpen) {
-                    detailSheetMaxScroll.coerceAtLeast(0f)
-                } else {
-                    (contentHeight - hVirtual + navScrollPad()).coerceAtLeast(0f)
+                val detailSheetOpen = screen == Screen.DETAIL && detailSheetMode != null
+                val storeSheetOpen = screen == Screen.STORE_PROFILE && storeRatingsSheetOpen
+                val sheetOpen = detailSheetOpen || storeSheetOpen
+                val maxScroll = when {
+                    detailSheetOpen -> detailSheetMaxScroll.coerceAtLeast(0f)
+                    storeSheetOpen -> storeRatingsSheetMaxScroll.coerceAtLeast(0f)
+                    else -> (contentHeight - hVirtual + navScrollPad()).coerceAtLeast(0f)
                 }
                 val touchInPinnedHeader = !sheetOpen && touchStartY <= 68f
-                val touchInStickyFooter = if (sheetOpen) {
-                    touchStartY < detailSheetTopY || touchStartY >= hVirtual - 76f
-                } else {
-                    (screen == Screen.DETAIL && touchStartY >= hVirtual - 64f) ||
+                val touchInStickyFooter = when {
+                    detailSheetOpen -> touchStartY < detailSheetTopY || touchStartY >= hVirtual - 76f
+                    storeSheetOpen -> touchStartY < storeRatingsSheetTopY
+                    else -> (screen == Screen.DETAIL && touchStartY >= hVirtual - 64f) ||
                         ((screen == Screen.QRIS || screen == Screen.CHECKOUT) && touchStartY >= hVirtual - 84f)
                 }
                 val dx = x - touchStartX
@@ -1003,8 +1051,10 @@ internal class JajaninView(context: Context) : View(context) {
                         invalidate()
                     }
                     1 -> {
-                        if (sheetOpen) {
+                        if (detailSheetOpen) {
                             detailSheetScroll = (detailSheetScroll + previousY - y).coerceIn(0f, maxScroll)
+                        } else if (storeSheetOpen) {
+                            storeRatingsSheetScroll = (storeRatingsSheetScroll + previousY - y).coerceIn(0f, maxScroll)
                         } else {
                             val deltaY = y - previousY
                             if (scroll <= 0.5f && (deltaY > 0f || pullRefreshDragY > 0f) && canPullRefresh()) {
@@ -1065,7 +1115,8 @@ internal class JajaninView(context: Context) : View(context) {
                 }
                 val upDx = x - touchStartX
                 val upDy = y - touchStartY
-                val sheetOpenUp = screen == Screen.DETAIL && detailSheetMode != null
+                val sheetOpenUp = (screen == Screen.DETAIL && detailSheetMode != null) ||
+                    (screen == Screen.STORE_PROFILE && storeRatingsSheetOpen)
                 val touchInPinnedHeader = !sheetOpenUp && touchStartY <= 68f
                 val touchInStickyFooter =
                     (screen == Screen.DETAIL && touchStartY >= hVirtual - 64f) ||
@@ -1126,6 +1177,9 @@ internal class JajaninView(context: Context) : View(context) {
                     hit.startsWith("openStore:") ->
                         activity()?.let { StoreProfileViewModel.openStoreProfile(it, hit.substringAfter(':')) }
                     hit == "storeProfRetry" -> activity()?.let { StoreProfileViewModel.loadStoreProfile(it) }
+                    hit == "storeOpenRatings" -> animateStoreRatingsSheet(true)
+                    hit == "storeCloseRatings" -> animateStoreRatingsSheet(false)
+                    hit == "storeRatingsNoop" -> Unit
                     hit.startsWith("storeProfCat:") ->
                         activity()?.let { StoreProfileViewModel.selectCategoryFilter(it, hit.substringAfter(':')) }
                     hit == "buyerRefresh" -> activity()?.refreshProducts(manual = true)

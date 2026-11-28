@@ -2,12 +2,15 @@ package com.jajanin.app.feature.buyer.store_profile
 
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import com.jajanin.app.JajaninView
 import com.jajanin.app.core.ui.components.AppIcon
 import com.jajanin.app.core.ui.components.StoreAvatar
 import com.jajanin.app.core.ui.components.StoreCoverImage
 import com.jajanin.app.core.ui.components.StoreVerifiedBadge
+import com.jajanin.app.core.ui.drawIcon
 import com.jajanin.app.core.ui.drawProductImage
 import com.jajanin.app.core.ui.press
 import com.jajanin.app.core.ui.putVisible
@@ -131,14 +134,19 @@ internal object StoreProfileComponents {
         store: PublicStoreDetail,
         productCount: Int,
         top: Float,
+        topLimit: Float,
+        bottomLimit: Float,
     ): Float {
         val kit = view.kit
         var y = top
 
-        // 3-Column Metrics Surface (Rating, Completed Orders, Active Products)
+        // 3-Column Metrics Surface (Clickable Rating entry point, Completed Orders, Active Products)
         val statsRect = RectF(20f, y, 370f, y + 58f)
         kit.rounded(c, statsRect, kit.card, 10f, kit.border)
         val colW = statsRect.width() / 3f
+        val ratingCell = RectF(20f, y, 20f + colW, y + 58f)
+        view.press(c, "storeOpenRatings", RectF(22f, y + 2f, 20f + colW - 2f, y + 56f), 8f)
+
         val ratingMain = if (store.ratingCount > 0) {
             "★ ${String.format(java.util.Locale.US, "%.1f", store.avgRating)}"
         } else {
@@ -153,88 +161,13 @@ internal object StoreProfileComponents {
         cols.forEachIndexed { idx, (valStr, label, clr) ->
             val left = 20f + idx * colW
             if (idx > 0) kit.line(c, left, y + 10f, left, y + 48f, kit.divider)
-            kit.textEllipsized(c, valStr, left + 12f, y + 25f, colW - 20f, 14f, clr, true)
-            kit.textEllipsized(c, label, left + 12f, y + 43f, colW - 20f, 10f, kit.muted)
+            val textMaxW = if (idx == 0) colW - 28f else colW - 20f
+            kit.textEllipsized(c, valStr, left + 12f, y + 25f, textMaxW, 14f, clr, true)
+            kit.textEllipsized(c, label, left + 12f, y + 43f, textMaxW, 10f, kit.muted)
         }
+        drawIcon(c, "chevronRight", 20f + colW - 12f, y + 29f, 11f, kit.muted)
+        view.bounds.putVisible("storeOpenRatings", ratingCell, topLimit = topLimit, bottomLimit = bottomLimit)
         y += 70f
-
-        // 3-Aspect Rating Breakdown (Toko, Durasi, Rasa) + Recent Reviews
-        if (store.ratingCount > 0) {
-            val shownReviews = view.storeProfileRatings.take(3)
-            val reviewLayouts = shownReviews.map { rev ->
-                val commentLines = if (rev.comment.isNotBlank()) {
-                    kit.wrap(rev.comment, 324f, 11f, maxLines = 2)
-                } else {
-                    emptyList()
-                }
-                rev to commentLines
-            }
-            val reviewsH = reviewLayouts.sumOf { (_, lines) ->
-                (38f + lines.size * 14f).toDouble()
-            }.toFloat()
-            val rateCardH = 74f + (if (reviewLayouts.isNotEmpty()) reviewsH + 10f else 0f)
-            val rateCard = RectF(20f, y, 370f, y + rateCardH)
-            kit.rounded(c, rateCard, kit.card, 10f, kit.border)
-
-            val gold = Color.rgb(217, 119, 6)
-            kit.text(c, "PENILAIAN PEMBELI (${store.ratingCount})", 32f, y + 20f, 9.5f, kit.muted, true)
-            kit.textRight(
-                c,
-                "★ ${String.format(java.util.Locale.US, "%.1f", store.avgRating)} / 5.0",
-                358f,
-                y + 20f,
-                96f,
-                11f,
-                gold,
-                true,
-            )
-
-            val aspectW = (326f - 12f) / 3f
-            val aspects = listOf(
-                "Toko" to store.avgRatingStore,
-                "Durasi" to store.avgRatingDuration,
-                "Rasa" to store.avgRatingTaste,
-            )
-            aspects.forEachIndexed { idx, (lbl, score) ->
-                val ax = 32f + idx * (aspectW + 6f)
-                val pill = RectF(ax, y + 29f, ax + aspectW, y + 63f)
-                kit.rounded(c, pill, kit.bg, 7f, kit.border)
-                kit.text(c, lbl, ax + 10f, y + 43f, 9.5f, kit.muted, true)
-                kit.text(
-                    c,
-                    "★ ${String.format(java.util.Locale.US, "%.1f", score)}",
-                    ax + 10f,
-                    y + 57f,
-                    12f,
-                    gold,
-                    true,
-                )
-            }
-
-            if (reviewLayouts.isNotEmpty()) {
-                var ry = y + 73f
-                reviewLayouts.forEachIndexed { rIdx, (rev, commentLines) ->
-                    kit.line(c, 32f, ry, 358f, ry, kit.divider)
-                    kit.textEllipsized(c, rev.buyerName, 32f, ry + 16f, 185f, 11.5f, kit.ink, true)
-                    kit.textRight(
-                        c,
-                        "★ ${String.format(java.util.Locale.US, "%.1f", rev.ratingOverall)} (T${rev.ratingStore}·D${rev.ratingDuration}·R${rev.ratingTaste})",
-                        358f,
-                        ry + 16f,
-                        145f,
-                        10f,
-                        gold,
-                        true,
-                    )
-                    commentLines.forEachIndexed { cIdx, cLine ->
-                        kit.text(c, cLine, 32f, ry + 31f + cIdx * 14f, 11f, kit.muted)
-                    }
-                    ry += 36f + commentLines.size * 14f
-                    if (rIdx == reviewLayouts.lastIndex) ry += 2f
-                }
-            }
-            y += rateCardH + 12f
-        }
 
         // Store Bio & Status Information Card
         val bioText = store.bio.trim()
@@ -397,5 +330,184 @@ internal object StoreProfileComponents {
 
         val rows = (products.size + 1) / 2
         return top + rows * (tileH + 12f)
+    }
+
+    /**
+     * Smooth animated Bottom Sheet showing full buyer ratings breakdown
+     * (overall average, Toko/Durasi/Rasa scores, and all live buyer reviews).
+     */
+    fun drawRatingsBottomSheet(
+        view: JajaninView,
+        c: Canvas,
+        store: PublicStoreDetail,
+        w: Float,
+        h: Float,
+        progress: Float,
+    ) {
+        val kit = view.kit
+        val gold = Color.rgb(217, 119, 6)
+        val p = progress.coerceIn(0f, 1f)
+
+        // 1. Animated dimmed backdrop scrim
+        val scrimAlpha = (156f * p).toInt().coerceIn(0, 156)
+        c.drawColor(Color.argb(scrimAlpha, 0, 0, 0))
+        if (view.storeRatingsSheetOpen) {
+            view.bounds["storeCloseRatings"] = RectF(0f, 0f, w, h)
+        }
+
+        // 2. Measure content dynamically from live DB reviews
+        val reviewLayouts = view.storeProfileRatings.map { rev ->
+            val commentLines = if (rev.comment.isNotBlank()) {
+                kit.wrap(rev.comment, 342f, 11.5f, maxLines = 3)
+            } else {
+                emptyList()
+            }
+            rev to commentLines
+        }
+        val headerH = if (store.ratingCount > 0) 118f else 66f
+        val listContentH = when {
+            store.ratingCount <= 0 -> 78f
+            reviewLayouts.isEmpty() -> 64f
+            else -> reviewLayouts.sumOf { (_, lines) -> (44f + lines.size * 15f).toDouble() }.toFloat() + 18f
+        }
+        val maxSheetH = h * 0.76f
+        val sheetH = (headerH + listContentH + 16f).coerceIn(176f, maxSheetH)
+        val sheetTop = h - sheetH
+        val listTop = sheetTop + headerH
+        val listBottom = h - 10f
+        val visibleListH = (listBottom - listTop).coerceAtLeast(48f)
+        view.storeRatingsSheetMaxScroll = (listContentH - visibleListH).coerceAtLeast(0f)
+        view.storeRatingsSheetScroll = view.storeRatingsSheetScroll.coerceIn(0f, view.storeRatingsSheetMaxScroll)
+        view.storeRatingsSheetTopY = sheetTop
+
+        // 3. Slide-up / slide-down translation animation
+        val slideOffset = (1f - p) * sheetH
+        val sheetSave = c.save()
+        c.translate(0f, slideOffset)
+
+        val sheetPath = Path().apply {
+            addRoundRect(
+                RectF(0f, sheetTop, w, h + 24f),
+                floatArrayOf(20f, 20f, 20f, 20f, 0f, 0f, 0f, 0f),
+                Path.Direction.CW,
+            )
+        }
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = kit.card }
+        c.drawPath(sheetPath, fillPaint)
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1f
+            color = kit.border
+        }
+        c.drawPath(sheetPath, strokePaint)
+
+        if (view.storeRatingsSheetOpen) {
+            view.bounds["storeRatingsNoop"] = RectF(0f, sheetTop, w, h)
+        }
+
+        // Grab handle
+        kit.rounded(c, RectF(w / 2f - 19f, sheetTop + 8f, w / 2f + 19f, sheetTop + 12f), kit.border, 2f)
+
+        // Header: PENILAIAN PEMBELI + Overall average + Close X
+        kit.text(
+            c,
+            if (store.ratingCount > 0) "PENILAIAN PEMBELI (${store.ratingCount})" else "PENILAIAN PEMBELI",
+            22f,
+            sheetTop + 36f,
+            10.5f,
+            kit.muted,
+            true,
+        )
+        if (store.ratingCount > 0) {
+            kit.textRight(
+                c,
+                "★ ${String.format(java.util.Locale.US, "%.1f", store.avgRating)} / 5.0",
+                336f,
+                sheetTop + 36f,
+                110f,
+                12.5f,
+                gold,
+                true,
+            )
+        }
+        val closeRect = RectF(344f, sheetTop + 14f, 380f, sheetTop + 50f)
+        drawIcon(c, "close", closeRect.centerX(), closeRect.centerY(), 15f, kit.muted)
+        if (view.storeRatingsSheetOpen) {
+            view.press(c, "storeCloseRatings", closeRect, 18f)
+            view.bounds["storeCloseRatings"] = closeRect
+        }
+
+        // 3-Aspect Breakdown Pills (Toko, Durasi, Rasa) — exact original visual style
+        if (store.ratingCount > 0) {
+            val aspectW = (346f - 14f) / 3f
+            val aspects = listOf(
+                "Toko" to store.avgRatingStore,
+                "Durasi" to store.avgRatingDuration,
+                "Rasa" to store.avgRatingTaste,
+            )
+            aspects.forEachIndexed { idx, (lbl, score) ->
+                val ax = 22f + idx * (aspectW + 7f)
+                val pill = RectF(ax, sheetTop + 50f, ax + aspectW, sheetTop + 98f)
+                kit.rounded(c, pill, kit.bg, 8f, kit.border)
+                kit.text(c, lbl, ax + 11f, sheetTop + 68f, 10f, kit.muted, true)
+                kit.text(
+                    c,
+                    "★ ${String.format(java.util.Locale.US, "%.1f", score)}",
+                    ax + 11f,
+                    sheetTop + 87f,
+                    13.5f,
+                    gold,
+                    true,
+                )
+            }
+        }
+        kit.line(c, 0f, listTop, w, listTop, kit.divider)
+
+        // Scrollable Buyer Reviews List
+        val listSave = c.save()
+        c.clipRect(0f, listTop, w, listBottom)
+        var ry = listTop - view.storeRatingsSheetScroll
+        when {
+            store.ratingCount <= 0 -> {
+                kit.centerText(
+                    c,
+                    "Belum ada ulasan pembeli untuk warung ini.",
+                    RectF(24f, ry + 12f, w - 24f, ry + 64f),
+                    12.5f,
+                    kit.muted,
+                )
+            }
+            reviewLayouts.isEmpty() -> {
+                kit.centerText(
+                    c,
+                    "Belum ada detail ulasan tertulis.",
+                    RectF(24f, ry + 12f, w - 24f, ry + 54f),
+                    12.5f,
+                    kit.muted,
+                )
+            }
+            else -> {
+                reviewLayouts.forEachIndexed { rIdx, (rev, commentLines) ->
+                    if (rIdx > 0) kit.line(c, 22f, ry, 368f, ry, kit.divider)
+                    kit.textEllipsized(c, rev.buyerName, 22f, ry + 22f, 192f, 12.5f, kit.ink, true)
+                    kit.textRight(
+                        c,
+                        "★ ${String.format(java.util.Locale.US, "%.1f", rev.ratingOverall)} (T${rev.ratingStore}·D${rev.ratingDuration}·R${rev.ratingTaste})",
+                        368f,
+                        ry + 22f,
+                        150f,
+                        10.5f,
+                        gold,
+                        true,
+                    )
+                    commentLines.forEachIndexed { cIdx, cLine ->
+                        kit.text(c, cLine, 22f, ry + 39f + cIdx * 15f, 11.5f, kit.muted)
+                    }
+                    ry += 44f + commentLines.size * 15f
+                }
+            }
+        }
+        c.restoreToCount(listSave)
+        c.restoreToCount(sheetSave)
     }
 }

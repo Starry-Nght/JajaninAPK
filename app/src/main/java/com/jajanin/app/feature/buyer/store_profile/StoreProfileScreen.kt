@@ -80,6 +80,8 @@ internal fun JajaninView.drawStoreProfile(c: Canvas, w: Float, h: Float) {
                 store = store,
                 productCount = allItems.size,
                 top = y,
+                topLimit = topClip,
+                bottomLimit = bottomClip,
             )
             y = StoreProfileComponents.drawCategoryTabs(
                 view = this,
@@ -167,4 +169,17 @@ internal fun JajaninView.drawStoreProfile(c: Canvas, w: Float, h: Float) {
     }
     c.restore()
     bounds["headerBack"] = RectF(10f, 8f, 64f, 58f)
+
+    // Smooth animated Ratings Bottom Sheet overlay (triggered from main rating metric cell)
+    val sheetProgress = currentStoreRatingsProgress()
+    if (store != null && sheetProgress > 0.005f) {
+        StoreProfileComponents.drawRatingsBottomSheet(
+            view = this,
+            c = c,
+            store = store,
+            w = w,
+            h = h,
+            progress = sheetProgress,
+        )
+    }
 }
