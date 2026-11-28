@@ -80,6 +80,112 @@ object SupabaseRepository {
     fun currentAccessToken(): String? =
         if (configured) client.auth.currentSessionOrNull()?.accessToken else null
 
+    private fun decodeJwtPayload(jwt: String?): kotlinx.serialization.json.JsonObject? {
+        val parts = jwt?.split('.') ?: return null
+        if (parts.size < 2) return null
+        return runCatching {
+            val raw = android.util.Base64.decode(
+                parts[1],
+                android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING,
+            )
+            Json.parseToJsonElement(String(raw, Charsets.UTF_8)).jsonObject
+        }.getOrNull()
+    }
+
+    private fun jwtSub(jwt: String?): String? =
+        decodeJwtPayload(jwt)?.get("sub")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+
+    private fun isJwtExpiringSoon(jwt: String?, leewaySeconds: Long = 60L): Boolean {
+        val exp = decodeJwtPayload(jwt)?.get("exp")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: return false
+        val nowSec = System.currentTimeMillis() / 1000L
+        return nowSec + leewaySeconds >= exp
+    }
+
+    /**
+     * Memastikan sesi Supabase Auth sudah termuat dari penyimpanan dan access token
+     * masih aktif (auto-refresh bila hampir/sudah kedaluwarsa atau [forceRefresh] = true).
+     * Mengembalikan Pair(accessToken, uid) yang siap dipakai upload Storage & panggilan HTTP.
+     */
+    suspend fun requireFreshSessionAuth(forceRefresh: Boolean = false): Pair<String, String> {
+        check(configured) { NOT_CONFIGURED }
+        runCatching { client.auth.awaitInitialization() }
+        var session = client.auth.currentSessionOrNull()
+        var token = session?.accessToken?.takeIf { it.isNotBlank() }
+
+        if (forceRefresh || token == null || isJwtExpiringSoon(token)) {
+            runCatching {
+                client.auth.refreshCurrentSession()
+            }
+            session = client.auth.currentSessionOrNull()
+            token = session?.accessToken?.takeIf { it.isNotBlank() }
+        }
+
+        if (token == null) {
+            runCatching { client.auth.loadFromStorage(autoRefresh = true) }
+            session = client.auth.currentSessionOrNull()
+            token = session?.accessToken?.takeIf { it.isNotBlank() }
+        }
+
+        val finalToken = token ?: error("Sesi habis, masuk ulang.")
+        val uid = session?.user?.id?.takeIf { it.isNotBlank() }
+            ?: client.auth.currentUserOrNull()?.id?.takeIf { it.isNotBlank() }
+            ?: jwtSub(finalToken)
+            ?: runCatching { client.auth.retrieveUserForCurrentSession(updateSession = true).id }.getOrNull()
+            ?: error("Sesi habis, masuk ulang.")
+        return finalToken to uid
+    }
+
+    /**
+     * Unggah file biner ke Supabase Storage bucket dengan auto-refresh JWT.
+     * Bila server membalas 400/401/403 (mis. JWT baru kedaluwarsa), otomatis refresh
+     * sesi dan ulangi unggah sekali sebelum melaporkan error.
+     */
+    suspend fun uploadStorageObject(
+        bucket: String,
+        pathBuilder: (uid: String) -> String,
+        bytes: ByteArray,
+        contentType: String = "image/jpeg",
+    ): String = withContext(Dispatchers.IO) {
+        var attempt = 0
+        var lastCode = 0
+        var lastBody = ""
+        while (attempt < 2) {
+            val (token, uid) = requireFreshSessionAuth(forceRefresh = attempt > 0)
+            val objectPath = pathBuilder(uid)
+            val url = URL("$baseUrl/storage/v1/object/$bucket/$objectPath")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "PUT"
+                doOutput = true
+                setFixedLengthStreamingMode(bytes.size)
+                setRequestProperty("apikey", publishableKey)
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Content-Type", contentType)
+                setRequestProperty("x-upsert", "true")
+                connectTimeout = 15000
+                readTimeout = 20000
+            }
+            try {
+                conn.outputStream.use { it.write(bytes) }
+                val code = conn.responseCode
+                if (code in 200..299) {
+                    return@withContext "$baseUrl/storage/v1/object/public/$bucket/$objectPath"
+                }
+                lastCode = code
+                lastBody = runCatching { conn.errorStream?.bufferedReader()?.readText() }.getOrNull().orEmpty()
+                val looksAuth = code == 401 || code == 403 ||
+                    (code == 400 && (lastBody.contains("jwt", ignoreCase = true) || lastBody.contains("exp", ignoreCase = true)))
+                if (looksAuth && attempt == 0) {
+                    attempt++
+                    continue
+                }
+                error("Unggah gambar gagal (HTTP $code)${if (lastBody.isNotBlank()) ": ${lastBody.take(120)}" else ""}")
+            } finally {
+                runCatching { conn.disconnect() }
+            }
+        }
+        error("Unggah gambar gagal (HTTP $lastCode)${if (lastBody.isNotBlank()) ": ${lastBody.take(120)}" else ""}")
+    }
+
     /**
      * Menunggu Auth selesai memulihkan session dari penyimpanan, lalu melaporkan
      * apakah user sudah login.
@@ -121,7 +227,13 @@ object SupabaseRepository {
         ?.trim()
         ?.takeIf { it.isNotBlank() && !it.endsWith("@siswa.jajanin.app", ignoreCase = true) }
 
-    fun currentUid(): String? = if (configured) client.auth.currentUserOrNull()?.id else null
+    fun currentUid(): String? {
+        if (!configured) return null
+        val session = client.auth.currentSessionOrNull()
+        return client.auth.currentUserOrNull()?.id?.takeIf { it.isNotBlank() }
+            ?: session?.user?.id?.takeIf { it.isNotBlank() }
+            ?: jwtSub(session?.accessToken)
+    }
 
     @Serializable
     private data class RoleRow(val role: String)

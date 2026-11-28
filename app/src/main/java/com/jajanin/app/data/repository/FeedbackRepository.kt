@@ -132,30 +132,12 @@ internal object FeedbackRepository {
     }
 
     /** Upload compressed JPEG bytes directly to a Supabase public storage bucket. */
-    fun uploadPublicImage(bucket: String, prefix: String, bytes: ByteArray): String {
-        val token = SupabaseRepository.currentAccessToken() ?: error("Sesi habis, masuk ulang.")
-        val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
-        val path = "$uid/${prefix}_${UUID.randomUUID()}.jpg"
-        val url = URL("${SupabaseRepository.baseUrl}/storage/v1/object/$bucket/$path")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "PUT"
-            doOutput = true
-            setFixedLengthStreamingMode(bytes.size)
-            setRequestProperty("apikey", SupabaseRepository.publishableKey)
-            setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("Content-Type", "image/jpeg")
-            setRequestProperty("x-upsert", "true")
-            connectTimeout = 15000
-            readTimeout = 20000
-        }
-        conn.outputStream.use { it.write(bytes) }
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            val errBody = runCatching { conn.errorStream?.bufferedReader()?.readText() }.getOrNull().orEmpty()
-            error("Unggah gambar gagal (HTTP $code)${if (errBody.isNotBlank()) ": ${errBody.take(120)}" else ""}")
-        }
-        return "${SupabaseRepository.baseUrl}/storage/v1/object/public/$bucket/$path"
-    }
+    suspend fun uploadPublicImage(bucket: String, prefix: String, bytes: ByteArray): String =
+        SupabaseRepository.uploadStorageObject(
+            bucket = bucket,
+            pathBuilder = { uid -> "$uid/${prefix}_${UUID.randomUUID()}.jpg" },
+            bytes = bytes,
+        )
 
     // --- Order Ratings (Toko, Durasi, Rasa 1..5) ---
 

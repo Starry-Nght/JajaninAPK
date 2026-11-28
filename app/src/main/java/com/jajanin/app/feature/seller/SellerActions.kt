@@ -515,9 +515,8 @@ internal fun MainActivity.uploadProductImages(uris: List<android.net.Uri>) {
         var uploadedCount = 0
         var lastError: Throwable? = null
         try {
-            val token = SupabaseRepository.currentAccessToken()
-                ?: error("Sesi habis, masuk ulang.")
-            val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
+            // Pastikan sesi & access token sudah segar sebelum mengunggah batch foto.
+            SupabaseRepository.requireFreshSessionAuth()
             for (uri in batch) {
                 try {
                     val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -526,23 +525,11 @@ internal fun MainActivity.uploadProductImages(uris: List<android.net.Uri>) {
                     // lebih ringan daripada foto mentah, jarang gagal/timeout.
                     val bytes = compressForUpload(raw)
                     require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
-                    val path = "$uid/${java.util.UUID.randomUUID()}.jpg"
-                    val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/product-images/$path")
-                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                        requestMethod = "PUT"
-                        doOutput = true
-                        setFixedLengthStreamingMode(bytes.size)
-                        setRequestProperty("apikey", SupabaseRepository.publishableKey)
-                        setRequestProperty("Authorization", "Bearer $token")
-                        setRequestProperty("Content-Type", "image/jpeg")
-                        setRequestProperty("x-upsert", "true")
-                        connectTimeout = 15000
-                        readTimeout = 15000
-                    }
-                    conn.outputStream.use { it.write(bytes) }
-                    val code = conn.responseCode
-                    if (code !in 200..299) error("Unggah gagal (HTTP $code).")
-                    val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/product-images/$path"
+                    val publicUrl = SupabaseRepository.uploadStorageObject(
+                        bucket = "product-images",
+                        pathBuilder = { uid -> "$uid/${java.util.UUID.randomUUID()}.jpg" },
+                        bytes = bytes,
+                    )
                     uploadedCount++
                     launch(kotlinx.coroutines.Dispatchers.Main) {
                         if (ui.productImageUrls.size < maxPhotos && publicUrl !in ui.productImageUrls) {
@@ -1081,25 +1068,11 @@ internal fun MainActivity.uploadStallQrisImage(uri: android.net.Uri) {
             // QR tetap tajam di 1000px q90, jauh lebih ringan dari mentah.
             val bytes = compressForUpload(raw, maxEdge = 1000, quality = 90)
             require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
-            val token = SupabaseRepository.currentAccessToken()
-                ?: error("Sesi habis, masuk ulang.")
-            val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
-            val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/qris/$uid.jpg")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                requestMethod = "PUT"
-                doOutput = true
-                setFixedLengthStreamingMode(bytes.size)
-                setRequestProperty("apikey", SupabaseRepository.publishableKey)
-                setRequestProperty("Authorization", "Bearer $token")
-                setRequestProperty("Content-Type", "image/jpeg")
-                setRequestProperty("x-upsert", "true")
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-            conn.outputStream.use { it.write(bytes) }
-            val code = conn.responseCode
-            if (code !in 200..299) error("Unggah gagal (HTTP $code).")
-            val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/qris/$uid.jpg"
+            val publicUrl = SupabaseRepository.uploadStorageObject(
+                bucket = "qris",
+                pathBuilder = { uid -> "$uid.jpg" },
+                bytes = bytes,
+            )
             OrderRepository.updateStallQris(stallId, publicUrl)
             launch(kotlinx.coroutines.Dispatchers.Main) {
                 ui.myStallQris = publicUrl
@@ -1294,26 +1267,12 @@ internal fun MainActivity.uploadSellerStoreImage(uri: android.net.Uri, isBanner:
                 quality = 84,
             )
             require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5MB." }
-            val token = SupabaseRepository.currentAccessToken() ?: error("Sesi habis, masuk ulang.")
-            val uid = SupabaseRepository.currentUid() ?: error("Sesi habis, masuk ulang.")
             val kind = if (isBanner) "banner" else "logo"
-            val path = "$uid/store_${kind}_${java.util.UUID.randomUUID()}.jpg"
-            val url = java.net.URL("${SupabaseRepository.baseUrl}/storage/v1/object/product-images/$path")
-            val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-                requestMethod = "PUT"
-                doOutput = true
-                setFixedLengthStreamingMode(bytes.size)
-                setRequestProperty("apikey", SupabaseRepository.publishableKey)
-                setRequestProperty("Authorization", "Bearer $token")
-                setRequestProperty("Content-Type", "image/jpeg")
-                setRequestProperty("x-upsert", "true")
-                connectTimeout = 15000
-                readTimeout = 15000
-            }
-            conn.outputStream.use { it.write(bytes) }
-            val code = conn.responseCode
-            if (code !in 200..299) error("Unggah gagal (HTTP $code).")
-            val publicUrl = "${SupabaseRepository.baseUrl}/storage/v1/object/public/product-images/$path"
+            val publicUrl = SupabaseRepository.uploadStorageObject(
+                bucket = "product-images",
+                pathBuilder = { uid -> "$uid/store_${kind}_${java.util.UUID.randomUUID()}.jpg" },
+                bytes = bytes,
+            )
             StoreDiscoveryRepository.updateMyStoreProfile(
                 stallId = stallId,
                 logoUrl = if (!isBanner) publicUrl else null,
