@@ -147,57 +147,38 @@ internal fun JajaninView.drawProfile(c: Canvas, w: Float, h: Float) {
     y = drawProfileSectionHeading(c, "Pengaturan", y, ::visible)
     val unread = inboxUnreadCount()
     val hasAvatar = myAvatarUrl.startsWith("https://")
-    val settingsRows = buildList {
-        if (myIsSellerVerified) {
-            add(
-                CleanProfileRow(
-                    icon = "store",
-                    title = "Menu Dagangan",
-                    value = if (sellerProducts.isNotEmpty()) "${sellerProducts.size} menu" else "Buka",
-                    valueColor = kit.blue,
-                    key = "openSellerMenu",
-                )
-            )
-        }
-        add(
-            CleanProfileRow(
-                icon = "image",
-                title = "Foto Profil",
-                value = if (hasAvatar) "Terpasang" else "Tambah",
-                valueColor = kit.blue,
-                key = "profileAvatar",
-                useAppIcon = true,
-            )
-        )
-        add(
-            CleanProfileRow(
-                icon = "phone",
-                title = "Nomor HP",
-                value = myPhone.takeIf { it.isNotBlank() }?.let { displayLocalPhone(it) } ?: "Belum diisi",
-                valueColor = if (myPhone.isBlank()) kit.danger else kit.muted,
-                key = "profilePhone",
-            )
-        )
-        add(
-            CleanProfileRow(
-                icon = "bell",
-                title = "Notifikasi & Pesan",
-                value = if (unread > 0) "$unread baru" else null,
-                valueColor = kit.danger,
-                key = "inbox",
-            )
-        )
-        add(
-            CleanProfileRow(
-                icon = "theme",
-                title = "Tema Aplikasi",
-                value = themeLabel,
-                valueColor = kit.blue,
-                key = "theme",
-                useAppIcon = true,
-            )
-        )
-    }
+    val settingsRows = listOf(
+        CleanProfileRow(
+            icon = "image",
+            title = "Foto Profil",
+            value = if (hasAvatar) "Terpasang" else "Tambah",
+            valueColor = kit.blue,
+            key = "profileAvatar",
+            useAppIcon = true,
+        ),
+        CleanProfileRow(
+            icon = "phone",
+            title = "Nomor HP",
+            value = myPhone.takeIf { it.isNotBlank() }?.let { displayLocalPhone(it) } ?: "Belum diisi",
+            valueColor = if (myPhone.isBlank()) kit.danger else kit.muted,
+            key = "profilePhone",
+        ),
+        CleanProfileRow(
+            icon = "bell",
+            title = "Notifikasi & Pesan",
+            value = if (unread > 0) "$unread baru" else null,
+            valueColor = kit.danger,
+            key = "inbox",
+        ),
+        CleanProfileRow(
+            icon = "theme",
+            title = "Tema Aplikasi",
+            value = themeLabel,
+            valueColor = kit.blue,
+            key = "theme",
+            useAppIcon = true,
+        ),
+    )
     y = drawProfileHairlineRows(c, y, settingsRows, ::visible, topClip, navClear)
     y += 24f
 
